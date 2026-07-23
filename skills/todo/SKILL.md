@@ -20,6 +20,12 @@ description: Use when managing the shared rocky-todo board from a session — pl
 - 둘 다 실패하면(데몬 기동 실패 등) 중단하고 사용자에게 `rocky-todo daemon status` 를 안내.
   가짜 진행을 만들지 않는다.
 
+## Todoist 와의 역할 구분
+
+코딩 세션의 작업 추적은 **rocky-todo 가 기본**이다. 알림·반복 일정·마감 리마인더가
+필요하거나 사용자가 명시적으로 "todoist" 를 언급하면 `todoist` 스킬로 라우팅한다.
+두 시스템을 잇는 건 링크 필드 — rocky-todo 항목에 Todoist task URL 을 첨부한다.
+
 ## 보드 결정
 
 - board key 는 **레포 이름** (git remote origin 의 basename). 세션 초반에 한 번 정하고
