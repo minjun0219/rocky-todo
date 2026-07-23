@@ -1,0 +1,773 @@
+/*
+ * rocky-todo — "두 대기(Two Atmospheres)" 콘솔.
+ * 에이전트의 행동은 warm(앰버, 에리디언의 뜨거운 대기), 사람의 행동은 cool(아이스 블루).
+ * 오프라인 제약(외부 리소스 금지)이라 시스템 폰트 스택 + mono 마이크로라벨로 콘솔 톤을 낸다.
+ */
+
+:root {
+  --bg: #16110c;
+  --surface: #1f1811;
+  --surface-2: #282017;
+  --line: #382c1f;
+  --text: #e9dfd2;
+  --muted: #9c8d7c;
+  --faint: #6b5f51;
+  --warm: #e8a33d; /* 에이전트 / 에리디언 */
+  --warm-dim: #8a6526;
+  --cool: #7ec8d8; /* 사람 / 지구 */
+  --cool-dim: #47707a;
+  --p1: #e2634f;
+  --p2: #e8a33d;
+  --p3: #c8b45a;
+  --ok: #86b06c;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── topbar ─────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+}
+
+.wordmark-dot {
+  color: var(--warm);
+}
+
+.link-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.link-status.is-on {
+  color: var(--warm);
+}
+
+.link-status.is-off {
+  color: var(--faint);
+}
+
+.link-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.is-on .link-pulse {
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.actor-chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--cool-dim);
+  color: var(--cool);
+}
+
+.actor-input {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--cool);
+  background: var(--bg);
+  color: var(--cool);
+  width: 120px;
+}
+
+/* ── layout ─────────────────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px 1fr 300px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── sidebar ────────────────────────────────────── */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.sidebar-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--faint);
+  padding: 0 10px 6px;
+}
+
+.board-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.board-item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.board-item.is-active {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.doing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warm);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 12px 10px 0;
+}
+
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* ── main pane ──────────────────────────────────── */
+
+.todo-pane {
+  padding: 20px 26px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.quick-add-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 14px;
+  color: var(--text);
+  margin-bottom: 18px;
+}
+
+.quick-add-input::placeholder {
+  color: var(--faint);
+}
+
+.todo-group {
+  margin-bottom: 26px;
+}
+
+.group-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--warm-dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  min-height: 32px;
+}
+
+.todo-row:hover {
+  background: var(--surface);
+}
+
+.todo-check {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid;
+  place-content: center;
+}
+
+.todo-check:checked {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.todo-check:checked::after {
+  content: "✓";
+  font-size: 11px;
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.todo-title {
+  text-align: left;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-title:hover {
+  color: var(--warm);
+}
+
+.is-done .todo-title {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.is-archived {
+  opacity: 0.45;
+}
+
+/* ── chips ──────────────────────────────────────── */
+
+.chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.prio-p1 {
+  color: var(--p1);
+  border-color: var(--p1);
+}
+
+.prio-p2 {
+  color: var(--p2);
+  border-color: var(--p2);
+}
+
+.prio-p3 {
+  color: var(--p3);
+  border-color: var(--p3);
+}
+
+.chip-due.is-overdue {
+  color: var(--p1);
+  border-color: var(--p1);
+}
+
+.chip-link {
+  text-decoration: none;
+  color: var(--cool);
+}
+
+.chip-link:hover {
+  border-color: var(--cool);
+}
+
+/* ── doing badge — 두 대기의 온도 ─────────────────── */
+
+.doing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.tone-warm {
+  color: var(--warm);
+}
+
+.doing-badge.tone-warm {
+  border: 1px solid var(--warm-dim);
+  background: color-mix(in srgb, var(--warm) 8%, transparent);
+}
+
+.tone-cool {
+  color: var(--cool);
+}
+
+.doing-badge.tone-cool {
+  border: 1px solid var(--cool-dim);
+  background: color-mix(in srgb, var(--cool) 8%, transparent);
+}
+
+.doing-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.doing-badge.is-stale {
+  opacity: 0.55;
+}
+
+.doing-badge.is-stale .doing-pulse {
+  animation: none;
+}
+
+/* ── notes rail ─────────────────────────────────── */
+
+.notes-rail {
+  border-left: 1px solid var(--line);
+  padding: 16px 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notes-add {
+  font-size: 12px;
+  color: var(--warm);
+}
+
+.note-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.note-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-title {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+.note-action {
+  color: var(--faint);
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.note-action:hover {
+  color: var(--text);
+}
+
+.note-content {
+  width: 100%;
+  background: none;
+  border: none;
+  resize: vertical;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin-top: 4px;
+}
+
+.note-content:focus {
+  color: var(--text);
+  outline: none;
+}
+
+.note-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  margin-top: 4px;
+}
+
+/* ── empty ──────────────────────────────────────── */
+
+.empty-state {
+  color: var(--faint);
+  font-size: 13px;
+  padding: 18px 4px;
+}
+
+/* ── drawer ─────────────────────────────────────── */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 7, 4, 0.55);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+.drawer {
+  width: min(440px, 92vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 22px;
+  position: relative;
+}
+
+.drawer-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  color: var(--faint);
+  font-size: 14px;
+}
+
+.drawer-close:hover {
+  color: var(--text);
+}
+
+.drawer-id {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+}
+
+.drawer-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  line-height: 1.35;
+}
+
+.drawer-chips,
+.drawer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.drawer-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--faint);
+  margin: 16px 0 6px;
+}
+
+.drawer-desc {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.drawer-desc-static {
+  cursor: default;
+}
+
+.drawer-desc-empty {
+  color: var(--faint);
+}
+
+.md-line {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.md-line code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.md-line a {
+  color: var(--cool);
+}
+
+.drawer-desc-edit {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--warm-dim);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.drawer-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.drawer-btn:hover {
+  border-color: var(--warm-dim);
+  color: var(--warm);
+}
+
+/* ── history ────────────────────────────────────── */
+
+.drawer-history {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+
+.history-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.history-actor {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.history-action {
+  color: var(--muted);
+}
+
+.history-change {
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.history-at {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+/* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
+
+@media (max-width: 900px) {
+  /* iOS Safari 의 동적 툴바 대응 — dvh 미지원 브라우저는 베이스의 100vh 유지 */
+  @supports (height: 100dvh) {
+    .app {
+      height: 100dvh;
+    }
+  }
+  .layout {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  /* 사이드바 → 가로 스크롤 보드 칩 행 */
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 12px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .sidebar-label {
+    display: none;
+  }
+  .board-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sidebar-foot {
+    margin-top: 0;
+    margin-left: auto;
+    padding: 0 0 0 12px;
+    flex-shrink: 0;
+  }
+  .archived-toggle {
+    white-space: nowrap;
+  }
+  .todo-pane {
+    padding: 14px 14px 6px;
+    overflow-y: visible;
+    flex-shrink: 0;
+  }
+  /* 좁은 화면에서는 메타 칩이 다음 줄로 흐르게 */
+  .todo-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .todo-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .notes-rail {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    padding: 14px;
+    overflow-y: visible;
+    flex-shrink: 0;
+  }
+  .drawer {
+    width: 100vw;
+  }
+  /* iOS Safari: 16px 미만 입력 필드 포커스 시 자동 확대 방지 */
+  .quick-add-input,
+  .note-title,
+  .note-content,
+  .actor-input,
+  .drawer-desc-edit {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-on .link-pulse,
+  .doing-dot,
+  .doing-pulse {
+    animation: none;
+  }
+}
+
+.backdrop-hit {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}

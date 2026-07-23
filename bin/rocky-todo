@@ -1,0 +1,11 @@
+#!/usr/bin/env bun
+/**
+ * rocky-todo CLI entry — 파싱과 커맨드 라우팅은 전부 src/todo/cli.ts 에 있다.
+ */
+
+import { runCli } from "../src/todo/cli";
+
+runCli().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
