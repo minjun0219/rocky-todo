@@ -15,6 +15,8 @@ description: Use when managing the shared rocky-todo board from a session — pl
   연결되어 있으면 그것을 쓴다 (rocky-todo 데몬의 `/mcp`).
 - MCP 도구가 없으면 CLI 로 폴백: `rocky-todo <cmd>` (Bash). CLI 는 데몬이 죽어 있으면
   자동 기동한다. 레포에서 직접 실행할 땐 `bun run <rocky-repo>/src/todo/cli.ts <cmd>` 도 동일.
+- CLI 가 "기본 비활성" 에러를 내면 rocky-todo 가 꺼져 있는 것 — user rocky.json 에
+  `"todo": { "enabled": true }` 설정을 안내하고 멈춘다 (임의로 켜지 않는다).
 - 둘 다 실패하면(데몬 기동 실패 등) 중단하고 사용자에게 `rocky-todo daemon status` 를 안내.
   가짜 진행을 만들지 않는다.
 

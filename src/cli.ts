@@ -229,6 +229,38 @@ async function request<T>(
   return payload;
 }
 
+/** 활성 노출 채널 기준으로 접속 가능한 주소를 전부 출력한다 — open / daemon status 공용. */
+function printAddresses(ctx: CliContext, expose: readonly string[]): void {
+  console.log(ctx.baseUrl);
+  if (expose.includes('lan')) {
+    const nets = Object.values(networkInterfaces()).flat();
+    for (const net of nets) {
+      if (net && net.family === 'IPv4' && !net.internal) {
+        console.log(`http://${net.address}:${ctx.port}  (내부망 — 같은 네트워크 기기용)`);
+      }
+    }
+  }
+  if (expose.includes('tailscale-serve')) {
+    const proc = Bun.spawnSync({
+      cmd: ['tailscale', 'status', '--json'],
+      stdout: 'pipe',
+      stderr: 'ignore',
+      timeout: 3000,
+    });
+    if (proc.exitCode === 0) {
+      try {
+        const dns = (JSON.parse(proc.stdout.toString()) as { Self?: { DNSName?: string } }).Self
+          ?.DNSName;
+        if (dns) {
+          console.log(`https://${dns.replace(/\.$/, '')}  (테일넷 기기용)`);
+        }
+      } catch {
+        // status 파싱 실패는 무시 — 주소 안내가 목적일 뿐
+      }
+    }
+  }
+}
+
 // ── 보드 키 유추 ─────────────────────────────────────────────────────────────
 
 function git(args: string[]): string | undefined {
@@ -262,7 +294,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo note add "제목" [--board K|--global] [--content MD]
   rocky-todo note ls|show ID|edit ID --content MD|append ID "텍스트"|archive ID
   rocky-todo history ID [--limit N] · board ls · board add KEY [제목]
-  rocky-todo open                              웹 UI URL 출력
+  rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
   rocky-todo tailscale on|off|status           테일넷 한정 HTTPS 노출 (옵션, 기본 off)
@@ -290,6 +322,15 @@ export async function runCli(): Promise<void> {
     dir: runtime.dir,
     actor: str(flags.actor) ?? detectActor(),
   };
+
+  // 마스터 스위치 (todo.enabled, 기본 off) — 데몬을 띄우는 기능이라 opt-in.
+  // 안내성 커맨드(help / mcp setup)는 비활성 상태에서도 동작한다.
+  const INFO_COMMANDS = new Set([undefined, 'help', 'mcp']);
+  if (!runtime.enabled && !INFO_COMMANDS.has(command)) {
+    throw new Error(
+      'rocky-todo 는 기본 비활성이다 — user rocky.json 에 "todo": { "enabled": true } 를 설정하거나 ROCKY_TODO_ENABLED=1 로 켠다.',
+    );
+  }
 
   const emitJson = flags.json === true;
   const board = str(flags.board) ?? inferBoardKey();
@@ -489,22 +530,14 @@ export async function runCli(): Promise<void> {
     }
 
     case 'open': {
-      console.log(ctx.baseUrl);
-      // LAN 개방(todo.host) 상태면 내부망 접속 주소도 함께 안내
-      const runtimeHost = resolveTodoRuntimeConfig(process.env, config.todo).host;
-      if (runtimeHost !== '127.0.0.1') {
-        const nets = Object.values(networkInterfaces()).flat();
-        for (const net of nets) {
-          if (net && net.family === 'IPv4' && !net.internal) {
-            console.log(`http://${net.address}:${ctx.port}  (내부망 — 같은 네트워크 기기용)`);
-          }
-        }
-      }
+      // 접속 가능한 주소를 전부 출력한다 — 터미널에서 링크를 눌러 연다 (자동 실행 없음)
+      await ensureDaemon(ctx);
+      printAddresses(ctx, runtime.expose);
       return;
     }
 
     case 'daemon': {
-      await handleDaemon(ctx, rest[0]);
+      await handleDaemon(ctx, rest[0], runtime.expose);
       return;
     }
 
@@ -636,7 +669,11 @@ async function handleNote(
   }
 }
 
-async function handleDaemon(ctx: CliContext, sub: string | undefined): Promise<void> {
+async function handleDaemon(
+  ctx: CliContext,
+  sub: string | undefined,
+  expose: readonly string[],
+): Promise<void> {
   switch (sub) {
     case 'run': {
       const { startDaemon } = await import('./daemon');
@@ -662,6 +699,10 @@ async function handleDaemon(ctx: CliContext, sub: string | undefined): Promise<v
       const alive = await health(ctx.baseUrl);
       console.log(alive ? `✓ running on ${ctx.baseUrl}` : `✗ not running (port ${ctx.port})`);
       console.log(launchdStatus());
+      if (alive) {
+        console.log('접속 주소:');
+        printAddresses(ctx, expose);
+      }
       return;
     }
     case 'install': {

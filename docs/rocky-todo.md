@@ -16,9 +16,19 @@
 - **삭제 없음** — 모든 엔티티는 아카이브만 된다. 모든 변경은 히스토리(누가/무엇을/언제)로 남는다.
 - 스크래치패드 메모: 보드 소속 or 글로벌, 에이전트/호출자 모두 편집 (웹 UI 인라인 편집).
 
+## 활성화 (기본 off)
+
+상주 데몬을 띄우는 기능이라 **기본 비활성**이다. user `rocky.json` 에서 켠다:
+
+```json
+{ "todo": { "enabled": true } }
+```
+
+꺼져 있으면 훅·CLI 자동 기동·데몬이 전부 침묵한다 (env `ROCKY_TODO_ENABLED` 가 우선).
+
 ## 데몬 기동
 
-CLI 가 필요 시 자동 기동하므로 별도 설치 없이 동작한다. 상시 상주(로그인 시 자동 기동)를
+활성화 후에는 CLI 가 필요 시 자동 기동하므로 별도 설치 없이 동작한다. 상시 상주(로그인 시 자동 기동)를
 원하면:
 
 ```bash
@@ -114,11 +124,12 @@ rocky-todo tailscale on|off|status
 `rocky.json` (user 레벨 권장 — 데몬은 project rocky.json 을 보지 않는다):
 
 ```json
-{ "todo": { "port": 8636, "dir": "~/.config/rocky/todo" } }
+{ "todo": { "enabled": true, "port": 8636, "dir": "~/.config/rocky/todo" } }
 ```
 
 | env | 의미 |
 | --- | --- |
+| `ROCKY_TODO_ENABLED` | 마스터 스위치 강제 (기본 off — `todo.enabled` 보다 우선) |
 | `ROCKY_TODO_PORT` | 데몬 포트 (기본 8636 — 키패드 "todo") |
 | `ROCKY_TODO_DIR` | 데이터 디렉터리 (todo.db / daemon.pid / daemon.log / hook-cursors.json) |
 | `ROCKY_TODO_ACTOR` | CLI actor 이름 강제 |

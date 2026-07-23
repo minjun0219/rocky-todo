@@ -43,6 +43,14 @@ export async function startDaemon(): Promise<void> {
   const { config } = await loadConfig({ projectRoot: DEFAULT_TODO_DIR });
   const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
 
+  // 마스터 스위치 (todo.enabled, 기본 off) — launchd 잔존 등록 등으로 실행돼도 조용히 종료
+  if (!runtime.enabled) {
+    console.log(
+      'rocky-todo 는 기본 비활성이다 — user rocky.json 에 "todo": { "enabled": true } 를 설정하거나 ROCKY_TODO_ENABLED=1 로 켠다.',
+    );
+    return;
+  }
+
   if (await isAlreadyRunning(runtime.port)) {
     console.log(`rocky-todo daemon already running on port ${runtime.port} — exiting`);
     return;

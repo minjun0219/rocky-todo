@@ -30,6 +30,15 @@ describe('resolveTodoRuntimeConfig', () => {
     expect(resolveTodoRuntimeConfig({ ROCKY_TODO_PORT: '-1' }, { port: 9000 }).port).toBe(9000);
   });
 
+  test('enabled defaults to false; config turns it on; env wins both ways', () => {
+    expect(resolveTodoRuntimeConfig({}).enabled).toBe(false);
+    expect(resolveTodoRuntimeConfig({}, { enabled: true }).enabled).toBe(true);
+    expect(resolveTodoRuntimeConfig({ ROCKY_TODO_ENABLED: '1' }).enabled).toBe(true);
+    expect(resolveTodoRuntimeConfig({ ROCKY_TODO_ENABLED: '0' }, { enabled: true }).enabled).toBe(
+      false,
+    );
+  });
+
   test('expose defaults to empty (loopback bind, no channels)', () => {
     const resolved = resolveTodoRuntimeConfig({});
     expect(resolved.expose).toEqual([]);

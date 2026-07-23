@@ -74,6 +74,10 @@ async function run(): Promise<void> {
   }
 
   const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
+  // 마스터 스위치 (todo.enabled, 기본 off) — 꺼져 있으면 완전 침묵
+  if (!runtime.enabled) {
+    return;
+  }
   const baseUrl = `http://127.0.0.1:${runtime.port}`;
   const cursorFile = join(runtime.dir, 'hook-cursors.json');
 
