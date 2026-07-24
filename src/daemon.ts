@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import ui from './ui/index.html';
 import { loadConfig } from '../core/rocky-config';
 import { DEFAULT_TODO_DIR, resolveTodoRuntimeConfig } from './config';
+import { createMcpFetchHandler } from './mcp';
 import { buildTodoServer } from './server';
 import { TodoStore } from './store';
 import { ensureTailscaleServe } from './tailscale';
@@ -58,6 +59,7 @@ export async function startDaemon(): Promise<void> {
   mkdirSync(runtime.dir, { recursive: true });
   const store = new TodoStore({ dbPath: join(runtime.dir, 'todo.db') });
   const api = buildTodoServer({ store });
+  const mcp = createMcpFetchHandler({ store });
 
   // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.
   // CLI/브릿지가 호출자 cwd 를 상속시켜 spawn 하면 /../../<cwd> 로 깨지므로 ui 디렉터리로 고정한다.
@@ -71,6 +73,7 @@ export async function startDaemon(): Promise<void> {
     development: false,
     routes: {
       '/': ui,
+      '/mcp': (req) => mcp(req),
       '/api/*': (req) => api.fetch(req),
     },
     fetch: (req) => api.fetch(req),

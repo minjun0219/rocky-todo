@@ -4,9 +4,10 @@ import { USER_CONFIG_PATH } from '../core/rocky-config';
 import { buildContext, ensureDaemon } from './client';
 
 /**
- * rocky-todo 활성화 코어 — `todo_enable` 도구와 CLI `enable` 이 공유한다.
+ * rocky-todo 활성화 코어 — CLI `rocky-todo enable` 이 호출한다.
  *
  * user rocky.json 에 `todo.enabled=true` 를 병합 기록(기존 키 보존)하고 데몬을 기동한다.
+ * 에이전트가 사용자 동의를 받은 뒤 Bash 로 `rocky-todo enable` 을 실행하는 것이 활성화 경로다.
  * launchd 상주 등록은 하지 않는다 (`rocky-todo daemon install` 로 분리 유지).
  */
 

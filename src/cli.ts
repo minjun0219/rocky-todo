@@ -494,7 +494,7 @@ export async function runCli(): Promise<void> {
 
     case 'mcp': {
       if (rest[0] === 'setup') {
-        console.log(mcpSetupGuide());
+        console.log(mcpSetupGuide(ctx.baseUrl));
         return;
       }
       throw new Error('usage: rocky-todo mcp setup');
@@ -669,21 +669,20 @@ async function handleDaemon(
   }
 }
 
-function mcpSetupGuide(): string {
-  return `rocky-todo MCP 는 stdio 브릿지(src/todo/mcp-stdio.ts)로 노출된다 — 데몬의 /mcp 는 없다.
+function mcpSetupGuide(baseUrl: string): string {
+  return `rocky-todo 데몬의 MCP 엔드포인트: ${baseUrl}/mcp (streamable HTTP)
 
 Claude Code:
-  rocky 플러그인이 자동 등록한다 (plugin.json 의 mcpServers.rocky-todo).
-  과거 http 로 수동 등록했다면 제거: claude mcp remove rocky-todo
+  rocky 플러그인이 http 로 자동 등록한다 (plugin.json 의 mcpServers.rocky-todo → ${baseUrl}/mcp).
+  데몬이 안 떠 있으면 도구가 안 붙는다 — rocky-todo enable (또는 daemon start) 로 켠 뒤 /mcp 패널에서 retry.
+  과거 수동 http 등록이 있으면 제거: claude mcp remove rocky-todo
 
 opencode (~/.config/opencode/opencode.json):
-  { "mcp": { "rocky-todo": { "type": "local",
-      "command": ["bun", "run", "<rocky-repo>/src/todo/mcp-stdio.ts"] } } }
+  { "mcp": { "rocky-todo": { "type": "remote", "url": "${baseUrl}/mcp" } } }
 
-Codex (~/.codex/config.toml):
+Codex (~/.codex/config.toml — streamable HTTP 지원 버전):
   [mcp_servers.rocky-todo]
-  command = "bun"
-  args = ["run", "<rocky-repo>/src/todo/mcp-stdio.ts"]`;
+  url = "${baseUrl}/mcp"`;
 }
 
 if (import.meta.main) {
