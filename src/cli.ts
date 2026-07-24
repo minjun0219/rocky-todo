@@ -3,6 +3,7 @@ import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../core/rocky-config';
 import { boardKeyFrom, detectActor } from './actor';
+import { buildContext, type CliContext, ensureDaemon, health, request } from './client';
 import { DEFAULT_TODO_DIR, resolveTodoRuntimeConfig } from './config';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import type { Board, HistoryEntry, Note, Section, Todo } from './store';
@@ -168,66 +169,8 @@ function groupAndRender(
 }
 
 // ── HTTP 클라이언트 + 데몬 ensure ────────────────────────────────────────────
-
-interface CliContext {
-  baseUrl: string;
-  port: number;
-  dir: string;
-  actor: string;
-}
-
-async function health(baseUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(700) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/** 데몬이 안 떠 있으면 detached spawn 하고 health 가 응답할 때까지 (최대 ~5s) 기다린다. */
-async function ensureDaemon(ctx: CliContext): Promise<void> {
-  if (await health(ctx.baseUrl)) {
-    return;
-  }
-  const daemonPath = join(import.meta.dir, 'daemon.ts');
-  Bun.spawn({
-    cmd: [process.execPath, 'run', daemonPath],
-    stdio: ['ignore', 'ignore', 'ignore'],
-    env: process.env,
-  }).unref();
-  for (let i = 0; i < 25; i++) {
-    await Bun.sleep(200);
-    if (await health(ctx.baseUrl)) {
-      return;
-    }
-  }
-  throw new Error(
-    `rocky-todo daemon did not start on port ${ctx.port} — check \`rocky-todo daemon status\``,
-  );
-}
-
-async function request<T>(
-  ctx: CliContext,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  await ensureDaemon(ctx);
-  const res = await fetch(`${ctx.baseUrl}${path}`, {
-    method,
-    headers: {
-      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      'x-rocky-actor': ctx.actor,
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  const payload = (await res.json()) as T & { error?: string };
-  if (!res.ok) {
-    throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
-  }
-  return payload;
-}
+// CliContext / health / ensureDaemon / request 는 ./client 로 추출되어
+// stdio MCP 브릿지와 공유한다 (순수 리팩터).
 
 /** 활성 노출 채널 기준으로 접속 가능한 주소를 전부 출력한다 — open / daemon status 공용. */
 function printAddresses(ctx: CliContext, expose: readonly string[]): void {
@@ -316,12 +259,11 @@ export async function runCli(): Promise<void> {
 
   const { config } = await loadConfig({ projectRoot: DEFAULT_TODO_DIR });
   const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
-  const ctx: CliContext = {
-    baseUrl: `http://127.0.0.1:${runtime.port}`,
+  const ctx = buildContext({
     port: runtime.port,
     dir: runtime.dir,
     actor: str(flags.actor) ?? detectActor(),
-  };
+  });
 
   // 마스터 스위치 (todo.enabled, 기본 off) — 데몬을 띄우는 기능이라 opt-in.
   // 안내성 커맨드(help / mcp setup)는 비활성 상태에서도 동작한다.
