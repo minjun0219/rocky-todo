@@ -61,6 +61,10 @@ export async function startDaemon(): Promise<void> {
   const api = buildTodoServer({ store });
   const mcp = createMcpFetchHandler({ store });
 
+  // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.
+  // CLI/브릿지가 호출자 cwd 를 상속시켜 spawn 하면 /../../<cwd> 로 깨지므로 ui 디렉터리로 고정한다.
+  process.chdir(join(import.meta.dir, 'ui'));
+
   const server = Bun.serve({
     port: runtime.port,
     // 기본 루프백 전용. `todo.host: "0.0.0.0"` opt-in 시 내부망 개방 (인증 없음 — 신뢰망 전제).
