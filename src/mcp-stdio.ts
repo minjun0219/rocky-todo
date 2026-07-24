@@ -93,7 +93,7 @@ export function disabledGuidance(): { error: string; guidance: string } {
 }
 
 export interface BridgeDeps {
-  enabled: boolean;
+  isEnabled: () => boolean;
   forward: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   enable: () => Promise<unknown>;
 }
@@ -111,7 +111,7 @@ export function buildBridgeServer(deps: BridgeDeps): McpServer {
       spec.name,
       { description: spec.description, inputSchema: spec.inputSchema },
       async (args: Record<string, unknown>) => {
-        if (!deps.enabled) {
+        if (!deps.isEnabled()) {
           return jsonResult(disabledGuidance());
         }
         return jsonResult(await deps.forward(spec.name, args));
@@ -136,13 +136,18 @@ if (import.meta.main) {
   const { config } = await loadConfig({ projectRoot: DEFAULT_TODO_DIR });
   const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
   const ctx = buildContext({ port: runtime.port, dir: runtime.dir, actor: detectActor() });
+  let enabled = runtime.enabled;
   const server = buildBridgeServer({
-    enabled: runtime.enabled,
+    isEnabled: () => enabled,
     forward: async (name, args) => {
       const { method, path, body } = toolToRest(name, args);
       return request(ctx, method, path, body);
     },
-    enable: () => enableTodo({ port: runtime.port, dir: runtime.dir }),
+    enable: async () => {
+      const result = await enableTodo({ port: runtime.port, dir: runtime.dir });
+      enabled = true; // 같은 프로세스에서 즉시 5개 도구 활성
+      return result;
+    },
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);
