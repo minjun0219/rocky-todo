@@ -8,12 +8,15 @@ function deps(overrides: Partial<EnsureDeps> = {}): {
   deps: EnsureDeps;
   spawned: CliContext[];
   stopped: DaemonHealth[];
+  replaced: number[];
 } {
   const spawned: CliContext[] = [];
   const stopped: DaemonHealth[] = [];
+  const replaced: number[] = [];
   return {
     spawned,
     stopped,
+    replaced,
     deps: {
       version: '1.0.0',
       checkHealth: async () => ({ ok: true, name: 'rocky-todo', version: '1.0.0', pid: 111 }),
@@ -23,6 +26,10 @@ function deps(overrides: Partial<EnsureDeps> = {}): {
       stop: async (_ctx, health) => {
         stopped.push(health);
         return true;
+      },
+      isManaged: () => false,
+      replaceManaged: () => {
+        replaced.push(1);
       },
       ...overrides,
     },
@@ -84,5 +91,29 @@ test('구버전 데몬을 못 내리면 재기동하지 않는다 (fail-open —
   });
   await run(d);
   expect(attempts).toHaveLength(1);
+  expect(spawned).toHaveLength(0);
+});
+
+test('launchd 상주면 구버전은 PID kill 대신 job 교체로 내린다', async () => {
+  // KeepAlive 가 PID kill 을 즉시 되살리므로 stop/spawn 이 아니라 job 을 교체해야 한다.
+  const {
+    deps: d,
+    spawned,
+    stopped,
+    replaced,
+  } = deps({
+    checkHealth: async () => ({ ok: true, name: 'rocky-todo', version: '0.9.0', pid: 444 }),
+    isManaged: () => true,
+  });
+  await run(d);
+  expect(replaced).toHaveLength(1);
+  expect(stopped).toHaveLength(0);
+  expect(spawned).toHaveLength(0);
+});
+
+test('launchd 상주여도 버전이 같으면 job 을 건드리지 않는다 (no-op)', async () => {
+  const { deps: d, replaced, spawned } = deps({ isManaged: () => true });
+  await run(d);
+  expect(replaced).toHaveLength(0);
   expect(spawned).toHaveLength(0);
 });

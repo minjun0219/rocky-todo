@@ -1,4 +1,4 @@
-import { version as PACKAGE_VERSION } from '../package.json';
+import pkg from '../package.json' with { type: 'json' };
 import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 
 /**
@@ -72,7 +72,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       if (method === 'GET' && path === '/api/health') {
         // version 은 "지금 돌고 있는 코드"의 버전이다 — 플러그인 캐시가 버전 디렉터리라
         // 데몬이 구버전 경로에서 계속 살아있을 수 있어, 호출자가 stale 을 판별할 근거가 된다.
-        return json({ ok: true, name: 'rocky-todo', version: PACKAGE_VERSION, pid: process.pid });
+        return json({ ok: true, name: 'rocky-todo', version: pkg.version, pid: process.pid });
       }
 
       // ── SSE ──

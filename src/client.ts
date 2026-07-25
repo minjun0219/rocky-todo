@@ -35,7 +35,12 @@ export interface DaemonHealth {
 
 /**
  * 데몬 health 를 본문째 돌려준다 — 호출자가 실행 중인 코드의 버전/pid 를 볼 수 있다.
- * @returns 응답이 없거나 비정상이면 null.
+ *
+ * **신원 검증**: 설정된 포트에 rocky-todo 가 아닌 서비스가 떠 2xx JSON 을 돌려줄 수
+ * 있으므로 `ok === true` 와 `name === 'rocky-todo'` 를 확인한 응답만 데몬으로 인정한다.
+ * (version/pid 는 ≤0.1.0 데몬엔 없어 stale 판별의 근거라 검증 대상이 아니다.) 이 가드가
+ * 없으면 호출자가 무관한 프로세스의 pid 에 SIGTERM 을 보낼 수 있다.
+ * @returns 응답이 없거나, 비정상이거나, rocky-todo 데몬이 아니면 null.
  */
 export async function daemonHealth(baseUrl: string): Promise<DaemonHealth | null> {
   try {
@@ -43,7 +48,11 @@ export async function daemonHealth(baseUrl: string): Promise<DaemonHealth | null
     if (!res.ok) {
       return null;
     }
-    return (await res.json()) as DaemonHealth;
+    const body = (await res.json()) as DaemonHealth;
+    if (body?.ok !== true || body.name !== 'rocky-todo') {
+      return null;
+    }
+    return body;
   } catch {
     return null;
   }
@@ -66,8 +75,10 @@ export async function stopDaemon(ctx: CliContext, pid?: number): Promise<boolean
   try {
     process.kill(target, 'SIGTERM');
   } catch {
-    // 이미 죽었거나 (ESRCH) 남의 프로세스 (EPERM) — 어느 쪽이든 우리가 내릴 수 없다.
-    return false;
+    // ESRCH(이미 죽음)와 EPERM(남의 프로세스)을 errno 로 나누지 않고 포트로 판정한다 —
+    // 이미 죽었다면 목적은 달성된 것이고(health 확인 직후 죽는 레이스), 남의 프로세스면
+    // health 가 계속 응답하므로 자연히 false 가 된다.
+    return (await daemonHealth(ctx.baseUrl)) === null;
   }
   for (let i = 0; i < 15; i++) {
     await Bun.sleep(200);
