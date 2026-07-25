@@ -42,6 +42,8 @@ export interface Section {
 
 export interface Todo {
   id: string;
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  number: number;
   boardId: string;
   sectionId?: string;
   parentId?: string;
@@ -63,6 +65,8 @@ export interface Todo {
 
 export interface Note {
   id: string;
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  number: number;
   boardId?: string;
   title: string;
   content: string;
@@ -173,6 +177,7 @@ function nowIso(): string {
 
 interface TodoRow {
   id: string;
+  number: number;
   board_id: string;
   section_id: string | null;
   parent_id: string | null;
@@ -194,6 +199,7 @@ interface TodoRow {
 
 interface NoteRow {
   id: string;
+  number: number;
   board_id: string | null;
   title: string;
   content: string;
@@ -422,6 +428,28 @@ export class TodoStore {
     return (row?.max ?? 0) + 1;
   }
 
+  /**
+   * 보드 안에서 다음 번호 — MAX(number)+1 이라 아카이브된 항목이 있어도 회수하지 않는다.
+   * @param boardId null 이면 글로벌 노트 공간.
+   */
+  private nextNumber(table: 'todos' | 'notes', boardId: string | null): number {
+    const where = boardId === null ? 'board_id IS NULL' : 'board_id = ?';
+    const row = this.db
+      .query<{ max: number | null }, string[]>(
+        `SELECT MAX(number) AS max FROM ${table} WHERE ${where}`,
+      )
+      .get(...(boardId === null ? [] : [boardId]));
+    return (row?.max ?? 0) + 1;
+  }
+
+  /** boardId → board key. ref(`rocky#12`) 조립에 쓴다. 없는 보드면 빈 문자열. */
+  boardKeyOf(boardId: string): string {
+    const row = this.db
+      .query<{ key: string }, [string]>('SELECT key FROM boards WHERE id = ?')
+      .get(boardId);
+    return row?.key ?? '';
+  }
+
   // ── todos ─────────────────────────────────────────────────────────────────
 
   createTodo(input: CreateTodoInput, actor: string): Todo {
@@ -441,6 +469,7 @@ export class TodoStore {
     const now = nowIso();
     const todo: Todo = {
       id: newId(),
+      number: this.nextNumber('todos', board.id),
       boardId: board.id,
       sectionId,
       parentId,
@@ -457,11 +486,12 @@ export class TodoStore {
     };
     this.db
       .query(
-        `INSERT INTO todos (id, board_id, section_id, parent_id, title, description, status, priority, due, labels, links, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO todos (id, number, board_id, section_id, parent_id, title, description, status, priority, due, labels, links, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         todo.id,
+        todo.number,
         todo.boardId,
         sectionId ?? null,
         parentId ?? null,
@@ -663,6 +693,7 @@ export class TodoStore {
     const now = nowIso();
     const note: Note = {
       id: newId(),
+      number: this.nextNumber('notes', boardId),
       boardId: boardId ?? undefined,
       title: input.title,
       content: input.content ?? '',
@@ -672,10 +703,11 @@ export class TodoStore {
     };
     this.db
       .query(
-        'INSERT INTO notes (id, board_id, title, content, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO notes (id, number, board_id, title, content, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         note.id,
+        note.number,
         boardId,
         note.title,
         note.content,
@@ -895,6 +927,7 @@ function toSection(row: SectionRow): Section {
 function toTodo(row: TodoRow): Todo {
   return {
     id: row.id,
+    number: row.number,
     boardId: row.board_id,
     sectionId: row.section_id ?? undefined,
     parentId: row.parent_id ?? undefined,
@@ -918,6 +951,7 @@ function toTodo(row: TodoRow): Todo {
 function toNote(row: NoteRow): Note {
   return {
     id: row.id,
+    number: row.number,
     boardId: row.board_id ?? undefined,
     title: row.title,
     content: row.content,

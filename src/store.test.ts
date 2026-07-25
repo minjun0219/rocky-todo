@@ -261,3 +261,36 @@ describe('change events', () => {
     expect(events.filter((e) => e === 'todo:create')).toHaveLength(1);
   });
 });
+
+describe('number 발급', () => {
+  test('보드 안에서 1부터 연속으로 매겨진다', () => {
+    const a = store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    const b = store.createTodo({ board: 'alpha', title: '둘째' }, 'tester');
+    expect(a.number).toBe(1);
+    expect(b.number).toBe(2);
+  });
+
+  test('보드마다 번호 공간이 독립이다', () => {
+    store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    const other = store.createTodo({ board: 'beta', title: '다른 보드 첫째' }, 'tester');
+    expect(other.number).toBe(1);
+  });
+
+  test('아카이브해도 번호를 회수하지 않는다', () => {
+    const a = store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    store.setTodoStatus(a.id, 'archive', 'tester');
+    const b = store.createTodo({ board: 'alpha', title: '둘째' }, 'tester');
+    expect(b.number).toBe(2);
+  });
+
+  test('노트도 보드별로 번호를 받는다', () => {
+    const n = store.createNote({ board: 'alpha', title: '메모' }, 'tester');
+    expect(n.number).toBe(1);
+  });
+
+  test('글로벌 노트는 보드 노트와 독립된 번호 공간을 쓴다', () => {
+    store.createNote({ board: 'alpha', title: '보드 메모' }, 'tester');
+    const g = store.createNote({ title: '글로벌 메모' }, 'tester');
+    expect(g.number).toBe(1);
+  });
+});

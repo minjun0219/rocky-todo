@@ -42,6 +42,7 @@ describe('parseFlags', () => {
 describe('formatTodoLine', () => {
   const base: Todo = {
     id: 'a1b2c3d4',
+    number: 1,
     boardId: 'b',
     title: '작업 제목',
     description: '',
