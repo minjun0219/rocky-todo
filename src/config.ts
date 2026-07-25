@@ -1,7 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { TodoConfig } from '../core/rocky-config';
-import { expandTilde } from '../core/worklog';
+import { type TodoConfig, expandTilde } from './rocky-config';
 
 /**
  * rocky-todo 데몬/CLI 런타임 설정 해석.
@@ -26,8 +25,6 @@ export const EXPOSE_CHANNELS = ['lan', 'tailscale-serve'] as const;
 export type TodoExposeChannel = (typeof EXPOSE_CHANNELS)[number];
 
 export interface TodoRuntimeConfig {
-  /** 마스터 스위치 — 기본 false. 꺼져 있으면 훅/CLI 자동기동/데몬이 모두 침묵한다. */
-  enabled: boolean;
   port: number;
   dir: string;
   /** 바인딩 호스트 — expose 에서 유도 (lan 포함 → 0.0.0.0, 아니면 127.0.0.1). */
@@ -71,12 +68,5 @@ export function resolveTodoRuntimeConfig(
           : [configExpose];
   const host = expose.includes('lan') ? '0.0.0.0' : '127.0.0.1';
 
-  // 마스터 스위치 — env `ROCKY_TODO_ENABLED` > config `todo.enabled` > 기본 false (opt-in)
-  const envEnabled = env.ROCKY_TODO_ENABLED?.trim().toLowerCase();
-  const enabled =
-    envEnabled !== undefined
-      ? !['0', 'false', 'off', 'no'].includes(envEnabled)
-      : (todoConfig?.enabled ?? false);
-
-  return { enabled, port, dir: expandTilde(rawDir), host, expose };
+  return { port, dir: expandTilde(rawDir), host, expose };
 }

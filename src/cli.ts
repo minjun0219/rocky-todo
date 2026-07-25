@@ -1,12 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig } from '../core/rocky-config';
 import { boardKeyFrom, detectActor } from './actor';
 import { buildContext, type CliContext, ensureDaemon, health, request } from './client';
-import { DEFAULT_TODO_DIR, resolveTodoRuntimeConfig } from './config';
-import { enableTodo } from './enable';
+import { resolveTodoRuntimeConfig } from './config';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
+import { loadTodoConfig } from './rocky-config';
 import type { Board, HistoryEntry, Note, Section, Todo } from './store';
 import { tailscaleServeOff, tailscaleServeOn, tailscaleServeStatus } from './tailscale';
 import { linkLabel } from './ui/lib';
@@ -240,7 +239,6 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo history ID [--limit N] · board ls · board add KEY [제목]
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
-  rocky-todo enable                            todo.enabled=true 기록 + 데몬 기동 (동의 후)
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
   rocky-todo tailscale on|off|status           테일넷 한정 HTTPS 노출 (옵션, 기본 off)
 
@@ -259,22 +257,13 @@ export async function runCli(): Promise<void> {
   const { positionals, flags } = parseFlags(process.argv.slice(2));
   const [command, ...rest] = positionals;
 
-  const { config } = await loadConfig({ projectRoot: DEFAULT_TODO_DIR });
-  const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
+  const { todo } = loadTodoConfig();
+  const runtime = resolveTodoRuntimeConfig(process.env, todo);
   const ctx = buildContext({
     port: runtime.port,
     dir: runtime.dir,
     actor: str(flags.actor) ?? detectActor(),
   });
-
-  // 마스터 스위치 (todo.enabled, 기본 off) — 데몬을 띄우는 기능이라 opt-in.
-  // 안내성 커맨드(help / mcp setup)는 비활성 상태에서도 동작한다.
-  const INFO_COMMANDS = new Set([undefined, 'help', 'mcp', 'enable']);
-  if (!runtime.enabled && !INFO_COMMANDS.has(command)) {
-    throw new Error(
-      'rocky-todo 는 기본 비활성이다 — user rocky.json 에 "todo": { "enabled": true } 를 설정하거나 ROCKY_TODO_ENABLED=1 로 켠다.',
-    );
-  }
 
   const emitJson = flags.json === true;
   const board = str(flags.board) ?? inferBoardKey();
@@ -485,13 +474,6 @@ export async function runCli(): Promise<void> {
       return;
     }
 
-    case 'enable': {
-      const result = await enableTodo({ port: runtime.port, dir: runtime.dir });
-      console.log(`✓ rocky-todo 활성화됨 — ${result.url}`);
-      console.log(`  ${result.hint}`);
-      return;
-    }
-
     case 'mcp': {
       if (rest[0] === 'setup') {
         console.log(mcpSetupGuide(ctx.baseUrl));
@@ -674,7 +656,7 @@ function mcpSetupGuide(baseUrl: string): string {
 
 Claude Code:
   rocky 플러그인이 http 로 자동 등록한다 (plugin.json 의 mcpServers.rocky-todo → ${baseUrl}/mcp).
-  데몬이 안 떠 있으면 도구가 안 붙는다 — rocky-todo enable (또는 daemon start) 로 켠 뒤 /mcp 패널에서 retry.
+  데몬이 안 떠 있으면 도구가 안 붙는다 — rocky-todo daemon start 로 켠 뒤 /mcp 패널에서 retry.
   과거 수동 http 등록이 있으면 제거: claude mcp remove rocky-todo
 
 opencode (~/.config/opencode/opencode.json):

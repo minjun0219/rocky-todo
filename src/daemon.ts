@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ui from './ui/index.html';
-import { loadConfig } from '../core/rocky-config';
-import { DEFAULT_TODO_DIR, resolveTodoRuntimeConfig } from './config';
+import { resolveTodoRuntimeConfig } from './config';
+import { loadTodoConfig } from './rocky-config';
 import { createMcpFetchHandler } from './mcp';
 import { buildTodoServer } from './server';
 import { TodoStore } from './store';
@@ -39,17 +39,9 @@ async function isAlreadyRunning(port: number): Promise<boolean> {
 }
 
 export async function startDaemon(): Promise<void> {
-  // user rocky.json 만 반영 — projectRoot 를 데이터 디렉터리로 줘서 project config 를 무력화
-  const { config } = await loadConfig({ projectRoot: DEFAULT_TODO_DIR });
-  const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
-
-  // 마스터 스위치 (todo.enabled, 기본 off) — launchd 잔존 등록 등으로 실행돼도 조용히 종료
-  if (!runtime.enabled) {
-    console.log(
-      'rocky-todo 는 기본 비활성이다 — user rocky.json 에 "todo": { "enabled": true } 를 설정하거나 ROCKY_TODO_ENABLED=1 로 켠다.',
-    );
-    return;
-  }
+  // user rocky.json 의 todo 블록만 반영 — 데몬은 전역 단일 인스턴스라 project config 는 무시.
+  const { todo } = loadTodoConfig();
+  const runtime = resolveTodoRuntimeConfig(process.env, todo);
 
   if (await isAlreadyRunning(runtime.port)) {
     console.log(`rocky-todo daemon already running on port ${runtime.port} — exiting`);

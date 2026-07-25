@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.agent-cache/
+.env
+.env.local
+.env.*
+*.tsbuildinfo
+# bun build 가 outfile 미지정 시 만드는 sibling artifacts (예: bin/rocky-todo-<hash>)
+bin/rocky-todo-*
+# 로컬 전용 캐시/DB (ROCKY_TODO_DIR 가 in-tree 로 향할 때 대비)
+*.db
+*.db-*
+# 로컬 프로젝트 설정. rocky-todo.schema.json 은 추적 유지.
+rocky.json
+# Claude Code 로컬 오버라이드
+.claude/settings.local.json

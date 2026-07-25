@@ -1,0 +1,70 @@
+{
+  "name": "@minjun0219/rocky-todo",
+  "version": "0.1.0",
+  "description": "rocky-todo — a resident daemon (SQLite + React web UI + SSE) holding a shared todo / scratchpad board, exposed to agents via streamable HTTP MCP (5 todo_* / note_* tools) and a rocky-todo CLI. A companion Claude Code plugin to rocky; installing it activates the daemon (no enable switch). Archive-only with full per-actor history.",
+  "license": "MIT",
+  "author": "Minjun Kim",
+  "homepage": "https://github.com/minjun0219/rocky-todo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minjun0219/rocky-todo.git"
+  },
+  "type": "module",
+  "bin": {
+    "rocky-todo": "./bin/rocky-todo"
+  },
+  "files": [
+    "src",
+    "bin",
+    "hooks",
+    "skills",
+    ".claude-plugin",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "todo",
+    "scratchpad",
+    "daemon",
+    "claude-code",
+    "mcp",
+    "rocky",
+    "bun"
+  ],
+  "scripts": {
+    "check": "biome check .",
+    "fix": "biome check --write .",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "test": "bun test ./src ./hooks",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.json",
+    "changeset": "bunx changeset",
+    "changeset:version": "bunx changeset version && bun scripts/sync-plugin-version.ts",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,json,jsonc,md}": "biome check --write --no-errors-on-unmatched"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
+    "@minjun0219/biome-config": "2.1.0",
+    "@types/bun": "^1.1.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "typescript": "^5.4.5"
+  }
+}

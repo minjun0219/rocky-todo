@@ -1,8 +1,8 @@
 import { join } from 'node:path';
-import { loadConfig } from '../core/rocky-config';
-import { resolveTodoRuntimeConfig } from '../todo/config';
-import { buildNotifyContext, filterHumanChanges, readCursor, writeCursor } from '../todo/notify';
-import type { ChangeFeedEntry } from '../todo/store';
+import { resolveTodoRuntimeConfig } from '../src/config';
+import { buildNotifyContext, filterHumanChanges, readCursor, writeCursor } from '../src/notify';
+import { loadTodoConfig } from '../src/rocky-config';
+import type { ChangeFeedEntry } from '../src/store';
 
 /**
  * UserPromptSubmit hook: 마지막 확인 이후 호출자(사람)가 rocky-todo 보드에서 바꾼
@@ -68,16 +68,12 @@ async function run(): Promise<void> {
     return;
   }
 
-  const { config } = await loadConfig({ projectRoot: input.cwd ?? process.cwd() });
-  if (envToggle === undefined && config.todo?.watch === false) {
+  const { todo } = loadTodoConfig();
+  if (envToggle === undefined && todo?.watch === false) {
     return;
   }
 
-  const runtime = resolveTodoRuntimeConfig(process.env, config.todo);
-  // 마스터 스위치 (todo.enabled, 기본 off) — 꺼져 있으면 완전 침묵
-  if (!runtime.enabled) {
-    return;
-  }
+  const runtime = resolveTodoRuntimeConfig(process.env, todo);
   const baseUrl = `http://127.0.0.1:${runtime.port}`;
   const cursorFile = join(runtime.dir, 'hook-cursors.json');
 
