@@ -9,16 +9,29 @@ description: Use when managing the shared rocky-todo board from a session — pl
 호출자는 웹브라우저(`http://127.0.0.1:8636`)에서 실시간(SSE)으로 보고 편집한다.
 모든 변경은 누가-무엇을-언제 히스토리로 남는다.
 
+## 설치 = 활성화
+
+rocky-todo 는 rocky 의 **동반 플러그인**이다. 설치 자체가 활성화 경계라 별도 스위치
+(`todo.enabled`)가 없다. 세션에 도구가 없다면 아직 설치 안 된 것 — 다음을 안내한다
+(임의로 진행하지 말고 사용자 동의 후):
+
+```bash
+claude plugin marketplace add minjun0219/rocky        # 이미 있으면 생략
+claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies 로 자동 동반
+```
+
+같은 rocky 마켓플레이스가 rocky-todo 를 서빙하며(github source), `dependencies:["rocky"]`
+이므로 rocky 가 먼저 없으면 함께 설치된다. 설치 후 SessionStart 훅이 데몬을 기동한다 —
+첫 세션에서 MCP 가 `failed` 면 `/mcp` retry 또는 다음 세션에서 붙는다.
+
 ## 도구 게이트 (먼저 확인)
 
 - 세션에 `todo_list` / `todo_write` / `todo_status` / `note_list` / `note_write` MCP 도구가
   연결되어 있으면 그것을 쓴다 (rocky-todo 데몬의 `/mcp`).
 - MCP 도구가 없으면 CLI 로 폴백: `rocky-todo <cmd>` (Bash). CLI 는 데몬이 죽어 있으면
-  자동 기동한다. 레포에서 직접 실행할 땐 `bun run <rocky-repo>/src/todo/cli.ts <cmd>` 도 동일.
-- CLI 가 "기본 비활성" 에러를 내면 rocky-todo 가 꺼져 있는 것 — user rocky.json 에
-  `"todo": { "enabled": true }` 설정을 안내하고 멈춘다 (임의로 켜지 않는다).
-- 둘 다 실패하면(데몬 기동 실패 등) 중단하고 사용자에게 `rocky-todo daemon status` 를 안내.
-  가짜 진행을 만들지 않는다.
+  자동 기동한다. 레포에서 직접 실행할 땐 `bun run <rocky-todo-repo>/src/cli.ts <cmd>` 도 동일.
+- 도구도 CLI 도 없으면 위 "설치 = 활성화" 를 안내하고 멈춘다.
+- 데몬 기동이 실패하면 중단하고 `rocky-todo daemon status` 를 안내. 가짜 진행을 만들지 않는다.
 
 ## Todoist 와의 역할 구분
 

@@ -2,6 +2,8 @@
 
 로키(에이전트)와 호출자가 하나의 작업 보드를 공유하는 로컬 데몬. 시스템에 **단 하나**만
 떠서 Claude Code / opencode / Codex 의 모든 세션·모든 프로젝트가 같은 데이터를 본다.
+**rocky 의 동반 플러그인** — 별도 레포(`minjun0219/rocky-todo`)의 독립 플러그인이지만
+rocky 마켓플레이스가 함께 서빙한다.
 
 ```
                      ┌─ /            React 웹 UI (실시간 SSE)   ← 호출자 (브라우저)
@@ -16,20 +18,33 @@
 - **삭제 없음** — 모든 엔티티는 아카이브만 된다. 모든 변경은 히스토리(누가/무엇을/언제)로 남는다.
 - 스크래치패드 메모: 보드 소속 or 글로벌, 에이전트/호출자 모두 편집 (웹 UI 인라인 편집).
 
-## 활성화 (기본 off)
+## 설치 = 활성화
 
-상주 데몬을 띄우는 기능이라 **기본 비활성**이다. user `rocky.json` 에서 켠다:
+rocky-todo 는 **별도 스위치가 없다** — 플러그인 설치 자체가 활성화 경계다. rocky 마켓플레이스
+하나만 추가하면 rocky 와 rocky-todo 둘 다 설치할 수 있다 (rocky-todo 는 명시할 때만 깔린다):
 
-```json
-{ "todo": { "enabled": true } }
+```bash
+claude plugin marketplace add minjun0219/rocky
+claude plugin install rocky@rocky-marketplace          # rocky 본체 (todo 안 따라옴)
+claude plugin install rocky-todo@rocky-marketplace     # 공유 보드 데몬 (설치=활성화)
 ```
 
-꺼져 있으면 훅·CLI 자동 기동·데몬이 전부 침묵한다 (env `ROCKY_TODO_ENABLED` 가 우선).
+`rocky-todo` 는 `dependencies:["rocky"]` 를 선언하므로 rocky 가 자동 동반된다 (같은 마켓 안이라
+해석이 깔끔). 런타임에 끄려면 `claude plugin disable rocky-todo`.
+
+설치되면 플러그인이 두 가지를 배선한다:
+- **`mcpServers` (http)** — 데몬의 `/mcp` (streamable HTTP, 도구 5개)를 세션에 등록. 수동
+  `claude mcp add` 불필요.
+- **hooks** — `SessionStart` 훅이 데몬을 기동하고, `UserPromptSubmit` 훅이 보드의 사람 변경을 주입.
+
+> **첫 세션 순서 주의**: SessionStart 훅의 데몬 기동과 http MCP 초기화 순서는 보장되지 않는다.
+> 첫 세션에서 MCP 가 `failed` 로 뜨면 `/mcp` 패널에서 retry 하거나 다음 세션이면 붙는다.
+> 상시 상주(`daemon install`)면 이 창이 사라진다.
 
 ## 데몬 기동
 
-활성화 후에는 CLI 가 필요 시 자동 기동하므로 별도 설치 없이 동작한다. 상시 상주(로그인 시 자동 기동)를
-원하면:
+설치 후엔 SessionStart 훅이 세션 시작 때 데몬을 자동 기동한다 (없으면 detached spawn, fail-open).
+CLI 도 필요 시 온디맨드로 자동 기동한다. 로그인 시 상시 상주를 원하면:
 
 ```bash
 rocky-todo daemon install     # launchd 등록 (KeepAlive) — macOS
@@ -37,19 +52,14 @@ rocky-todo daemon status      # 기동 여부 + launchd 상태
 rocky-todo daemon uninstall
 ```
 
-레포에서 직접 실행: `bun run src/todo/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
+레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
 
 ## 호스트별 MCP 등록
 
-데몬의 MCP 엔드포인트는 `http://127.0.0.1:8636/mcp` (streamable HTTP, 도구 5개:
-`todo_list` / `todo_write` / `todo_status` / `note_list` / `note_write`).
-`rocky-todo mcp setup` 이 아래 스니펫을 출력한다.
-
-**Claude Code** (user 스코프 — 모든 프로젝트 공유):
-
-```bash
-claude mcp add --scope user --transport http rocky-todo http://127.0.0.1:8636/mcp
-```
+Claude Code 에서는 플러그인 설치로 자동 등록되므로 수동 작업이 필요 없다. **opencode / Codex** 는
+플러그인 훅을 돌리지 않으므로 수동 등록한다. 데몬의 MCP 엔드포인트는 `http://127.0.0.1:8636/mcp`
+(streamable HTTP, 도구 5개: `todo_list` / `todo_write` / `todo_status` / `note_list` / `note_write`).
+`rocky-todo mcp setup` 이 스니펫을 출력한다.
 
 **opencode** (`~/.config/opencode/opencode.json`):
 
@@ -65,9 +75,7 @@ url = "http://127.0.0.1:8636/mcp"
 ```
 
 Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash 로 쓰면 된다 — 표면은 동일하다.
-
-> 등록은 세션 시작 시 데몬이 떠 있어야 연결된다 — 상시 사용이면 `daemon install` 권장.
-> plugin.json 에는 넣지 않는다 (데몬 lifecycle 은 플러그인과 독립).
+어느 호스트든 세션 시작 시 데몬이 떠 있어야 도구가 붙는다 — 상시 사용이면 `daemon install` 권장.
 
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
@@ -76,7 +84,7 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 이후로 읽어 **호출자(사람)의 변경만** 요약해 컨텍스트로 주입한다. 웹에서 todo 를 추가하고
 아무 말이나 걸면 에이전트가 그 변경을 이미 알고 있는 구조다.
 
-- 결정론적 (LLM 미사용), fail-open — 데몬이 꺼져 있으면 조용히 no-op
+- 결정론적 (LLM 미사용), fail-open — 데몬이 꺼져 있으면 조용히 no-op (훅이 데몬을 기동하진 않는다)
 - 에이전트 자신의 변경(claude-code/codex/opencode)은 걸러서 자기 반향 없음
 - 끄기: `rocky.json` `todo.watch: false` 또는 env `ROCKY_TODO_WATCH=0`
 
@@ -121,17 +129,18 @@ rocky-todo tailscale on|off|status
 
 ## 설정
 
-`rocky.json` (user 레벨 권장 — 데몬은 project rocky.json 을 보지 않는다):
+`rocky.json` (user 레벨 권장 — 데몬은 project rocky.json 을 보지 않는다). **`enabled` 필드는
+없다** (설치=활성화):
 
 ```json
-{ "todo": { "enabled": true, "port": 8636, "dir": "~/.config/rocky/todo" } }
+{ "todo": { "port": 8636, "dir": "~/.config/rocky/todo" } }
 ```
 
 | env | 의미 |
 | --- | --- |
-| `ROCKY_TODO_ENABLED` | 마스터 스위치 강제 (기본 off — `todo.enabled` 보다 우선) |
 | `ROCKY_TODO_PORT` | 데몬 포트 (기본 8636 — 키패드 "todo") |
 | `ROCKY_TODO_DIR` | 데이터 디렉터리 (todo.db / daemon.pid / daemon.log / hook-cursors.json) |
 | `ROCKY_TODO_ACTOR` | CLI actor 이름 강제 |
 | `ROCKY_TODO_WATCH` | 보드 변경 주입 훅 on/off (기본 on) |
 | `ROCKY_TODO_EXPOSE` | 노출 채널 강제 (`lan,tailscale-serve` / `off`) — 설정 시 config 무시 |
+| `ROCKY_CONFIG` | user rocky.json 경로 override (기본 `~/.config/rocky/rocky.json`) |
