@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildContext, daemonHealth, request } from './client';
+import { buildContext, daemonHealth, request, stopDaemon } from './client';
 
 /** 지정한 (status, body) 를 /api/health 로 돌려주는 fetch 를 임시 설치하고 fn 을 실행한다. */
 async function withHealthResponse(
@@ -56,6 +56,23 @@ describe('client', () => {
   test('daemonHealth 는 비-JSON 응답에 null (throw 하지 않는다)', async () => {
     await withHealthResponse(200, 'not json', async () => {
       expect(await daemonHealth('http://127.0.0.1:8636')).toBeNull();
+    });
+  });
+
+  test('stopDaemon 은 이미 죽은 pid 여도 포트가 풀렸으면 성공으로 본다', async () => {
+    // health 확인 직후 데몬이 죽는 레이스 — SIGTERM 은 ESRCH 로 실패하지만 목적(종료)은
+    // 달성된 상태다. 여기서 false 를 돌려주면 훅이 재기동을 건너뛰어 데몬 없는 세션이 된다.
+    const proc = Bun.spawn({
+      cmd: [process.execPath, '-e', 'setTimeout(() => {}, 60000)'],
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    const deadPid = proc.pid;
+    proc.kill();
+    await proc.exited;
+
+    const ctx = buildContext({ port: 8636, dir: '/tmp/rocky-todo-absent', actor: 'test' });
+    await withHealthResponse(503, {}, async () => {
+      expect(await stopDaemon(ctx, deadPid)).toBe(true);
     });
   });
 

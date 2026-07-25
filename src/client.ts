@@ -75,8 +75,10 @@ export async function stopDaemon(ctx: CliContext, pid?: number): Promise<boolean
   try {
     process.kill(target, 'SIGTERM');
   } catch {
-    // 이미 죽었거나 (ESRCH) 남의 프로세스 (EPERM) — 어느 쪽이든 우리가 내릴 수 없다.
-    return false;
+    // ESRCH(이미 죽음)와 EPERM(남의 프로세스)을 errno 로 나누지 않고 포트로 판정한다 —
+    // 이미 죽었다면 목적은 달성된 것이고(health 확인 직후 죽는 레이스), 남의 프로세스면
+    // health 가 계속 응답하므로 자연히 false 가 된다.
+    return (await daemonHealth(ctx.baseUrl)) === null;
   }
   for (let i = 0; i < 15; i++) {
     await Bun.sleep(200);

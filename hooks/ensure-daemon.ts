@@ -1,4 +1,4 @@
-import { version as PACKAGE_VERSION } from '../package.json';
+import pkg from '../package.json' with { type: 'json' };
 import {
   buildContext,
   type CliContext,
@@ -49,7 +49,7 @@ export interface EnsureDeps {
 }
 
 const DEFAULT_DEPS: EnsureDeps = {
-  version: PACKAGE_VERSION,
+  version: pkg.version,
   checkHealth: daemonHealth,
   spawn: ensureDaemon,
   stop: (ctx, health) => stopDaemon(ctx, health.pid),
