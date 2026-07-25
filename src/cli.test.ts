@@ -2,7 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { formatTodoLine, noteRefPath, parseFlags, todoRefPath, withBoard } from './cli';
+import {
+  formatTodoLine,
+  noteRefPath,
+  parseFlags,
+  resolveHistoryEntity,
+  todoRefPath,
+  withBoard,
+} from './cli';
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
@@ -166,6 +173,24 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
     // "#1" 이 fragment 로 잘려나가 서버는 `/api/todos/` 로 받는다 — 404.
     const res = await fetch(`${ctx.baseUrl}${withBoard('/api/todos/#1', 'rocky')}`);
     expect(res.status).toBe(404);
+  });
+
+  // Finding 1 회귀 테스트: todo 와 전역 note 는 각자 1부터 번호를 매기므로, 같은 보드에
+  // 번호가 겹치는 todo #3 과 전역 note #3 이 동시에 존재할 수 있다. `--global` 을 준
+  // `history` 조회가 todo 조회를 먼저 시도하면 그게 먼저 성공해 사용자가 명시적으로 요청한
+  // 전역 note 대신 엉뚱한 todo 의 히스토리를 조용히 돌려준다 — resolveHistoryEntity 가
+  // global 이면 todo 조회를 아예 건너뛰는지 실제 fetch 왕복으로 검증한다.
+  test('history --global 은 같은 번호의 board todo 가 있어도 전역 note 를 가리킨다', async () => {
+    for (let i = 1; i <= 3; i++) {
+      store.createTodo({ board: 'rocky', title: `todo ${i}` }, 'tester');
+    }
+    for (let i = 1; i <= 3; i++) {
+      store.createNote({ title: `전역 메모 ${i}` }, 'tester');
+    }
+
+    const detail = await resolveHistoryEntity(ctx, '3', 'rocky', true);
+    expect(detail.todo).toBeUndefined();
+    expect(detail.note?.title).toBe('전역 메모 3');
   });
 });
 

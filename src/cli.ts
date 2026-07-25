@@ -302,6 +302,37 @@ export function noteRefPath(id: string, suffix: string, board: string, global: b
   return global ? path : withBoard(path, board);
 }
 
+/**
+ * `history` 커맨드용 엔티티 조회 — REF 만으로 대상이 todo 인지 note 인지 모른다.
+ * `--global` 이 서 있으면 대상은 무조건 전역 note(`board_id IS NULL`) 다 — global note 는
+ * todo 일 수 없으므로 todo 조회를 아예 시도하지 않는다. todo 와 (보드 소속) note 와 전역
+ * note 는 각각 독립적으로 1부터 번호를 매기므로, 여기서 todo 조회를 먼저 시도하면 마침 같은
+ * 번호의 board todo 가 있을 때 그게 먼저 성공해 사용자가 명시적으로 요청한 전역 note 대신
+ * 엉뚱한 TODO 의 히스토리를 조용히 돌려준다(finding 1). `--global` 이 없을 때만 기존
+ * todo→note fallback 을 쓴다.
+ */
+export async function resolveHistoryEntity(
+  ctx: CliContext,
+  id: string,
+  board: string,
+  global: boolean,
+): Promise<{ todo?: TodoView; note?: NoteView }> {
+  if (global) {
+    return request<{ todo?: TodoView; note?: NoteView }>(
+      ctx,
+      'GET',
+      noteRefPath(id, '', board, true),
+    );
+  }
+  return request<{ todo?: TodoView; note?: NoteView }>(
+    ctx,
+    'GET',
+    todoRefPath(id, '', board),
+  ).catch(() =>
+    request<{ todo?: TodoView; note?: NoteView }>(ctx, 'GET', noteRefPath(id, '', board, false)),
+  );
+}
+
 function str(flag: string | boolean | string[] | undefined): string | undefined {
   return typeof flag === 'string' ? flag : undefined;
 }
@@ -481,16 +512,7 @@ export async function runCli(): Promise<void> {
       }
       const limit = str(flags.limit) ?? '20';
       // prefix 로 들어와도 detail 조회로 전체 id 를 확정한 뒤 히스토리를 가져온다
-      const detail: { todo?: TodoView; note?: NoteView } = await request<{
-        todo?: TodoView;
-        note?: NoteView;
-      }>(ctx, 'GET', todoRefPath(id, '', board)).catch(() =>
-        request<{ todo?: TodoView; note?: NoteView }>(
-          ctx,
-          'GET',
-          noteRefPath(id, '', board, flags.global === true),
-        ),
-      );
+      const detail = await resolveHistoryEntity(ctx, id, board, flags.global === true);
       const entityId = detail.todo?.id ?? detail.note?.id ?? id;
       const history = await request<HistoryEntry[]>(
         ctx,
