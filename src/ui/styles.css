@@ -813,7 +813,8 @@ textarea {
 
 /* ── 인라인 편집·생성 (제목 수정 / 보드·섹션 생성) ───────────────────────── */
 
-/* 제목은 버튼이지만 h2 처럼 보여야 한다 — 클릭 가능하다는 힌트만 hover 로 준다. */
+/* 제목은 h2(노트)와 button(todo 편집) 양쪽에 쓰인다 — 공통 타이포만 여기 두고
+   hover/커서 같은 클릭 affordance 는 button 에만 건다 (아래 button.drawer-title). */
 .drawer-title {
   display: block;
   width: 100%;
@@ -826,10 +827,13 @@ textarea {
   font-weight: 700;
   margin: 4px 0 10px;
   line-height: 1.35;
+}
+
+button.drawer-title {
   cursor: text;
 }
 
-.drawer-title:hover {
+button.drawer-title:hover {
   background: var(--surface);
   box-shadow: 0 0 0 4px var(--surface);
   border-radius: 3px;

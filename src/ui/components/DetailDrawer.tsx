@@ -121,7 +121,9 @@ function TodoDetail() {
           onBlur={commitTitle}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
-              commitTitle();
+              // 커밋은 onBlur 한 곳에서만 — 여기서 직접 부르면 뒤따르는 blur 와 겹쳐
+              // 같은 변경이 두 번 PATCH 되고 히스토리에도 두 줄 남는다.
+              e.currentTarget.blur();
             } else if (e.key === 'Escape') {
               // 드로어의 window keydown 리스너까지 올라가면 편집 취소가 아니라 드로어가
               // 통째로 닫힌다 — 안내한 "Esc 취소"와 다른 동작이 되므로 여기서 끊는다.
