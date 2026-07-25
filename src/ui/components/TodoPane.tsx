@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Todo } from '../../store';
+import type { TodoView } from '../../server';
 import { useUiStore } from '../store';
 import { TodoItem } from './TodoItem';
 
@@ -16,8 +16,8 @@ export function TodoPane() {
   const [draft, setDraft] = useState('');
 
   const byId = new Map(todos.map((t) => [t.id, t]));
-  const childrenOf = new Map<string, Todo[]>();
-  const roots: Todo[] = [];
+  const childrenOf = new Map<string, TodoView[]>();
+  const roots: TodoView[] = [];
   for (const todo of todos) {
     if (todo.parentId && byId.has(todo.parentId)) {
       const siblings = childrenOf.get(todo.parentId) ?? [];
@@ -28,7 +28,7 @@ export function TodoPane() {
     }
   }
 
-  const renderTree = (items: Todo[], depth: number): React.ReactNode =>
+  const renderTree = (items: TodoView[], depth: number): React.ReactNode =>
     items.map((todo) => (
       <div key={todo.id}>
         <TodoItem todo={todo} depth={depth} />
@@ -37,7 +37,7 @@ export function TodoPane() {
     ));
 
   // 그룹핑 — 보드 뷰: 섹션별 / 전체 뷰: 보드별
-  const groups: { key: string; title: string; items: Todo[] }[] = [];
+  const groups: { key: string; title: string; items: TodoView[] }[] = [];
   if (selected === 'all') {
     const boardTitle = new Map(boards.map((b) => [b.id, b.title]));
     for (const board of boards) {

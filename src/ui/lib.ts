@@ -89,6 +89,41 @@ export function mdTokens(text: string): MdToken[] {
   return tokens;
 }
 
+/**
+ * 참조 문자열을 클립보드에 복사한다.
+ *
+ * `navigator.clipboard` 는 보안 컨텍스트(HTTPS·루프백)에서만 동작한다 — LAN 평문
+ * HTTP(`192.168.x.x:8636`)로 접속하면 없다. 그 경우 execCommand 로 폴백하고,
+ * 그마저 실패하면 false 를 돌려줘 호출자가 수동 복사 안내를 띄우게 한다.
+ */
+export async function copyRef(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // 권한 거부 — 아래 폴백으로 내려간다.
+    }
+  }
+  if (typeof document === 'undefined' || !document.execCommand) {
+    return false;
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(area);
+  }
+}
+
 /** 링크 URL → 짧은 출처 라벨 (github.com/owner/repo#12, todoist, …). */
 export function linkLabel(url: string): string {
   try {

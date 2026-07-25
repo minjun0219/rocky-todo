@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Board, HistoryEntry, Note, Section, StatusAction, Todo } from '../store';
+import type { NoteView, TodoView } from '../server';
+import type { Board, HistoryEntry, Section, StatusAction } from '../store';
 
 /**
  * 웹 UI 상태 — zustand 단일 스토어.
@@ -15,16 +16,16 @@ export type BoardSelection = 'all' | string;
 
 interface DetailState {
   kind: 'todo' | 'note';
-  todo?: Todo;
-  note?: Note;
+  todo?: TodoView;
+  note?: NoteView;
   history: HistoryEntry[];
 }
 
 interface UiState {
   boards: Board[];
-  todos: Todo[];
+  todos: TodoView[];
   sections: Section[];
-  notes: Note[];
+  notes: NoteView[];
   selected: BoardSelection;
   showArchived: boolean;
   actor: string;
@@ -102,8 +103,8 @@ export const useUiStore = create<UiState>((set, get) => ({
 
     const [boards, todos, notes, sections] = await Promise.all([
       api<Board[]>('/api/boards', actor),
-      api<Todo[]>(`/api/todos${qs}`, actor),
-      api<Note[]>(`/api/notes${qs}`, actor),
+      api<TodoView[]>(`/api/todos${qs}`, actor),
+      api<NoteView[]>(`/api/notes${qs}`, actor),
       selected === 'all'
         ? Promise.resolve([] as Section[])
         : api<Section[]>(`/api/sections?board=${encodeURIComponent(selected)}`, actor),
@@ -120,13 +121,13 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   openTodoDetail: async (id) => {
     const { actor } = get();
-    const body = await api<{ todo: Todo; history: HistoryEntry[] }>(`/api/todos/${id}`, actor);
+    const body = await api<{ todo: TodoView; history: HistoryEntry[] }>(`/api/todos/${id}`, actor);
     set({ detail: { kind: 'todo', todo: body.todo, history: body.history } });
   },
 
   openNoteDetail: async (id) => {
     const { actor } = get();
-    const body = await api<{ note: Note; history: HistoryEntry[] }>(`/api/notes/${id}`, actor);
+    const body = await api<{ note: NoteView; history: HistoryEntry[] }>(`/api/notes/${id}`, actor);
     set({ detail: { kind: 'note', note: body.note, history: body.history } });
   },
 

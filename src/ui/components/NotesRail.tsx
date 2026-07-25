@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Note } from '../../store';
+import type { NoteView } from '../../server';
 import { formatElapsed } from '../lib';
 import { useUiStore } from '../store';
 
@@ -34,7 +34,7 @@ export function NotesRail() {
   );
 }
 
-function NoteCard({ note }: { note: Note }) {
+function NoteCard({ note }: { note: NoteView }) {
   const saveNote = useUiStore((s) => s.saveNote);
   const archiveNote = useUiStore((s) => s.archiveNote);
   const openNoteDetail = useUiStore((s) => s.openNoteDetail);
