@@ -294,6 +294,39 @@ describe('number / ref 참조 문법', () => {
     });
     expect(result.isError).toBe(true);
   });
+
+  // finding C: todos 는 board context 가 없으면(맨숫자에 전역 번호 공간이 없어) 우연히
+  // 에러가 났지만, notes 는 board 가 안 풀리면 currentBoardId 가 undefined 로 폴백해
+  // 맨숫자를 "board 를 아예 안 준 것"처럼 전역 메모 번호 공간에서 조용히 풀어버렸다 —
+  // typo 하나로 완전히 다른(전역) 행을 돌려주는 wrong-row 위험. board 를 줬는데 안 풀리면
+  // 무조건 에러여야 한다.
+  test('note_list 에 알 수 없는 board key 를 주면 전역 메모로 조용히 폴백하지 않고 에러다', async () => {
+    const global = resultJson(
+      await client.callTool({
+        name: 'note_write',
+        arguments: { title: '전역 메모', actor: 'tester' },
+      }),
+    ) as { number: number };
+    expect(global.number).toBe(1);
+
+    const result = await client.callTool({
+      name: 'note_list',
+      arguments: { id: `#${global.number}`, board: 'typo-board' },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  test('note_write 에 알 수 없는 board key 를 주면 전역 메모를 조용히 수정하지 않고 에러다', async () => {
+    await client.callTool({
+      name: 'note_write',
+      arguments: { title: '전역 메모', actor: 'tester' },
+    });
+    const result = await client.callTool({
+      name: 'note_write',
+      arguments: { id: '#1', board: 'typo-board', content: '엉뚱하게 수정', actor: 'tester' },
+    });
+    expect(result.isError).toBe(true);
+  });
 });
 
 describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {

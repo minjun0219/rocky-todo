@@ -29,6 +29,25 @@ const actorSchema = z
 
 const linkSchema = z.object({ url: z.string(), title: z.string().optional() });
 
+/**
+ * `board` 인자를 currentBoardId 로 바꾼다. `board` 가 아예 안 왔으면 undefined(전역/현재
+ * 컨텍스트 없음) 를 그대로 돌려주지만, `board` 가 왔는데 알려진 보드로 안 풀리면(오타 등)
+ * 조용히 undefined 로 폴백하지 않고 에러를 던진다. 폴백을 허용하면 todos 는 우연히
+ * "board context required" 로 에러가 나지만(맨숫자가 전역 번호 공간이 없어서), notes 는
+ * 전역 메모 번호 공간으로 조용히 재해석돼(`note_list { id: "#3", board: "typo-board" }`
+ * 가 board 없이 준 것처럼 GLOBAL note #3 을 반환) 엉뚱한 행을 조용히 돌려주게 된다.
+ */
+function resolveBoardId(store: TodoStore, board: string | undefined): string | undefined {
+  if (!board) {
+    return undefined;
+  }
+  const boardId = store.boardIdOf(board);
+  if (!boardId) {
+    throw new Error(`unknown board: ${board}`);
+  }
+  return boardId;
+}
+
 /** 5개 도구가 등록된 McpServer 를 만든다 — transport 바인딩은 호출자 몫. */
 export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
   const { store } = options;
@@ -61,7 +80,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         return jsonResult({ boards: store.listBoards(includeArchived ?? false) });
       }
       if (id) {
-        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        const currentBoardId = resolveBoardId(store, board);
         const todo = store.getTodo(id, currentBoardId);
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
@@ -111,7 +130,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     async ({ id, board, title, actor, ...rest }) => {
       const who = actor ?? 'agent';
       if (id) {
-        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        const currentBoardId = resolveBoardId(store, board);
         return jsonResult(
           withRef(store, store.updateTodo(id, { title, ...rest }, who, currentBoardId)),
         );
@@ -136,7 +155,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       },
     },
     async ({ id, board, action, actor }) => {
-      const currentBoardId = board ? store.boardIdOf(board) : undefined;
+      const currentBoardId = resolveBoardId(store, board);
       return jsonResult(
         withRef(
           store,
@@ -170,7 +189,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     },
     async ({ board, global: isGlobal, id, includeArchived }) => {
       if (id) {
-        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        const currentBoardId = resolveBoardId(store, board);
         const note = store.getNote(id, currentBoardId);
         if (!note) {
           throw new Error(`note not found: ${id}`);
@@ -220,7 +239,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         }
         return jsonResult(withRef(store, store.createNote({ board, title, content }, who)));
       }
-      const currentBoardId = board ? store.boardIdOf(board) : undefined;
+      const currentBoardId = resolveBoardId(store, board);
       if (mode === 'archive') {
         return jsonResult(withRef(store, store.archiveNote(id, who, currentBoardId)));
       }

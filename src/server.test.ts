@@ -270,6 +270,21 @@ describe('number / ref 직렬화', () => {
     const body = (await res.json()) as { todo: { ref: string } };
     expect(body.todo.ref).toBe('rocky#1');
   });
+
+  // finding C: `?board=` 가 알려지지 않은 키로 안 풀리면(오타 등) currentBoardIdOf 가
+  // undefined 로 조용히 폴백해선 안 된다 — todos 는 우연히(board context required) 에러가
+  // 났지만, notes 는 폴백이 "board 를 아예 안 준 것"과 같아져 맨숫자가 전역 메모 번호
+  // 공간으로 조용히 풀렸다. board 를 줬는데 못 찾으면 무조건 4xx.
+  test('?board= 가 알 수 없는 키면 note 참조가 전역 메모로 조용히 풀리지 않고 에러다', async () => {
+    const created = (await (
+      await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '전역 메모' }) })
+    ).json()) as { number: number };
+    expect(created.number).toBe(1);
+
+    const res = await req(`/api/notes/${created.number}?board=typo-board`);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
 });
 
 describe('SSE', () => {

@@ -66,10 +66,24 @@ function toHttpError(error: unknown): Response {
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
 
-  /** `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 없으면 undefined. */
+  /**
+   * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
+   * 없으면 undefined(전역/현재 컨텍스트 없음). 쿼리가 있는데 알려진 보드로 안 풀리면(오타
+   * 등) 조용히 undefined 로 폴백하지 않고 에러를 던진다(→ catch 에서 toHttpError 로 400) —
+   * 폴백을 허용하면 todos 는 우연히 "board context required" 로 에러가 나지만, notes 는
+   * 전역 메모 번호 공간으로 조용히 재해석돼 엉뚱한 행을 돌려주게 된다(MCP 쪽과 동일한
+   * wrong-row 위험 — `src/mcp.ts` 의 `resolveBoardId` 참고).
+   */
   const currentBoardIdOf = (url: URL): string | undefined => {
     const key = url.searchParams.get('board');
-    return key ? store.boardIdOf(key) : undefined;
+    if (!key) {
+      return undefined;
+    }
+    const boardId = store.boardIdOf(key);
+    if (!boardId) {
+      throw new Error(`unknown board: ${key}`);
+    }
+    return boardId;
   };
 
   // ref 직렬화(withRef)는 './refs' 공유 모듈로 옮겼다 — MCP 도구도 같은 로직을 쓴다
