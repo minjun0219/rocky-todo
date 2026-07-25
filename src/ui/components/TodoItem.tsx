@@ -55,6 +55,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
         className="todo-ref"
         onClick={() => void handleCopyRef()}
         title={copied ? '복사됨' : `${todo.ref} 복사`}
+        aria-label={copied ? '복사됨' : `${todo.ref} 복사`}
       >
         {copied ? '✓' : `#${todo.number}`}
       </button>
