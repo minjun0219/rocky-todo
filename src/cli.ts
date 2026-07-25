@@ -243,7 +243,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] · board ls · board add KEY [제목]
+  rocky-todo history REF [--limit N] [--global] · board ls · board add KEY [제목]
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -462,7 +462,7 @@ export async function runCli(): Promise<void> {
     case 'history': {
       const id = rest[0];
       if (!id) {
-        throw new Error('usage: rocky-todo history REF [--limit N]');
+        throw new Error('usage: rocky-todo history REF [--limit N] [--global]');
       }
       const limit = str(flags.limit) ?? '20';
       // prefix 로 들어와도 detail 조회로 전체 id 를 확정한 뒤 히스토리를 가져온다
@@ -473,7 +473,7 @@ export async function runCli(): Promise<void> {
         request<{ todo?: TodoView; note?: NoteView }>(
           ctx,
           'GET',
-          withBoard(`/api/notes/${id}`, board),
+          noteRefPath(id, '', board, flags.global === true),
         ),
       );
       const entityId = detail.todo?.id ?? detail.note?.id ?? id;

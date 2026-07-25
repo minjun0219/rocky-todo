@@ -68,6 +68,18 @@ describe('noteRefPath', () => {
     expect(noteRefPath('3', '', 'rocky', false)).toBe('/api/notes/3?board=rocky');
     expect(noteRefPath('3', '/archive', 'rocky', false)).toBe('/api/notes/3/archive?board=rocky');
   });
+
+  // history 명령이 note 폴백 시 noteRefPath 를 사용하는지 검증
+  test('history note-fallback uses noteRefPath for correct scoping', () => {
+    // --global 이면 전역 메모 공간으로 풀려야 한다
+    const globalPath = noteRefPath('3', '', 'rocky', true);
+    expect(globalPath).toBe('/api/notes/3');
+    expect(globalPath).not.toContain('board=');
+
+    // --global 없으면 보드 컨텍스트를 실어 보낸다
+    const boardPath = noteRefPath('3', '', 'rocky', false);
+    expect(boardPath).toContain('board=rocky');
+  });
 });
 
 describe('formatTodoLine', () => {
