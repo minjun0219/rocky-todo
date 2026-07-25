@@ -1,5 +1,6 @@
 import pkg from '../package.json' with { type: 'json' };
-import type { ListTodosFilter, Note, StatusAction, Todo, TodoStore } from './store';
+import { withRef } from './refs';
+import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 
 /**
  * rocky-todo REST + SSE 표면 — CLI / 웹 UI 가 공유한다.
@@ -13,16 +14,9 @@ export interface TodoServerOptions {
   store: TodoStore;
 }
 
-/** 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)를 얹은 형태. */
-export interface TodoView extends Todo {
-  /** `rocky#12` — 보드 접두사를 포함한 완전 참조. */
-  ref: string;
-}
-
-/** 응답 전용 note. 글로벌 메모는 보드 접두사가 없어 `#3` 이 된다. */
-export interface NoteView extends Note {
-  ref: string;
-}
+// TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
+// CLI(`import type { NoteView, TodoView } from './server'`) 등 기존 import 경로를 보존한다.
+export type { NoteView, TodoView } from './refs';
 
 export interface TodoServer {
   fetch: (req: Request) => Promise<Response>;
@@ -78,31 +72,10 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
     return key ? store.boardIdOf(key) : undefined;
   };
 
-  const refOf = (boardId: string | undefined, number: number): string => {
-    if (!boardId) {
-      return `#${number}`;
-    }
-    const key = store.boardKeyOf(boardId);
-    if (!key) {
-      // boardId 는 있는데 boardKeyOf 가 빈 문자열이면 board FK 가 깨진 상태다.
-      // 조용히 "#12" 같은 위조 글로벌 참조를 만들면 다른(진짜 글로벌) 엔티티를
-      // 가리키는 것과 구분이 안 돼 사고를 부른다 — 명시적으로 실패시킨다
-      // (호출자는 아래 catch → toHttpError 경유로 400 을 받는다).
-      throw new Error(`cannot build ref: board not found for boardId ${boardId}`);
-    }
-    return `${key}#${number}`;
-  };
-
-  /**
-   * 응답용 직렬화 — 저장 모델에 ref 를 얹는다.
-   * 오버로드 시그니처로 반환형을 `TodoView`/`NoteView` 에 고정한다 — 구현부를
-   * 제네릭으로 느슨하게 두면 그 두 인터페이스가 실제로 강제되지 않아 드리프트할 수 있다.
-   */
-  function withRef(entity: Todo): TodoView;
-  function withRef(entity: Note): NoteView;
-  function withRef(entity: Todo | Note): TodoView | NoteView {
-    return { ...entity, ref: refOf(entity.boardId, entity.number) };
-  }
+  // ref 직렬화(withRef)는 './refs' 공유 모듈로 옮겼다 — MCP 도구도 같은 로직을 쓴다
+  // (finding: MCP 응답이 number/ref 를 안 실어 REST 와 계약이 갈라졌던 문제).
+  // boardId 가 있는데 board 를 못 찾으면 refs.ts 의 refOf 가 던진다 — 아래 catch →
+  // toHttpError 경유로 400 이 된다 (조용히 위조 글로벌 참조를 만들지 않기 위함).
 
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -162,7 +135,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           label: url.searchParams.get('label') ?? undefined,
           includeArchived: url.searchParams.get('includeArchived') === 'true',
         };
-        return json(store.listTodos(filter).map((todo) => withRef(todo)));
+        return json(store.listTodos(filter).map((todo) => withRef(store, todo)));
       }
       if (method === 'POST' && path === '/api/todos') {
         const body = await readBody(req);
@@ -186,7 +159,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(withRef(todo), 201);
+        return json(withRef(store, todo), 201);
       }
 
       const todoDetail = path.match(/^\/api\/todos\/([^/]+)$/);
@@ -198,11 +171,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           if (!todo) {
             return errorResponse(`todo not found: ${ref}`, 404);
           }
-          return json({ todo: withRef(todo), history: store.listHistory({ entityId: todo.id }) });
+          return json({
+            todo: withRef(store, todo),
+            history: store.listHistory({ entityId: todo.id }),
+          });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(withRef(store.updateTodo(ref, body as never, actor, currentBoardId)));
+          return json(withRef(store, store.updateTodo(ref, body as never, actor, currentBoardId)));
         }
       }
 
@@ -216,7 +192,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           return errorResponse(`invalid action: ${String(action)}`, 400);
         }
         return json(
-          withRef(store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
+          withRef(store, store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
         );
       }
 
@@ -229,7 +205,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
               global: url.searchParams.get('global') === 'true',
               includeArchived: url.searchParams.get('includeArchived') === 'true',
             })
-            .map((note) => withRef(note)),
+            .map((note) => withRef(store, note)),
         );
       }
       if (method === 'POST' && path === '/api/notes') {
@@ -245,7 +221,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(withRef(note), 201);
+        return json(withRef(store, note), 201);
       }
 
       const noteDetail = path.match(/^\/api\/notes\/([^/]+)$/);
@@ -257,11 +233,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           if (!note) {
             return errorResponse(`note not found: ${ref}`, 404);
           }
-          return json({ note: withRef(note), history: store.listHistory({ entityId: note.id }) });
+          return json({
+            note: withRef(store, note),
+            history: store.listHistory({ entityId: note.id }),
+          });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(withRef(store.updateNote(ref, body as never, actor, currentBoardId)));
+          return json(withRef(store, store.updateNote(ref, body as never, actor, currentBoardId)));
         }
       }
 
@@ -271,6 +250,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         const currentBoardId = currentBoardIdOf(url);
         return json(
           withRef(
+            store,
             noteArchive[2] === 'archive'
               ? store.archiveNote(ref, actor, currentBoardId)
               : store.unarchiveNote(ref, actor, currentBoardId),

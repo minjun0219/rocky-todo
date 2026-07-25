@@ -281,6 +281,91 @@ describe('number / ref 참조 문법', () => {
   });
 });
 
+describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
+  // 스펙: REST 와 MCP 모두 응답에 number 뿐 아니라 ref 를 실어야 한다. 고쳐지기 전엔
+  // mcp.ts 가 store 모델을 그대로 반환해 서로 다른 보드의 todo 가 둘 다 `number: 1` 로만
+  // 보이고 boardId(랜덤 id) 로만 구분 가능했다 — #N 으로 말하라고 지시받은 에이전트가
+  // `rocky#1` 을 만들어낼 방법이 없었다.
+  test('todo_write 응답에 ref 필드가 실린다', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: 'ref 확인', actor: 'tester' },
+      }),
+    ) as { ref: string };
+    expect(created.ref).toBe('rocky#1');
+  });
+
+  test('두 보드의 항목이 같은 number 를 가져도 ref 로 구분된다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: 'rocky 1번', actor: 'tester' },
+    });
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'other', title: 'other 1번', actor: 'tester' },
+    });
+
+    const rockyList = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'rocky' } }),
+    ) as { todos: { number: number; ref: string }[] };
+    const otherList = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'other' } }),
+    ) as { todos: { number: number; ref: string }[] };
+
+    expect(rockyList.todos[0]?.number).toBe(1);
+    expect(otherList.todos[0]?.number).toBe(1);
+    expect(rockyList.todos[0]?.ref).toBe('rocky#1');
+    expect(otherList.todos[0]?.ref).toBe('other#1');
+    expect(rockyList.todos[0]?.ref).not.toBe(otherList.todos[0]?.ref);
+  });
+
+  test('todo_list 상세 조회 / todo_status 응답에도 ref 가 실린다', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '상태 ref 확인', actor: 'tester' },
+      }),
+    ) as { id: string };
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { todo: { ref: string } };
+    expect(detail.todo.ref).toBe('rocky#1');
+
+    const status = resultJson(
+      await client.callTool({
+        name: 'todo_status',
+        arguments: { id: created.id, action: 'start', actor: 'tester' },
+      }),
+    ) as { ref: string };
+    expect(status.ref).toBe('rocky#1');
+  });
+
+  test('보드 소속 메모는 rocky#1, 글로벌 메모는 #1 로 ref 가 구분된다', async () => {
+    const boardNote = resultJson(
+      await client.callTool({
+        name: 'note_write',
+        arguments: { board: 'rocky', title: '보드 메모', actor: 'tester' },
+      }),
+    ) as { ref: string };
+    expect(boardNote.ref).toBe('rocky#1');
+
+    const globalNote = resultJson(
+      await client.callTool({
+        name: 'note_write',
+        arguments: { title: '글로벌 메모', actor: 'tester' },
+      }),
+    ) as { ref: string };
+    expect(globalNote.ref).toBe('#1');
+
+    const list = resultJson(
+      await client.callTool({ name: 'note_list', arguments: { board: 'rocky' } }),
+    ) as { notes: { ref: string }[] };
+    expect(list.notes[0]?.ref).toBe('rocky#1');
+  });
+});
+
 describe('note_write / note_list', () => {
   test('create, append, archive lifecycle over MCP', async () => {
     const created = resultJson(

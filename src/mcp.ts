@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
+import { withRef } from './refs';
 import type { StatusAction, TodoStore } from './store';
 
 /**
@@ -65,9 +66,16 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
         }
-        return jsonResult({ todo, history: store.listHistory({ entityId: todo.id }) });
+        return jsonResult({
+          todo: withRef(store, todo),
+          history: store.listHistory({ entityId: todo.id }),
+        });
       }
-      return jsonResult({ todos: store.listTodos({ board, status, label, includeArchived }) });
+      return jsonResult({
+        todos: store
+          .listTodos({ board, status, label, includeArchived })
+          .map((t) => withRef(store, t)),
+      });
     },
   );
 
@@ -104,12 +112,14 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       const who = actor ?? 'agent';
       if (id) {
         const currentBoardId = board ? store.boardIdOf(board) : undefined;
-        return jsonResult(store.updateTodo(id, { title, ...rest }, who, currentBoardId));
+        return jsonResult(
+          withRef(store, store.updateTodo(id, { title, ...rest }, who, currentBoardId)),
+        );
       }
       if (!board || !title) {
         throw new Error('board and title are required to create a todo');
       }
-      return jsonResult(store.createTodo({ board, title, ...rest }, who));
+      return jsonResult(withRef(store, store.createTodo({ board, title, ...rest }, who)));
     },
   );
 
@@ -128,7 +138,10 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     async ({ id, board, action, actor }) => {
       const currentBoardId = board ? store.boardIdOf(board) : undefined;
       return jsonResult(
-        store.setTodoStatus(id, action as StatusAction, actor ?? 'agent', currentBoardId),
+        withRef(
+          store,
+          store.setTodoStatus(id, action as StatusAction, actor ?? 'agent', currentBoardId),
+        ),
       );
     },
   );
@@ -158,9 +171,16 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (!note) {
           throw new Error(`note not found: ${id}`);
         }
-        return jsonResult({ note, history: store.listHistory({ entityId: note.id }) });
+        return jsonResult({
+          note: withRef(store, note),
+          history: store.listHistory({ entityId: note.id }),
+        });
       }
-      return jsonResult({ notes: store.listNotes({ board, global: isGlobal, includeArchived }) });
+      return jsonResult({
+        notes: store
+          .listNotes({ board, global: isGlobal, includeArchived })
+          .map((n) => withRef(store, n)),
+      });
     },
   );
 
@@ -194,21 +214,24 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (!title) {
           throw new Error('title is required to create a note');
         }
-        return jsonResult(store.createNote({ board, title, content }, who));
+        return jsonResult(withRef(store, store.createNote({ board, title, content }, who)));
       }
       const currentBoardId = board ? store.boardIdOf(board) : undefined;
       if (mode === 'archive') {
-        return jsonResult(store.archiveNote(id, who, currentBoardId));
+        return jsonResult(withRef(store, store.archiveNote(id, who, currentBoardId)));
       }
       if (mode === 'unarchive') {
-        return jsonResult(store.unarchiveNote(id, who, currentBoardId));
+        return jsonResult(withRef(store, store.unarchiveNote(id, who, currentBoardId)));
       }
       return jsonResult(
-        store.updateNote(
-          id,
-          { title, content, mode: mode === 'append' ? 'append' : 'set' },
-          who,
-          currentBoardId,
+        withRef(
+          store,
+          store.updateNote(
+            id,
+            { title, content, mode: mode === 'append' ? 'append' : 'set' },
+            who,
+            currentBoardId,
+          ),
         ),
       );
     },
