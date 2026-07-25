@@ -906,7 +906,22 @@ export class TodoStore {
    * 길이 기준으로 번호와 id 를 가르므로, id 길이를 바꾸면 ID_LENGTH 만 고치면 된다.
    * notes 는 board_id IS NULL 인 전역 행을 가질 수 있어 자체 번호 시퀀스를 갖지만(부분 유니크
    * 인덱스 `idx_notes_number_global`), todos 는 항상 보드에 속하므로 전역 번호 공간이 없다.
-   * @throws 다중 prefix 매칭이거나, todos 에 현재 보드 없이 번호만 온 경우 (모호성 노출)
+   *
+   * `rocky#12` 스코프 매칭은 board key 가 `[a-z0-9]` 로 시작하는 경우만 인식한다 —
+   * `boardKeyFrom` 은 이론상 그렇지 않은 키(예: 레포 이름이 `.dotfiles`)도 만들 수 있는데,
+   * 그런 보드는 `board#number` 형태로 지정할 수 없다(대신 `board` 인자 + 맨숫자를 쓴다).
+   * 패턴을 넓히면 `#12` 자체가 스코프 매칭에 잡아먹힐 위험이 생겨, 이 레포 규모에서는
+   * 흔치 않은 케이스를 위해 그 위험을 감수하지 않기로 했다 — 위 제약으로 문서화한다.
+   *
+   * board key 조회는 대소문자를 구분한다(SQLite 기본) — 스코프 정규식에 `/i` 를 붙이지
+   * 않는 것도 그래서다. `/i` 를 붙이면 `ROCKY#1` 이 정규식엔 매칭되고도 `WHERE key = ?`
+   * 조회는 실패해(`ROCKY` != `rocky`) 사용자가 "왜 케이스를 허용한다면서 안 되지" 하고
+   * 오해할 수 있다. 조회 자체를 대소문자 무시로 바꾸는 대안도 있었지만, board key 는
+   * UNIQUE(대소문자 구분) 라 `rocky`/`Rocky` 가 둘 다 존재하면 대소문자 무시 조회가
+   * 모호성 체크 없이 둘 중 하나를 조용히 골라버릴 수 있어 채택하지 않았다.
+   *
+   * @throws 다중 prefix 매칭, todos 에 현재 보드 없이 번호만 온 경우, 빈/공백 ref,
+   *   id 앞부분에 SQL LIKE 와일드카드(`%`/`_`) 가 섞인 경우 (모두 모호성 노출)
    */
   private resolveRef<Row>(
     table: 'todos' | 'notes',
@@ -914,8 +929,13 @@ export class TodoStore {
     currentBoardId?: string,
   ): Row | undefined {
     const trimmed = ref.trim();
+    if (trimmed === '') {
+      // 빈 ref 를 그대로 흘리면 아래 LIKE 프리픽스 매칭이 ''로 모든 행에 매치돼(테이블에
+      // 행이 하나면 조용히 그 행을 반환) 참조하지 않은 항목을 건드리게 된다.
+      throw new Error('empty ref');
+    }
 
-    const scoped = /^([a-z0-9][\w.-]*)#(\d+)$/i.exec(trimmed);
+    const scoped = /^([a-z0-9][\w.-]*)#(\d+)$/.exec(trimmed);
     if (scoped?.[1] && scoped[2]) {
       const board = this.db
         .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
@@ -952,6 +972,13 @@ export class TodoStore {
     const exact = this.db.query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`).get(trimmed);
     if (exact) {
       return exact;
+    }
+    if (/[%_]/.test(trimmed)) {
+      // 진짜 id 는 base36(0-9a-z, ID_ALPHABET) 뿐이라 `%`/`_` 를 담을 수 없다 — 그대로
+      // LIKE 에 흘리면 SQL 와일드카드로 해석돼(예: `_yaz90tj` 가 `xyaz90tj` 에도 매치) 의도한
+      // 적 없는 행을 조용히 골라올 수 있다. ESCAPE 절 대신 통째로 거부한다 — 어차피 유효한
+      // id/prefix 가 될 수 없는 입력이라 잃는 기능이 없다.
+      throw new Error(`invalid id prefix: ${trimmed}`);
     }
     const matches = this.db
       .query<Row, [string]>(`SELECT * FROM ${table} WHERE id LIKE ? || '%' LIMIT 2`)

@@ -130,6 +130,30 @@ describe('todos', () => {
     expect(store.getTodo(todo.id.slice(0, 4))?.id).toBe(todo.id);
     expect(store.getTodo('nope1234')).toBeUndefined();
   });
+
+  // finding 7: createTodo 의 재부모 지정 경로(위 '보드 밖으로 안 샌다' 테스트)는 이미
+  // 커버돼 있었지만, updateTodo 로 기존 todo 를 재부모 지정하는 경로에는 대응하는
+  // 테스트가 없었다.
+  test('updateTodo accepts a bare-number parentId, resolved against its own board', () => {
+    const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
+    const child = store.createTodo({ board: 'rocky', title: '자식' }, 'tester');
+    const updated = store.updateTodo(child.id, { parentId: String(parent.number) }, 'tester');
+    expect(updated.parentId).toBe(parent.id);
+  });
+
+  test('updateTodo 의 bare-number parentId 는 보드 밖으로 새지 않는다', () => {
+    // other#1 존재. rocky 보드의 todo 를 같은 번호(1)로 재부모 지정해도 rocky#1 만
+    // 봐야 한다 — mustGetTodo(patch.parentId, current.boardId) 가 current 의 board 를
+    // 안 실어 보내면 other#1 로 잘못 연결된다.
+    const otherParent = store.createTodo({ board: 'other', title: '다른 보드 부모' }, 'tester');
+    const rockyParent = store.createTodo({ board: 'rocky', title: 'rocky 부모' }, 'tester');
+    expect(otherParent.number).toBe(rockyParent.number); // 둘 다 각 보드의 1번
+    const child = store.createTodo({ board: 'rocky', title: '자식' }, 'tester');
+
+    const updated = store.updateTodo(child.id, { parentId: String(rockyParent.number) }, 'tester');
+    expect(updated.parentId).toBe(rockyParent.id);
+    expect(updated.parentId).not.toBe(otherParent.id);
+  });
 });
 
 describe('status transitions', () => {
@@ -393,5 +417,31 @@ describe('참조 해석', () => {
   test('todos 는 글로벌 번호 공간이 없어 보드 컨텍스트 없는 #N 은 여전히 에러다', () => {
     store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
     expect(() => store.getTodo('#1')).toThrow(/board/i);
+  });
+
+  // finding 5: id LIKE '?%' 에 입력이 이스케이프 없이 그대로 들어가던 문제.
+  test('빈 ref/공백 ref 는 모든 행에 매치되지 않고 에러로 거부된다', () => {
+    store.createTodo({ board: 'alpha', title: '유일한 항목' }, 'tester');
+    expect(() => store.getTodo('')).toThrow();
+    expect(() => store.getTodo('   ')).toThrow();
+  });
+
+  test('id prefix 에 SQL LIKE 와일드카드(%, _)가 섞이면 엉뚱한 행에 매치되지 않고 에러다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    // '_' 는 LIKE 에서 "아무 문자 1개" 와일드카드다 — 고치기 전에는 `_` + id[1:] 이
+    // id[0] 이 무엇이든 그 id 에 매치될 수 있었다(finding 5 재현: `_yaz90tj` → `xyaz90tj`).
+    const wildcardPrefix = `_${t.id.slice(1)}`;
+    expect(() => store.getTodo(wildcardPrefix)).toThrow(/invalid id prefix/);
+    expect(() => store.getTodo('%')).toThrow(/invalid id prefix/);
+  });
+
+  // finding 6: 스코프 정규식의 /i 가 대소문자 구분 SQL 조회와 어긋나던 문제. 정규식에서
+  // /i 를 뺐으니 대문자가 섞인 스코프 참조는 애초에 scoped 분기에 매칭되지 않고, id
+  // exact/prefix 매칭으로도 이어지지 않아(대문자 id 는 없음) undefined 로 끝나야 한다 —
+  // 대소문자를 다르게 해석해 놓고 조용히 실패하는 대신, 형태 자체가 안 맞는다고 취급한다.
+  test('대문자가 섞인 board#N 참조는 스코프 매칭에 걸리지 않고 undefined 다', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.createTodo({ board: 'rocky', title: '대상' }, 'tester');
+    expect(store.getTodo('ROCKY#1')).toBeUndefined();
   });
 });
