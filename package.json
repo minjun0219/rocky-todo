@@ -1,6 +1,6 @@
 {
   "name": "@minjun0219/rocky-todo",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "rocky-todo — a resident daemon (SQLite + React web UI + SSE) holding a shared todo / scratchpad board, exposed to agents via streamable HTTP MCP (5 todo_* / note_* tools) and a rocky-todo CLI. A companion Claude Code plugin to rocky; installing it activates the daemon (no enable switch). Archive-only with full per-actor history.",
   "license": "MIT",
   "author": "Minjun Kim",
