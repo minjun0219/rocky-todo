@@ -51,7 +51,7 @@ rocky-todo/
 │   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo
 │   ├── ensure-daemon.ts (+test)    # health→없으면 spawn (fail-open, health/spawn DI)
 │   └── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op)
-├── skills/todo/SKILL.md            # 보드 활용 에티켓 + 설치 안내 (Claude Code 스킬)
+├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
 └── .github/workflows/ + .husky/    # CI/release + git hooks (rocky 미러)
 ```

@@ -36,7 +36,7 @@ claude plugin install rocky-todo@rocky-marketplace     # rocky 자동 동반 (de
 - **[docs/rocky-todo.md](./docs/rocky-todo.md)** — 설치·데몬·MCP 등록·노출 범위·CLI·설정 (사람용)
 - **[FEATURES.md](./FEATURES.md)** — 도구/설정/Quick start (한국어)
 - **[AGENTS.md](./AGENTS.md)** — 레이아웃/코딩 규칙/게이트 (AI 에이전트용)
-- **[skills/todo/SKILL.md](./skills/todo/SKILL.md)** — 보드 활용 에티켓 (Claude Code 스킬)
+- **[skills/board/SKILL.md](./skills/board/SKILL.md)** — 보드 활용 에티켓 (`rocky-todo:board` 스킬)
 
 ## 개발
 

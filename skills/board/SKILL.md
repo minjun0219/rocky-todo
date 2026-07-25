@@ -1,5 +1,5 @@
 ---
-name: todo
+name: board
 description: Use when managing the shared rocky-todo board from a session — planning work the user should see live in the web UI ("보드에 올려둬", "todo 정리해줘"), starting/finishing tracked work items, or leaving scratchpad notes for the user. Covers the rocky-todo daemon's MCP tools (todo_list / todo_write / todo_status / note_list / note_write) and the rocky-todo CLI fallback, the start→done etiquette that powers the "처리중" indicator, link-attachment conventions (GitHub issue / Todoist URLs), and the archive-only rule (no deletion exists).
 ---
 
