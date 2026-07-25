@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { HistoryEntry } from '../../store';
-import { actorTone, copyRefWithFeedback, formatElapsed, linkLabel, mdTokens } from '../lib';
+import {
+  actorTone,
+  copyRefWithFeedback,
+  formatElapsed,
+  isEditableTarget,
+  linkLabel,
+  mdTokens,
+} from '../lib';
 import { useUiStore } from '../store';
 
 /** 우측 상세 드로어 — todo/note 상세 + 상태 버튼 + 히스토리 타임라인. */
@@ -14,7 +21,9 @@ export function DetailDrawer() {
       return;
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // 입력 중인 Esc 는 그 입력의 취소지 드로어 닫기가 아니다 — 제목 편집뿐 아니라
+      // 설명 textarea 에서도 편집분이 날아가지 않게 전역에서 걸러 낸다.
+      if (e.key === 'Escape' && !isEditableTarget(e.target)) {
         closeDetail();
       }
     };
@@ -114,6 +123,9 @@ function TodoDetail() {
             if (e.key === 'Enter') {
               commitTitle();
             } else if (e.key === 'Escape') {
+              // 드로어의 window keydown 리스너까지 올라가면 편집 취소가 아니라 드로어가
+              // 통째로 닫힌다 — 안내한 "Esc 취소"와 다른 동작이 되므로 여기서 끊는다.
+              e.stopPropagation();
               setTitle(todo.title);
               setEditingTitle(false);
             }

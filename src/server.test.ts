@@ -262,6 +262,20 @@ describe('boards & sections REST', () => {
     expect(detail.todo.sectionId).toBeUndefined();
   });
 
+  // UI 가 이 에러 메시지를 그대로 사용자에게 보여주므로 상태코드·문구를 고정해 둔다.
+  test('POST /api/sections 는 없는 보드에 404 (빈 보드를 만들지 않는다)', async () => {
+    const res = await req('/api/sections', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'nope', title: '설계' }),
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toContain('board not found');
+
+    // 보드가 조용히 만들어지지 않았는지 — ensureBoard 를 쓰면 여기서 새 보드가 생긴다.
+    const boards = (await (await req('/api/boards')).json()) as { key: string }[];
+    expect(boards.map((b) => b.key)).not.toContain('nope');
+  });
+
   test('POST /api/sections/:id/archive 는 없는 섹션에 404', async () => {
     expect((await req('/api/sections/zzzzzzzz/archive', { method: 'POST' })).status).toBe(404);
   });

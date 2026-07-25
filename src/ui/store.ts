@@ -145,8 +145,10 @@ export const useUiStore = create<UiState>((set, get) => ({
       method: 'POST',
       body: JSON.stringify({ key }),
     });
-    await get().refetch();
+    // selected 를 먼저 바꾼 뒤 조회한다 — 순서가 반대면 refetch 가 이전 보드 기준으로
+    // 돌아, 새 보드 화면에 직전 보드의 항목·섹션이 그대로 남는다.
     set({ selected: board.key });
+    await get().refetch();
   },
 
   addTodo: async (input) => {

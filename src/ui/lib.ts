@@ -256,3 +256,18 @@ export function linkLabel(url: string): string {
     return url;
   }
 }
+
+/**
+ * 이벤트가 편집 중인 요소에서 왔는지 판정한다.
+ *
+ * 드로어의 전역 Esc 리스너가 입력 중인 Esc 까지 가로채면, 사용자가 기대한 "입력 취소"
+ * 대신 드로어가 통째로 닫히며 편집분이 날아간다. 전역 단축키는 이 판정으로 걸러 낸다.
+ */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  if (!target) {
+    return false;
+  }
+  const el = target as { tagName?: string; isContentEditable?: boolean };
+  const tag = el.tagName?.toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+}
