@@ -240,7 +240,9 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
-  rocky-todo note ls|show REF|edit REF --content MD|append REF "텍스트"|archive REF
+  rocky-todo note ls [--board K|--global]
+  rocky-todo note show REF [--global] | edit REF --content MD [--global] |
+                       append REF "텍스트" [--global] | archive REF [--global]
   rocky-todo history REF [--limit N] · board ls · board add KEY [제목]
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
@@ -249,17 +251,37 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
 
 REF 는 #12 / 12 (현재 보드) 또는 rocky#12 (보드 지정) 또는 raw id 를 받는다.
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추한다. actor 는 --actor >
-ROCKY_TODO_ACTOR > 호스트 자동 감지. 삭제는 없다 — 아카이브만 존재한다.`;
+ROCKY_TODO_ACTOR > 호스트 자동 감지. 삭제는 없다 — 아카이브만 존재한다.
+note show/edit/append/archive 의 맨 번호(#12/12)는 기본적으로 todos 와 동일하게 현재 보드
+컨텍스트로 풀린다 — 전역 메모(웹 UI 의 #3 처럼 보드 접두어 없는 표기)를 번호로 가리키려면
+--global 을 반드시 붙인다. 안 붙이면 같은 번호의 보드 메모가 대신 잡힐 수 있다(모호성 회피).`;
 
 /**
  * ref 로 단건 조회/수정하는 엔드포인트에 `?board=` 를 붙인다. 스토어의 참조 문법은
  * `rocky#12`/raw id/id prefix 는 board 없이도 유일하게 풀리지만, 맨 번호(`#12`/`12`)는
  * 현재 보드 컨텍스트가 없으면 todos 는 에러, notes 는 전역 메모로 풀린다 — CLI 가 유추한
  * board 를 실어 보내지 않으면 `rocky-todo show 12` 같은 흔한 입력이 조용히 실패한다.
+ *
+ * note show/edit/append/archive 는 이 함수를 무조건 거치지 않는다 — `--global` 이 서 있으면
+ * board 를 안 실어서 맨 번호가 전역 메모 공간으로 풀리게 한다(`noteRefPath` 참고). 여기서
+ * 무조건 board 를 붙이면, 웹 UI 가 `#3` 으로 보여주는 전역 메모를 그대로 CLI 에 넘겼을 때
+ * 같은 번호의 보드 메모가 대신 잡혀 엉뚱한 행을 조용히 archive/edit 하게 된다.
  */
-function withBoard(path: string, board: string): string {
+export function withBoard(path: string, board: string): string {
   const sep = path.includes('?') ? '&' : '?';
   return `${path}${sep}board=${encodeURIComponent(board)}`;
+}
+
+/**
+ * note 단건 조회/수정 엔드포인트 경로를 만든다. `--global` 이면 board 컨텍스트를 보내지 않아
+ * 맨 번호(`#N`)가 전역 메모 공간(`board_id IS NULL`)으로 풀리고, 아니면 todos 와 동일하게
+ * 현재 보드로 스코프된다. 기본을 board-스코프로 유지하는 이유: `note add`/`note ls` 가 이미
+ * "기본은 보드, --global 로 명시적 opt-in" 패턴이라 note 서브커맨드 전체가 일관되고, 사용자가
+ * 플래그 하나 없이도 늘 예측 가능한 대상에 쓴다 (없는 게 위험한 암묵적 동작을 만들지 않는다).
+ */
+export function noteRefPath(id: string, suffix: string, board: string, global: boolean): string {
+  const path = `/api/notes/${id}${suffix}`;
+  return global ? path : withBoard(path, board);
 }
 
 function str(flag: string | boolean | string[] | undefined): string | undefined {
@@ -582,12 +604,12 @@ async function handleNote(
     case 'show': {
       const id = rest[1];
       if (!id) {
-        throw new Error('usage: rocky-todo note show REF');
+        throw new Error('usage: rocky-todo note show REF [--global]');
       }
       const detail = await request<{ note: NoteView }>(
         ctx,
         'GET',
-        withBoard(`/api/notes/${id}`, board),
+        noteRefPath(id, '', board, flags.global === true),
       );
       print(
         detail,
@@ -600,12 +622,17 @@ async function handleNote(
       const id = rest[1];
       const content = str(flags.content);
       if (!id || content === undefined) {
-        throw new Error('usage: rocky-todo note edit REF --content MD [--title 제목]');
+        throw new Error('usage: rocky-todo note edit REF --content MD [--title 제목] [--global]');
       }
-      const note = await request<NoteView>(ctx, 'PATCH', withBoard(`/api/notes/${id}`, board), {
-        title: str(flags.title),
-        content,
-      });
+      const note = await request<NoteView>(
+        ctx,
+        'PATCH',
+        noteRefPath(id, '', board, flags.global === true),
+        {
+          title: str(flags.title),
+          content,
+        },
+      );
       print(note, () => `✓ 메모 ${note.ref} 수정`);
       return;
     }
@@ -613,24 +640,29 @@ async function handleNote(
       const id = rest[1];
       const text = rest[2];
       if (!id || !text) {
-        throw new Error('usage: rocky-todo note append REF "텍스트"');
+        throw new Error('usage: rocky-todo note append REF "텍스트" [--global]');
       }
-      const note = await request<NoteView>(ctx, 'PATCH', withBoard(`/api/notes/${id}`, board), {
-        content: text,
-        mode: 'append',
-      });
+      const note = await request<NoteView>(
+        ctx,
+        'PATCH',
+        noteRefPath(id, '', board, flags.global === true),
+        {
+          content: text,
+          mode: 'append',
+        },
+      );
       print(note, () => `✓ 메모 ${note.ref} append`);
       return;
     }
     case 'archive': {
       const id = rest[1];
       if (!id) {
-        throw new Error('usage: rocky-todo note archive REF');
+        throw new Error('usage: rocky-todo note archive REF [--global]');
       }
       const note = await request<NoteView>(
         ctx,
         'POST',
-        withBoard(`/api/notes/${id}/archive`, board),
+        noteRefPath(id, '/archive', board, flags.global === true),
       );
       print(note, () => `✓ 메모 ${note.ref} 보관`);
       return;

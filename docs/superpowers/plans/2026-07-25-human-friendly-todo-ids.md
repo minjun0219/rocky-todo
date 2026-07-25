@@ -847,6 +847,30 @@ git add src/cli.ts src/cli.test.ts
 git commit -m "feat(todo): CLI 에 #N 표시 + 참조 입력"
 ```
 
+- [ ] **Step 8 (리뷰 후 추가): note show/edit/append/archive 의 `--global`**
+
+Step 5 가 REF 문법(`#12`/`12`/`rocky#12`/raw id)만 문서화하고, notes 전용 규칙 — 맨 번호가
+board context 없으면 **전역** 메모 공간(`board_id IS NULL`)으로 풀린다는 점 — 을 CLI 동작에
+반영하는 걸 빠뜨렸다. `withBoard` 헬퍼가 `note show`/`edit`/`append`/`archive` 네 서브커맨드
+전부에 무조건 `?board=<cwd 유추>` 를 붙였기 때문에, 웹 UI 가 `#3` 으로 보여주는 전역 메모를
+그대로 CLI 에 넘겨도 항상 그 board 의 `#3` 이 대신 풀렸다 — 같은 번호의 보드 메모가 있으면
+**조용히 엉뚱한 행을 archive/edit** 하는 Critical 결함이었다(리뷰에서 지적, id: 나중에 채움).
+
+고친 내용:
+- `note add`/`note ls` 가 이미 갖고 있던 `--global` 플래그를 `note show`/`edit`/`append`/
+  `archive` 에도 동일 패턴으로 추가. `--global` 이면 `?board=` 를 안 보내 맨 번호가 전역
+  공간으로 풀리고, 없으면 기존처럼 (todos 와 동일하게) 현재 board 로 스코프된다 — 기본을
+  "암묵적 전역"이 아니라 "명시적 opt-in" 으로 유지해 note 서브커맨드 전체의 일관성을 지켰다.
+- `withBoard`/신설 `noteRefPath` 를 export 해 `src/cli.test.ts` 에서 직접 검증
+  (`--global` 유무에 따른 쿼리 문자열 차이).
+- `src/store.ts`: `createTodo`/`updateTodo` 의 parent 조회가 board context 없이
+  `getTodo`/`mustGetTodo` 를 호출해 `--parent 12` 같은 REF 입력이 항상
+  "board context required" 로 실패하던 버그도 같은 리뷰에서 발견되어 함께 고쳤다 —
+  둘 다 이미 확보한 board id 를 넘기도록 수정.
+
+Run: `bun test ./src/store.test.ts ./src/cli.test.ts` 후 `bun run check && bun run typecheck &&
+bun test` 전체 게이트. 결과는 `.superpowers/sdd/task-5-report.md` 참고.
+
 ---
 
 ### Task 6: 웹 UI — 클립보드 헬퍼 + 항목 행

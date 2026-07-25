@@ -472,7 +472,7 @@ export class TodoStore {
     }
     let parentId: string | undefined;
     if (input.parentId) {
-      const parent = this.getTodo(input.parentId);
+      const parent = this.getTodo(input.parentId, board.id);
       if (!parent || parent.boardId !== board.id) {
         throw new Error(`parent todo not found in board ${input.board}: ${input.parentId}`);
       }
@@ -575,7 +575,7 @@ export class TodoStore {
       if (patch.parentId === null) {
         apply('parent_id', 'parentId', current.parentId, undefined, null);
       } else {
-        const parent = this.mustGetTodo(patch.parentId);
+        const parent = this.mustGetTodo(patch.parentId, current.boardId);
         if (parent.boardId !== current.boardId) {
           throw new Error(`parent todo not in same board: ${patch.parentId}`);
         }

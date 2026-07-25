@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { formatTodoLine, parseFlags } from './cli';
+import { formatTodoLine, noteRefPath, parseFlags, withBoard } from './cli';
 import type { TodoView } from './server';
 
 describe('parseFlags', () => {
@@ -36,6 +36,37 @@ describe('parseFlags', () => {
 
   test('unknown flag throws', () => {
     expect(() => parseFlags(['ls', '--explode'])).toThrow(/unknown flag/);
+  });
+});
+
+describe('withBoard', () => {
+  test('appends ?board= to a path with no query string', () => {
+    expect(withBoard('/api/todos/3', 'rocky')).toBe('/api/todos/3?board=rocky');
+  });
+
+  test('appends &board= to a path that already has a query string', () => {
+    expect(withBoard('/api/todos?includeArchived=true', 'rocky')).toBe(
+      '/api/todos?includeArchived=true&board=rocky',
+    );
+  });
+
+  test('encodes board keys with special characters', () => {
+    expect(withBoard('/api/notes/3', 'my repo')).toBe('/api/notes/3?board=my%20repo');
+  });
+});
+
+describe('noteRefPath', () => {
+  // Finding 1 회귀 테스트: --global 이면 board 쿼리를 빼서 맨 번호가 전역 메모 공간으로
+  // 풀리게 해야 한다. 안 그러면 `rocky-todo note archive 3` 이 board 컨텍스트를 실어 보내
+  // 웹 UI 가 보여준 전역 `#3` 대신 그 보드의 `#3` 을 조용히 archive 해버린다.
+  test('global suppresses the board query param', () => {
+    expect(noteRefPath('3', '', 'rocky', true)).toBe('/api/notes/3');
+    expect(noteRefPath('3', '/archive', 'rocky', true)).toBe('/api/notes/3/archive');
+  });
+
+  test('absent global includes the board query param', () => {
+    expect(noteRefPath('3', '', 'rocky', false)).toBe('/api/notes/3?board=rocky');
+    expect(noteRefPath('3', '/archive', 'rocky', false)).toBe('/api/notes/3/archive?board=rocky');
   });
 });
 

@@ -93,6 +93,30 @@ describe('todos', () => {
     ).toThrow(/parent/i);
   });
 
+  test('createTodo accepts a bare-number parentId, resolved against its own board', () => {
+    const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
+    const child = store.createTodo(
+      { board: 'rocky', title: '자식', parentId: String(parent.number) },
+      'tester',
+    );
+    expect(child.parentId).toBe(parent.id);
+  });
+
+  test('createTodo does not leak a bare-number parentId across boards', () => {
+    // otherBoard#1 존재. rocky 보드에서 같은 번호(1)로 부모를 지정해도 rocky#1 만 봐야 한다 —
+    // withBoard 가 board 를 안 실어 보내는 실수를 하면 여기서 otherBoard#1 로 잘못 연결된다.
+    const otherParent = store.createTodo({ board: 'other', title: '다른 보드 부모' }, 'tester');
+    const rockyParent = store.createTodo({ board: 'rocky', title: 'rocky 부모' }, 'tester');
+    expect(otherParent.number).toBe(rockyParent.number); // 둘 다 각 보드의 1번
+
+    const child = store.createTodo(
+      { board: 'rocky', title: '자식', parentId: String(rockyParent.number) },
+      'tester',
+    );
+    expect(child.parentId).toBe(rockyParent.id);
+    expect(child.parentId).not.toBe(otherParent.id);
+  });
+
   test('updateTodo patches fields and bumps updatedAt', () => {
     const todo = store.createTodo({ board: 'rocky', title: '수정 전' }, 'tester');
     const updated = store.updateTodo(todo.id, { title: '수정 후', priority: 'p2' }, 'tester');
