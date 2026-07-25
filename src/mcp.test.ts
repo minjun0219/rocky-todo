@@ -185,6 +185,100 @@ describe('number / ref 참조 문법', () => {
     ) as { note: { title: string } };
     expect(detail.note.title).toBe('메모 참조');
   });
+
+  test('todo_list 는 board 를 같이 주면 맨숫자 #1 을 풀 수 있다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '맨숫자 조회', actor: 'tester' },
+    });
+    const detail = resultJson(
+      await client.callTool({
+        name: 'todo_list',
+        arguments: { id: '#1', board: 'rocky' },
+      }),
+    ) as { todo: { title: string } };
+    expect(detail.todo.title).toBe('맨숫자 조회');
+  });
+
+  test('todo_write 는 board 를 같이 주면 맨숫자 #1 로 patch 할 수 있다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '맨숫자 patch 전', actor: 'tester' },
+    });
+    const updated = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { id: '#1', board: 'rocky', title: '맨숫자 patch 후', actor: 'tester' },
+      }),
+    ) as { title: string };
+    expect(updated.title).toBe('맨숫자 patch 후');
+  });
+
+  test('todo_status 는 board 를 같이 주면 맨숫자 #1 로 전이할 수 있다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '맨숫자 상태', actor: 'tester' },
+    });
+    const doing = resultJson(
+      await client.callTool({
+        name: 'todo_status',
+        arguments: { id: '#1', board: 'rocky', action: 'start', actor: 'tester' },
+      }),
+    ) as { status: string };
+    expect(doing.status).toBe('doing');
+  });
+
+  test('note_list 는 board 를 같이 주면 맨숫자 #1 을 풀 수 있다', async () => {
+    await client.callTool({
+      name: 'note_write',
+      arguments: { board: 'rocky', title: '맨숫자 메모', actor: 'tester' },
+    });
+    const detail = resultJson(
+      await client.callTool({
+        name: 'note_list',
+        arguments: { id: '#1', board: 'rocky' },
+      }),
+    ) as { note: { title: string } };
+    expect(detail.note.title).toBe('맨숫자 메모');
+  });
+
+  test('note_write 는 board 를 같이 주면 맨숫자 #1 로 수정할 수 있다', async () => {
+    await client.callTool({
+      name: 'note_write',
+      arguments: { board: 'rocky', title: '맨숫자 메모 patch 전', actor: 'tester' },
+    });
+    const updated = resultJson(
+      await client.callTool({
+        name: 'note_write',
+        arguments: { id: '#1', board: 'rocky', content: '수정됨', actor: 'tester' },
+      }),
+    ) as { content: string };
+    expect(updated.content).toBe('수정됨');
+  });
+
+  test('board 없이 맨숫자 참조를 쓰면 note_write 도 isError 결과로 실패한다 (크래시 아님)', async () => {
+    await client.callTool({
+      name: 'note_write',
+      arguments: { board: 'rocky', title: '보드 없는 참조', actor: 'tester' },
+    });
+    const result = await client.callTool({
+      name: 'note_write',
+      arguments: { id: '1', content: '수정 시도', actor: 'tester' },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  test('존재하지 않는 board key 를 줘도 보드를 지어내지 않고 store 에러가 그대로 표면화된다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '없는 보드', actor: 'tester' },
+    });
+    const result = await client.callTool({
+      name: 'todo_status',
+      arguments: { id: '#1', board: 'no-such-board', action: 'done', actor: 'tester' },
+    });
+    expect(result.isError).toBe(true);
+  });
 });
 
 describe('note_write / note_list', () => {

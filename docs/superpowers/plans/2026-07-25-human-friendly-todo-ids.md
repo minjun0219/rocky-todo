@@ -704,16 +704,31 @@ todo/note 를 반환하는 모든 `json(...)` 호출을 `json(withRef(todo))` /
 `store.getTodo(ref, boardId)` 에 넘긴다. `boardId` 는 쿼리스트링 `?board=` 가 있으면
 그 보드, 없으면 `undefined`.
 
-- [ ] **Step 5: MCP 스키마 설명 갱신**
+- [ ] **Step 5: MCP 스키마 설명 갱신 + board 컨텍스트 배선**
 
-`src/mcp.ts` 에서 `id` 인자를 받는 모든 도구(`todo_list`, `todo_write`, `todo_status`,
-`note_list`, `note_write`)의 설명을 바꾼다:
+설명만 바꾸는 걸로는 부족하다 — `resolveRef` 는 `#12` 처럼 보드 접두사 없는 맨숫자를
+`currentBoardId` 없이 풀면 "board context required" 로 던진다. `id`/ref 인자를 받는
+모든 도구(`todo_list`, `todo_write`, `todo_status`, `note_list`, `note_write`)가 실제로
+`#12` 를 풀 수 있으려면 호출 시점의 board 를 store 호출에 `currentBoardId` 로 같이
+넘겨야 한다:
+
+- 이미 `board` 인자가 있는 도구(`todo_list`, `todo_write`, `note_list`, `note_write`)는
+  그 값을 그대로 쓴다.
+- `board` 인자가 없는 도구(`todo_status`)는 zod 스키마에 optional `board` 를 추가한다
+  (설명: 맨숫자 `#12` 를 스코핑하는 보드 key).
+- board key → boardId 변환은 `TodoStore` 에 추가하는 공개 조회(예: `store.boardIdOf(key)`)
+  로 한다 — `src/server.ts` 의 `/api/sections` 핸들러도 이미 같은 조회를 인라인으로 하고
+  있으니 그 경로도 이 헬퍼로 합친다 (중복 제거).
+- 존재하지 않는 board key 는 `boardIdOf` 가 `undefined` 를 반환한다 — 보드를 지어내지
+  않고, `currentBoardId` 없이 store 를 호출해 store 자체의 "board context required"
+  에러가 그대로 표면화되게 둔다.
 
 ```ts
 id: z.string().optional().describe('todo ref — number (#12), board-scoped (rocky#12), or raw id'),
 ```
 
-각 도구의 최상위 description 에도 참조 문법을 한 줄 덧붙인다.
+각 도구의 최상위 description 에도 참조 문법을 한 줄 덧붙이고, 맨숫자 `#12` 를 쓰려면
+`board` 를 같이 줘야 한다는 점을 명시한다.
 
 - [ ] **Step 6: 통과 확인**
 

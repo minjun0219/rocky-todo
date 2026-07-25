@@ -72,13 +72,10 @@ function toHttpError(error: unknown): Response {
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
 
-  const boardIdByKey = (key: string): string | undefined =>
-    store.listBoards(true).find((b) => b.key === key)?.id;
-
   /** `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 없으면 undefined. */
   const currentBoardIdOf = (url: URL): string | undefined => {
     const key = url.searchParams.get('board');
-    return key ? boardIdByKey(key) : undefined;
+    return key ? store.boardIdOf(key) : undefined;
   };
 
   const refOf = (boardId: string | undefined, number: number): string => {
@@ -96,11 +93,16 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
     return `${key}#${number}`;
   };
 
-  /** 응답용 직렬화 — 저장 모델에 ref 를 얹는다. */
-  const withRef = <T extends Todo | Note>(entity: T): T & { ref: string } => ({
-    ...entity,
-    ref: refOf(entity.boardId, entity.number),
-  });
+  /**
+   * 응답용 직렬화 — 저장 모델에 ref 를 얹는다.
+   * 오버로드 시그니처로 반환형을 `TodoView`/`NoteView` 에 고정한다 — 구현부를
+   * 제네릭으로 느슨하게 두면 그 두 인터페이스가 실제로 강제되지 않아 드리프트할 수 있다.
+   */
+  function withRef(entity: Todo): TodoView;
+  function withRef(entity: Note): NoteView;
+  function withRef(entity: Todo | Note): TodoView | NoteView {
+    return { ...entity, ref: refOf(entity.boardId, entity.number) };
+  }
 
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -145,11 +147,11 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         if (!boardKey) {
           return errorResponse('board query parameter is required', 400);
         }
-        const board = store.listBoards(true).find((b) => b.key === boardKey);
-        if (!board) {
+        const boardId = store.boardIdOf(boardKey);
+        if (!boardId) {
           return json([]);
         }
-        return json(store.listSections(board.id));
+        return json(store.listSections(boardId));
       }
 
       // ── todos ──
@@ -160,7 +162,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           label: url.searchParams.get('label') ?? undefined,
           includeArchived: url.searchParams.get('includeArchived') === 'true',
         };
-        return json(store.listTodos(filter).map(withRef));
+        return json(store.listTodos(filter).map((todo) => withRef(todo)));
       }
       if (method === 'POST' && path === '/api/todos') {
         const body = await readBody(req);
@@ -227,7 +229,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
               global: url.searchParams.get('global') === 'true',
               includeArchived: url.searchParams.get('includeArchived') === 'true',
             })
-            .map(withRef),
+            .map((note) => withRef(note)),
         );
       }
       if (method === 'POST' && path === '/api/notes') {

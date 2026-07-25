@@ -384,6 +384,15 @@ export class TodoStore {
     return row ? toBoard(row) : undefined;
   }
 
+  /**
+   * 보드 key → boardId. 아카이브된 보드도 포함해서 찾는다(참조 해석/조회 목적이라
+   * 아카이브 여부로 실패시키지 않는다). 없는 key 면 undefined — 존재하지 않는 보드를
+   * 지어내지 않고, 호출자가 "보드 컨텍스트 없음"으로 취급하게 한다.
+   */
+  boardIdOf(key: string): string | undefined {
+    return this.boardByKey(key)?.id;
+  }
+
   // ── sections ──────────────────────────────────────────────────────────────
 
   /** 보드 안에서 섹션을 이름으로 upsert 한다 — todo_write 의 section 인자가 쓰는 경로. */

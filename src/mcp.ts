@@ -37,9 +37,14 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_list',
     {
       description:
-        '공유 todo 보드 조회. board 로 보드 하나, 생략 시 전체. id 를 주면 해당 todo 상세 + 히스토리, boards:true 면 보드 목록. 필터: status / label / includeArchived. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다.',
+        '공유 todo 보드 조회. board 로 보드 하나, 생략 시 전체. id 를 주면 해당 todo 상세 + 히스토리, boards:true 면 보드 목록. 필터: status / label / includeArchived. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 조회하려면 board 를 함께 줘야 한다.',
       inputSchema: {
-        board: z.string().optional().describe('board key (usually the repo name)'),
+        board: z
+          .string()
+          .optional()
+          .describe(
+            'board key (usually the repo name) — also scopes a bare #12 in id when id has no board prefix',
+          ),
         id: z
           .string()
           .optional()
@@ -55,7 +60,8 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         return jsonResult({ boards: store.listBoards(includeArchived ?? false) });
       }
       if (id) {
-        const todo = store.getTodo(id);
+        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        const todo = store.getTodo(id, currentBoardId);
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
         }
@@ -69,7 +75,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_write',
     {
       description:
-        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다.',
+        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다.',
       inputSchema: {
         id: z
           .string()
@@ -77,7 +83,12 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
           .describe(
             'omit to create; todo ref — number (#12), board-scoped (rocky#12), or raw id — to patch',
           ),
-        board: z.string().optional().describe('board key — required when creating'),
+        board: z
+          .string()
+          .optional()
+          .describe(
+            'board key — required when creating; also scopes a bare #12 in id when patching',
+          ),
         title: z.string().optional().describe('required when creating'),
         description: z.string().optional().describe('markdown detail'),
         section: z.string().optional().describe('section name (upserted within the board)'),
@@ -92,7 +103,8 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     async ({ id, board, title, actor, ...rest }) => {
       const who = actor ?? 'agent';
       if (id) {
-        return jsonResult(store.updateTodo(id, { title, ...rest }, who));
+        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        return jsonResult(store.updateTodo(id, { title, ...rest }, who, currentBoardId));
       }
       if (!board || !title) {
         throw new Error('board and title are required to create a todo');
@@ -105,24 +117,32 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_status',
     {
       description:
-        'todo 상태 전이. start=처리 시작(누가 작업중인지 웹 UI 에 표시됨 — 작업 착수 시 반드시 호출), stop=중단, done=완료, reopen=재오픈, archive/unarchive=보관/복원. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다.',
+        'todo 상태 전이. start=처리 시작(누가 작업중인지 웹 UI 에 표시됨 — 작업 착수 시 반드시 호출), stop=중단, done=완료, reopen=재오픈, archive/unarchive=보관/복원. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 지정하려면 board 를 함께 줘야 한다.',
       inputSchema: {
         id: z.string().describe('todo ref — number (#12), board-scoped (rocky#12), or raw id'),
+        board: z.string().optional().describe('board key that scopes a bare #12 in id'),
         action: z.enum(['start', 'stop', 'done', 'reopen', 'archive', 'unarchive']),
         actor: actorSchema,
       },
     },
-    async ({ id, action, actor }) =>
-      jsonResult(store.setTodoStatus(id, action as StatusAction, actor ?? 'agent')),
+    async ({ id, board, action, actor }) => {
+      const currentBoardId = board ? store.boardIdOf(board) : undefined;
+      return jsonResult(
+        store.setTodoStatus(id, action as StatusAction, actor ?? 'agent', currentBoardId),
+      );
+    },
   );
 
   server.registerTool(
     'note_list',
     {
       description:
-        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모. id 를 주면 상세 + 히스토리. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다.',
+        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모. id 를 주면 상세 + 히스토리. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 조회하려면 board 를 함께 줘야 한다.',
       inputSchema: {
-        board: z.string().optional(),
+        board: z
+          .string()
+          .optional()
+          .describe('board key — also scopes a bare #12 in id when id has no board prefix'),
         global: z.boolean().optional(),
         id: z
           .string()
@@ -133,7 +153,8 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     },
     async ({ board, global: isGlobal, id, includeArchived }) => {
       if (id) {
-        const note = store.getNote(id);
+        const currentBoardId = board ? store.boardIdOf(board) : undefined;
+        const note = store.getNote(id, currentBoardId);
         if (!note) {
           throw new Error(`note not found: ${id}`);
         }
@@ -147,7 +168,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'note_write',
     {
       description:
-        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다.',
+        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다.',
       inputSchema: {
         id: z
           .string()
@@ -155,7 +176,12 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
           .describe(
             'omit to create; note ref — number (#12), board-scoped (rocky#12), or raw id — to update',
           ),
-        board: z.string().optional().describe('omit for a global note'),
+        board: z
+          .string()
+          .optional()
+          .describe(
+            'omit for a global note when creating; also scopes a bare #12 in id when updating',
+          ),
         title: z.string().optional(),
         content: z.string().optional(),
         mode: z.enum(['set', 'append', 'archive', 'unarchive']).optional(),
@@ -170,14 +196,20 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         }
         return jsonResult(store.createNote({ board, title, content }, who));
       }
+      const currentBoardId = board ? store.boardIdOf(board) : undefined;
       if (mode === 'archive') {
-        return jsonResult(store.archiveNote(id, who));
+        return jsonResult(store.archiveNote(id, who, currentBoardId));
       }
       if (mode === 'unarchive') {
-        return jsonResult(store.unarchiveNote(id, who));
+        return jsonResult(store.unarchiveNote(id, who, currentBoardId));
       }
       return jsonResult(
-        store.updateNote(id, { title, content, mode: mode === 'append' ? 'append' : 'set' }, who),
+        store.updateNote(
+          id,
+          { title, content, mode: mode === 'append' ? 'append' : 'set' },
+          who,
+          currentBoardId,
+        ),
       );
     },
   );
