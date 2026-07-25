@@ -349,7 +349,27 @@ export class TodoStore {
 
   // ── boards ────────────────────────────────────────────────────────────────
 
+  /**
+   * board key 를 만든다. `resolveRef` 의 스코프 ref 정규식(`^([^#\s]+)#(\d+)$`)이
+   * key 부분에서 공백과 `#` 를 허용하지 않으므로, 그 두 문자(부류)가 섞인 key 를
+   * 저장하면 `refOf` 가 만든 `<key>#<number>` 를 서버 스스로 못 읽는 모순이 생긴다
+   * (예: `my repo#1` → scoped 정규식 불일치 → `resolveRef` 가 undefined; `a#b#1` 도
+   * 동일). `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
+   * REST(`POST /api/boards`)·MCP(`todo_write`/`note_write` 의 `board`)로 직접
+   * 들어오기도 해 여기서 한 번 더 막는다. 조용히 정규화(공백→`-` 치환 등)하지 않는다
+   * — `my repo` 를 요청했는데 다른 이름의 보드가 말없이 만들어지면 더 혼란스럽다.
+   * @throws key 가 비어 있거나 공백/`#` 를 포함하면 — 어느 문자가 문제인지 명시한다.
+   */
   ensureBoard(key: string, options: { title?: string; actor: string }): Board {
+    if (key === '') {
+      throw new Error('board key must not be empty');
+    }
+    if (/\s/.test(key)) {
+      throw new Error(`board key must not contain whitespace: ${JSON.stringify(key)}`);
+    }
+    if (key.includes('#')) {
+      throw new Error(`board key must not contain '#': ${JSON.stringify(key)}`);
+    }
     const existing = this.db
       .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
       .get(key);

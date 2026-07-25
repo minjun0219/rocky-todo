@@ -31,6 +31,28 @@ describe('boards', () => {
     const board = store.ensureBoard('rocky', { title: '로키 보드', actor: 'tester' });
     expect(board.title).toBe('로키 보드');
   });
+
+  // finding: board key 가 공백/`#` 를 포함하면 서버가 스스로 만든 스코프 ref
+  // (`refOf` → `<key>#<number>`) 를 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)
+  // 이 못 읽어 조용히 undefined 로 끝난다. 조용한 wrong-row 대신 생성 시점에 막는다.
+  test('ensureBoard rejects a key containing whitespace', () => {
+    expect(() => store.ensureBoard('my repo', { actor: 'tester' })).toThrow(/whitespace/);
+  });
+
+  test("ensureBoard rejects a key containing '#'", () => {
+    expect(() => store.ensureBoard('a#b', { actor: 'tester' })).toThrow(/#/);
+  });
+
+  test('ensureBoard rejects an empty key', () => {
+    expect(() => store.ensureBoard('', { actor: 'tester' })).toThrow(/empty/);
+  });
+
+  test('ensureBoard still accepts normal keys', () => {
+    for (const key of ['rocky', 'MyProject', '_private', 'a-b']) {
+      const board = store.ensureBoard(key, { actor: 'tester' });
+      expect(board.key).toBe(key);
+    }
+  });
 });
 
 describe('todos', () => {
