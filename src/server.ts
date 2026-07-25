@@ -1,5 +1,5 @@
 import pkg from '../package.json' with { type: 'json' };
-import type { ListTodosFilter, StatusAction, TodoStore } from './store';
+import type { ListTodosFilter, Note, StatusAction, Todo, TodoStore } from './store';
 
 /**
  * rocky-todo REST + SSE 표면 — CLI / 웹 UI 가 공유한다.
@@ -11,6 +11,17 @@ import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 
 export interface TodoServerOptions {
   store: TodoStore;
+}
+
+/** 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)를 얹은 형태. */
+export interface TodoView extends Todo {
+  /** `rocky#12` — 보드 접두사를 포함한 완전 참조. */
+  ref: string;
+}
+
+/** 응답 전용 note. 글로벌 메모는 보드 접두사가 없어 `#3` 이 된다. */
+export interface NoteView extends Note {
+  ref: string;
 }
 
 export interface TodoServer {
@@ -60,6 +71,36 @@ function toHttpError(error: unknown): Response {
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
+
+  const boardIdByKey = (key: string): string | undefined =>
+    store.listBoards(true).find((b) => b.key === key)?.id;
+
+  /** `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 없으면 undefined. */
+  const currentBoardIdOf = (url: URL): string | undefined => {
+    const key = url.searchParams.get('board');
+    return key ? boardIdByKey(key) : undefined;
+  };
+
+  const refOf = (boardId: string | undefined, number: number): string => {
+    if (!boardId) {
+      return `#${number}`;
+    }
+    const key = store.boardKeyOf(boardId);
+    if (!key) {
+      // boardId 는 있는데 boardKeyOf 가 빈 문자열이면 board FK 가 깨진 상태다.
+      // 조용히 "#12" 같은 위조 글로벌 참조를 만들면 다른(진짜 글로벌) 엔티티를
+      // 가리키는 것과 구분이 안 돼 사고를 부른다 — 명시적으로 실패시킨다
+      // (호출자는 아래 catch → toHttpError 경유로 400 을 받는다).
+      throw new Error(`cannot build ref: board not found for boardId ${boardId}`);
+    }
+    return `${key}#${number}`;
+  };
+
+  /** 응답용 직렬화 — 저장 모델에 ref 를 얹는다. */
+  const withRef = <T extends Todo | Note>(entity: T): T & { ref: string } => ({
+    ...entity,
+    ref: refOf(entity.boardId, entity.number),
+  });
 
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -119,7 +160,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           label: url.searchParams.get('label') ?? undefined,
           includeArchived: url.searchParams.get('includeArchived') === 'true',
         };
-        return json(store.listTodos(filter));
+        return json(store.listTodos(filter).map(withRef));
       }
       if (method === 'POST' && path === '/api/todos') {
         const body = await readBody(req);
@@ -143,43 +184,50 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(todo, 201);
+        return json(withRef(todo), 201);
       }
 
       const todoDetail = path.match(/^\/api\/todos\/([^/]+)$/);
       if (todoDetail?.[1]) {
-        const id = todoDetail[1];
+        const ref = decodeURIComponent(todoDetail[1]);
+        const currentBoardId = currentBoardIdOf(url);
         if (method === 'GET') {
-          const todo = store.getTodo(id);
+          const todo = store.getTodo(ref, currentBoardId);
           if (!todo) {
-            return errorResponse(`todo not found: ${id}`, 404);
+            return errorResponse(`todo not found: ${ref}`, 404);
           }
-          return json({ todo, history: store.listHistory({ entityId: todo.id }) });
+          return json({ todo: withRef(todo), history: store.listHistory({ entityId: todo.id }) });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(store.updateTodo(id, body as never, actor));
+          return json(withRef(store.updateTodo(ref, body as never, actor, currentBoardId)));
         }
       }
 
       const todoStatus = path.match(/^\/api\/todos\/([^/]+)\/status$/);
       if (todoStatus?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoStatus[1]);
+        const currentBoardId = currentBoardIdOf(url);
         const body = await readBody(req);
         const action = body.action;
         if (typeof action !== 'string' || !STATUS_ACTIONS.has(action)) {
           return errorResponse(`invalid action: ${String(action)}`, 400);
         }
-        return json(store.setTodoStatus(todoStatus[1], action as StatusAction, actor));
+        return json(
+          withRef(store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
+        );
       }
 
       // ── notes ──
       if (method === 'GET' && path === '/api/notes') {
         return json(
-          store.listNotes({
-            board: url.searchParams.get('board') ?? undefined,
-            global: url.searchParams.get('global') === 'true',
-            includeArchived: url.searchParams.get('includeArchived') === 'true',
-          }),
+          store
+            .listNotes({
+              board: url.searchParams.get('board') ?? undefined,
+              global: url.searchParams.get('global') === 'true',
+              includeArchived: url.searchParams.get('includeArchived') === 'true',
+            })
+            .map(withRef),
         );
       }
       if (method === 'POST' && path === '/api/notes') {
@@ -195,32 +243,36 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(note, 201);
+        return json(withRef(note), 201);
       }
 
       const noteDetail = path.match(/^\/api\/notes\/([^/]+)$/);
       if (noteDetail?.[1]) {
-        const id = noteDetail[1];
+        const ref = decodeURIComponent(noteDetail[1]);
+        const currentBoardId = currentBoardIdOf(url);
         if (method === 'GET') {
-          const note = store.getNote(id);
+          const note = store.getNote(ref, currentBoardId);
           if (!note) {
-            return errorResponse(`note not found: ${id}`, 404);
+            return errorResponse(`note not found: ${ref}`, 404);
           }
-          return json({ note, history: store.listHistory({ entityId: note.id }) });
+          return json({ note: withRef(note), history: store.listHistory({ entityId: note.id }) });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(store.updateNote(id, body as never, actor));
+          return json(withRef(store.updateNote(ref, body as never, actor, currentBoardId)));
         }
       }
 
       const noteArchive = path.match(/^\/api\/notes\/([^/]+)\/(archive|unarchive)$/);
       if (noteArchive?.[1] && noteArchive[2] && method === 'POST') {
-        const id = noteArchive[1];
+        const ref = decodeURIComponent(noteArchive[1]);
+        const currentBoardId = currentBoardIdOf(url);
         return json(
-          noteArchive[2] === 'archive'
-            ? store.archiveNote(id, actor)
-            : store.unarchiveNote(id, actor),
+          withRef(
+            noteArchive[2] === 'archive'
+              ? store.archiveNote(ref, actor, currentBoardId)
+              : store.unarchiveNote(ref, actor, currentBoardId),
+          ),
         );
       }
 

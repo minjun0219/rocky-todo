@@ -203,6 +203,75 @@ describe('changes feed', () => {
   });
 });
 
+describe('number / ref 직렬화', () => {
+  test('todo 응답에 number 와 ref 가 실린다', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const todo = (await created.json()) as { number: number; ref: string };
+    expect(todo.number).toBe(1);
+    expect(todo.ref).toBe('rocky#1');
+  });
+
+  test('번호 참조로 조회된다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/rocky%231');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { todo: { title: string; ref: string } };
+    expect(body.todo.title).toBe('번호 확인');
+    expect(body.todo.ref).toBe('rocky#1');
+  });
+
+  test('GET /api/todos 목록도 각 항목에 ref 를 싣는다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '목록 확인' }),
+    });
+    const list = (await (await req('/api/todos?board=rocky')).json()) as { ref: string }[];
+    expect(list[0]?.ref).toBe('rocky#1');
+  });
+
+  test('노트 응답에도 number 와 ref 가 실린다 (보드 소속 / 글로벌)', async () => {
+    const boardNote = (await (
+      await req('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'rocky', title: '보드 메모' }),
+      })
+    ).json()) as { number: number; ref: string };
+    expect(boardNote.ref).toBe('rocky#1');
+
+    const globalNote = (await (
+      await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '글로벌 메모' }) })
+    ).json()) as { number: number; ref: string };
+    expect(globalNote.ref).toBe('#1');
+  });
+
+  test('보드 컨텍스트 없이 맨숫자 참조를 조회하면 500 이 아닌 4xx 를 반환한다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/1');
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
+
+  test('?board= 로 보드 스코프를 주면 맨숫자 참조가 해석된다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/1?board=rocky');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { todo: { ref: string } };
+    expect(body.todo.ref).toBe('rocky#1');
+  });
+});
+
 describe('SSE', () => {
   test('GET /api/events streams change events on mutation', async () => {
     const res = await req('/api/events');

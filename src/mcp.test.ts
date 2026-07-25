@@ -129,6 +129,64 @@ describe('todo_write / todo_list / todo_status', () => {
   });
 });
 
+describe('number / ref 참조 문법', () => {
+  test('todo_write 응답에 number 가 실리고, board-scoped ref 로 detail 조회가 된다', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '참조 확인', actor: 'tester' },
+      }),
+    ) as { number: number };
+    expect(created.number).toBe(1);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: 'rocky#1' } }),
+    ) as { todo: { title: string } };
+    expect(detail.todo.title).toBe('참조 확인');
+  });
+
+  test('todo_status 도 board-scoped ref 로 전이할 수 있다', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '상태 확인', actor: 'tester' },
+    });
+    const doing = resultJson(
+      await client.callTool({
+        name: 'todo_status',
+        arguments: { id: 'rocky#1', action: 'start', actor: 'tester' },
+      }),
+    ) as { status: string };
+    expect(doing.status).toBe('doing');
+  });
+
+  test('보드 컨텍스트 없는 맨숫자 참조는 isError 결과로 실패한다 (크래시 아님)', async () => {
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '번호만', actor: 'tester' },
+    });
+    const result = await client.callTool({
+      name: 'todo_status',
+      arguments: { id: '1', action: 'done', actor: 'tester' },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  test('note_write 응답에 number 가 실리고, board-scoped ref 로 조회된다', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'note_write',
+        arguments: { board: 'rocky', title: '메모 참조', actor: 'tester' },
+      }),
+    ) as { number: number };
+    expect(created.number).toBe(1);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'note_list', arguments: { id: 'rocky#1' } }),
+    ) as { note: { title: string } };
+    expect(detail.note.title).toBe('메모 참조');
+  });
+});
+
 describe('note_write / note_list', () => {
   test('create, append, archive lifecycle over MCP', async () => {
     const created = resultJson(
