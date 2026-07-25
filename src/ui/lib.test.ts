@@ -100,9 +100,14 @@ describe('copyRef', () => {
 
   test('인자를 하나만 넘기면 실제 전역(navigator/document)을 기본값으로 쓴다', async () => {
     // Bun 테스트 런타임에는 DOM 이 없어 document 가 없다 — clipboard 도 없으면 false.
+    // expect 가 먼저 throw 해도 전역이 원상복구되도록 try/finally 로 감싼다 — 안 그러면
+    // 이 테스트 실패 시 mutate 된 navigator 가 이후 테스트로 새어나간다.
     const original = globalThis.navigator;
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
-    expect(await copyRef('rocky#12')).toBe(false);
-    Object.defineProperty(globalThis, 'navigator', { value: original, configurable: true });
+    try {
+      expect(await copyRef('rocky#12')).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', { value: original, configurable: true });
+    }
   });
 });
