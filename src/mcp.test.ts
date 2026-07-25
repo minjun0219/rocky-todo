@@ -327,6 +327,104 @@ describe('number / ref 참조 문법', () => {
     });
     expect(result.isError).toBe(true);
   });
+
+  // finding: 위 wrong-row 가드가 ref 를 보기도 전에 걸려 있었다 — CLI 가 모든 단건
+  // 라우트에 cwd 로 유추한 board 를 무조건 붙이는데, 보드는 지연 생성이라 흔히
+  // 아직 없는 키가 실린다. `rocky#1`/raw id/id-prefix 처럼 board 컨텍스트를 아예
+  // 안 쓰는 ref 는 안 풀리는 board 인자를 무시해야 한다.
+  describe('안 풀리는 board 인자를 무시해야 하는 ref (finding: 이전 가드가 너무 일찍 걸림)', () => {
+    test('board-scoped ref(rocky#1)는 알 수 없는 board 인자가 있어도 풀린다', async () => {
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '스코프 확인', actor: 'tester' },
+      });
+      const detail = resultJson(
+        await client.callTool({
+          name: 'todo_list',
+          arguments: { id: 'rocky#1', board: 'typo-board' },
+        }),
+      ) as { todo: { title: string } };
+      expect(detail.todo.title).toBe('스코프 확인');
+    });
+
+    test('raw id 는 알 수 없는 board 인자가 있어도 풀린다', async () => {
+      const created = resultJson(
+        await client.callTool({
+          name: 'todo_write',
+          arguments: { board: 'rocky', title: 'raw id 확인', actor: 'tester' },
+        }),
+      ) as { id: string };
+      const detail = resultJson(
+        await client.callTool({
+          name: 'todo_list',
+          arguments: { id: created.id, board: 'typo-board' },
+        }),
+      ) as { todo: { title: string } };
+      expect(detail.todo.title).toBe('raw id 확인');
+    });
+
+    test('id prefix 는 알 수 없는 board 인자가 있어도 풀린다', async () => {
+      const created = resultJson(
+        await client.callTool({
+          name: 'todo_write',
+          arguments: { board: 'rocky', title: 'prefix 확인', actor: 'tester' },
+        }),
+      ) as { id: string };
+      const detail = resultJson(
+        await client.callTool({
+          name: 'todo_list',
+          arguments: { id: created.id.slice(0, 4), board: 'typo-board' },
+        }),
+      ) as { todo: { title: string } };
+      expect(detail.todo.title).toBe('prefix 확인');
+    });
+
+    test('맨숫자 참조는 알 수 없는 board 인자를 여전히 에러로 취급한다 (wrong-row 보호 유지)', async () => {
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '맨숫자 확인', actor: 'tester' },
+      });
+      const result = await client.callTool({
+        name: 'todo_list',
+        arguments: { id: '1', board: 'typo-board' },
+      });
+      expect(result.isError).toBe(true);
+    });
+
+    test('board 인자 없이 맨숫자 todo 참조는 "unknown board" 가 아니라 "board context required" 로 실패한다', async () => {
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '컨텍스트 확인', actor: 'tester' },
+      });
+      const result = await client.callTool({
+        name: 'todo_status',
+        arguments: { id: '1', action: 'done', actor: 'tester' },
+      });
+      expect(result.isError).toBe(true);
+      const text = (result.content as { type: string; text: string }[]).find(
+        (c) => c.type === 'text',
+      )?.text;
+      expect(text).toMatch(/board context required/);
+      expect(text).not.toMatch(/unknown board/);
+    });
+
+    test('board 인자 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {
+      const global = resultJson(
+        await client.callTool({
+          name: 'note_write',
+          arguments: { title: '전역 메모', actor: 'tester' },
+        }),
+      ) as { number: number };
+
+      const detail = resultJson(
+        await client.callTool({
+          name: 'note_list',
+          arguments: { id: `#${global.number}` },
+        }),
+      ) as { note: { title: string } };
+      expect(detail.note.title).toBe('전역 메모');
+    });
+  });
 });
 
 describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {

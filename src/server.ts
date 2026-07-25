@@ -1,5 +1,5 @@
 import pkg from '../package.json' with { type: 'json' };
-import { withRef } from './refs';
+import { refNeedsBoardContext, withRef } from './refs';
 import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 
 /**
@@ -69,19 +69,30 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
    * 없으면 undefined(전역/현재 컨텍스트 없음). 쿼리가 있는데 알려진 보드로 안 풀리면(오타
-   * 등) 조용히 undefined 로 폴백하지 않고 에러를 던진다(→ catch 에서 toHttpError 로 400) —
-   * 폴백을 허용하면 todos 는 우연히 "board context required" 로 에러가 나지만, notes 는
-   * 전역 메모 번호 공간으로 조용히 재해석돼 엉뚱한 행을 돌려주게 된다(MCP 쪽과 동일한
-   * wrong-row 위험 — `src/mcp.ts` 의 `resolveBoardId` 참고).
+   * 등), `ref` 가 실제로 board 컨텍스트를 쓰는 맨숫자 꼴(`refNeedsBoardContext`)일
+   * 때만 에러를 던진다(→ catch 에서 toHttpError 로 400) — 그 경우 폴백을 허용하면
+   * todos 는 우연히 "board context required" 로 에러가 나지만, notes 는 전역 메모
+   * 번호 공간으로 조용히 재해석돼 엉뚱한 행을 돌려주게 된다(MCP 쪽과 동일한 wrong-row
+   * 위험 — `src/mcp.ts` 의 `resolveBoardId` 참고).
+   *
+   * 반대로 `rocky#12`/raw id/id-prefix 처럼 board 컨텍스트를 아예 안 쓰는 ref 에는
+   * 안 풀리는 `?board=` 를 무시한다 — CLI 가 모든 단건 라우트에 cwd 로 유추한
+   * `?board=` 를 무조건 붙이는데, 보드가 지연 생성이라(add/section add/board add
+   * 만 만든다) 흔히 존재하지 않는 키가 실려온다. ref 자체가 보드를 특정하는 경우까지
+   * 그 무관한 오타로 막으면 안 된다(finding: 이전 웨이브가 이 가드를 ref 를 보기도
+   * 전에 걸어 `rocky#12` 조회까지 400 을 내던 회귀).
    */
-  const currentBoardIdOf = (url: URL): string | undefined => {
+  const currentBoardIdOf = (url: URL, ref: string): string | undefined => {
     const key = url.searchParams.get('board');
     if (!key) {
       return undefined;
     }
     const boardId = store.boardIdOf(key);
     if (!boardId) {
-      throw new Error(`unknown board: ${key}`);
+      if (refNeedsBoardContext(ref)) {
+        throw new Error(`unknown board: ${key}`);
+      }
+      return undefined;
     }
     return boardId;
   };
@@ -179,7 +190,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const todoDetail = path.match(/^\/api\/todos\/([^/]+)$/);
       if (todoDetail?.[1]) {
         const ref = decodeURIComponent(todoDetail[1]);
-        const currentBoardId = currentBoardIdOf(url);
+        const currentBoardId = currentBoardIdOf(url, ref);
         if (method === 'GET') {
           const todo = store.getTodo(ref, currentBoardId);
           if (!todo) {
@@ -199,7 +210,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const todoStatus = path.match(/^\/api\/todos\/([^/]+)\/status$/);
       if (todoStatus?.[1] && method === 'POST') {
         const ref = decodeURIComponent(todoStatus[1]);
-        const currentBoardId = currentBoardIdOf(url);
+        const currentBoardId = currentBoardIdOf(url, ref);
         const body = await readBody(req);
         const action = body.action;
         if (typeof action !== 'string' || !STATUS_ACTIONS.has(action)) {
@@ -241,7 +252,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const noteDetail = path.match(/^\/api\/notes\/([^/]+)$/);
       if (noteDetail?.[1]) {
         const ref = decodeURIComponent(noteDetail[1]);
-        const currentBoardId = currentBoardIdOf(url);
+        const currentBoardId = currentBoardIdOf(url, ref);
         if (method === 'GET') {
           const note = store.getNote(ref, currentBoardId);
           if (!note) {
@@ -261,7 +272,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const noteArchive = path.match(/^\/api\/notes\/([^/]+)\/(archive|unarchive)$/);
       if (noteArchive?.[1] && noteArchive[2] && method === 'POST') {
         const ref = decodeURIComponent(noteArchive[1]);
-        const currentBoardId = currentBoardIdOf(url);
+        const currentBoardId = currentBoardIdOf(url, ref);
         return json(
           withRef(
             store,

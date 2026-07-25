@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
-import { withRef } from './refs';
+import { refNeedsBoardContext, withRef } from './refs';
 import type { StatusAction, TodoStore } from './store';
 
 /**
@@ -31,19 +31,33 @@ const linkSchema = z.object({ url: z.string(), title: z.string().optional() });
 
 /**
  * `board` 인자를 currentBoardId 로 바꾼다. `board` 가 아예 안 왔으면 undefined(전역/현재
- * 컨텍스트 없음) 를 그대로 돌려주지만, `board` 가 왔는데 알려진 보드로 안 풀리면(오타 등)
- * 조용히 undefined 로 폴백하지 않고 에러를 던진다. 폴백을 허용하면 todos 는 우연히
- * "board context required" 로 에러가 나지만(맨숫자가 전역 번호 공간이 없어서), notes 는
- * 전역 메모 번호 공간으로 조용히 재해석돼(`note_list { id: "#3", board: "typo-board" }`
- * 가 board 없이 준 것처럼 GLOBAL note #3 을 반환) 엉뚱한 행을 조용히 돌려주게 된다.
+ * 컨텍스트 없음) 를 그대로 돌려주지만, `board` 가 왔는데 알려진 보드로 안 풀리면(오타 등),
+ * `ref` 가 실제로 board 컨텍스트를 쓰는 맨숫자 꼴(`refNeedsBoardContext`)일 때만 에러를
+ * 던진다. 그 경우 폴백을 허용하면 todos 는 우연히 "board context required" 로 에러가
+ * 나지만(맨숫자가 전역 번호 공간이 없어서), notes 는 전역 메모 번호 공간으로 조용히
+ * 재해석돼(`note_list { id: "#3", board: "typo-board" }` 가 board 없이 준 것처럼
+ * GLOBAL note #3 을 반환) 엉뚱한 행을 조용히 돌려주게 된다.
+ *
+ * 반대로 `rocky#12`/raw id/id-prefix 처럼 board 컨텍스트를 아예 안 쓰는 `ref` 에는
+ * 안 풀리는 `board` 를 무시한다 — `resolveRef` 의 스코프/id/id-prefix 세 분기가
+ * `currentBoardId` 를 참조조차 안 하니, 이 값이 뭐든 결과에 영향이 없다. 안 풀린다고
+ * 무조건 던지면(과거 버그) `rocky#12` 를 그대로 넘기면서 무관한 board 오타(또는 CLI 가
+ * cwd 로 유추해 붙인, 아직 안 만들어진 보드 key)에 막혀버린다.
  */
-function resolveBoardId(store: TodoStore, board: string | undefined): string | undefined {
+function resolveBoardId(
+  store: TodoStore,
+  board: string | undefined,
+  ref: string,
+): string | undefined {
   if (!board) {
     return undefined;
   }
   const boardId = store.boardIdOf(board);
   if (!boardId) {
-    throw new Error(`unknown board: ${board}`);
+    if (refNeedsBoardContext(ref)) {
+      throw new Error(`unknown board: ${board}`);
+    }
+    return undefined;
   }
   return boardId;
 }
@@ -80,7 +94,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         return jsonResult({ boards: store.listBoards(includeArchived ?? false) });
       }
       if (id) {
-        const currentBoardId = resolveBoardId(store, board);
+        const currentBoardId = resolveBoardId(store, board, id);
         const todo = store.getTodo(id, currentBoardId);
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
@@ -130,7 +144,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     async ({ id, board, title, actor, ...rest }) => {
       const who = actor ?? 'agent';
       if (id) {
-        const currentBoardId = resolveBoardId(store, board);
+        const currentBoardId = resolveBoardId(store, board, id);
         return jsonResult(
           withRef(store, store.updateTodo(id, { title, ...rest }, who, currentBoardId)),
         );
@@ -155,7 +169,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       },
     },
     async ({ id, board, action, actor }) => {
-      const currentBoardId = resolveBoardId(store, board);
+      const currentBoardId = resolveBoardId(store, board, id);
       return jsonResult(
         withRef(
           store,
@@ -189,7 +203,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     },
     async ({ board, global: isGlobal, id, includeArchived }) => {
       if (id) {
-        const currentBoardId = resolveBoardId(store, board);
+        const currentBoardId = resolveBoardId(store, board, id);
         const note = store.getNote(id, currentBoardId);
         if (!note) {
           throw new Error(`note not found: ${id}`);
@@ -239,7 +253,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         }
         return jsonResult(withRef(store, store.createNote({ board, title, content }, who)));
       }
-      const currentBoardId = resolveBoardId(store, board);
+      const currentBoardId = resolveBoardId(store, board, id);
       if (mode === 'archive') {
         return jsonResult(withRef(store, store.archiveNote(id, who, currentBoardId)));
       }
