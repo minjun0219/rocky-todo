@@ -327,4 +327,26 @@ describe('참조 해석', () => {
     store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
     expect(store.getTodo('alpha#999')).toBeUndefined();
   });
+
+  test('#N 은 자릿수가 ID_LENGTH 이상이어도 번호로 취급해 보드 컨텍스트를 요구한다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    // '#1234567' 는 '#' + 7자리 숫자 — 예전 길이 게이트는 '#' 포함 길이(8)로 비교해
+    // 번호 분기를 건너뛰고 undefined 를 돌려주는 버그가 있었다. '#' 가 붙으면 무조건 번호다.
+    expect(() => store.getTodo('#1234567')).toThrow(/board/i);
+  });
+
+  test('#N 은 보드 컨텍스트가 있으면 자릿수와 무관하게 번호로 해석한다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`#${t.number}`, board.id)?.id).toBe(t.id);
+    // 존재하지 않는 큰 자릿수 번호도 (undefined 가 아니라) 여전히 번호 분기로 라우팅된다 —
+    // id-exact/prefix 매칭으로 새지 않고 조회만 실패해야 한다.
+    expect(store.getTodo('#1234567', board.id)).toBeUndefined();
+  });
+
+  test('정확히 8자리 숫자로만 된 입력은 번호가 아니라 id 로 취급한다', () => {
+    // ID_LENGTH(8) 와 같은 자릿수의 순수 숫자는 실제 id(무작위 base36, 전부 숫자일 수 있음)와
+    // 구분할 수 없으므로 id 취급이 의도된 동작이다. 대응하는 id 가 없으니 undefined 여야 한다.
+    expect(store.getTodo('00000012')).toBeUndefined();
+  });
 });

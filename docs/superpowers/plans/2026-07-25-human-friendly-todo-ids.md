@@ -557,14 +557,17 @@ function newId(): string {
         .get(board.id, Number(scoped[2]));
     }
 
-    const bare = /^#?(\d+)$/.exec(trimmed);
-    if (bare?.[1] && trimmed.length < ID_LENGTH) {
+    // '#' 가 붙으면 자릿수와 무관하게 무조건 번호다 ('#' 는 id 알파벳에 없다).
+    // '#' 없는 bare 숫자만 길이로 가른다 — ID_LENGTH 와 같은 자릿수면 id 로 취급해야
+    // 무작위 id 가 전부 숫자로 나온 경우('00000012' 등)와 안전하게 구분된다.
+    const bare = /^(#)?(\d+)$/.exec(trimmed);
+    if (bare?.[2] && (bare[1] || bare[2].length < ID_LENGTH)) {
       if (!currentBoardId) {
         throw new Error(`board context required to resolve ${trimmed} — use board#number`);
       }
       return this.db
         .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
-        .get(currentBoardId, Number(bare[1]));
+        .get(currentBoardId, Number(bare[2]));
     }
 
     const exact = this.db.query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`).get(trimmed);

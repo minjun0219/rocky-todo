@@ -513,13 +513,8 @@ export class TodoStore {
     return todo;
   }
 
-  updateTodo(
-    idOrPrefix: string,
-    patch: UpdateTodoPatch,
-    actor: string,
-    currentBoardId?: string,
-  ): Todo {
-    const current = this.mustGetTodo(idOrPrefix, currentBoardId);
+  updateTodo(ref: string, patch: UpdateTodoPatch, actor: string, currentBoardId?: string): Todo {
+    const current = this.mustGetTodo(ref, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | number | null)[] = [];
@@ -593,13 +588,8 @@ export class TodoStore {
     return this.mustGetTodo(current.id);
   }
 
-  setTodoStatus(
-    idOrPrefix: string,
-    action: StatusAction,
-    actor: string,
-    currentBoardId?: string,
-  ): Todo {
-    const current = this.mustGetTodo(idOrPrefix, currentBoardId);
+  setTodoStatus(ref: string, action: StatusAction, actor: string, currentBoardId?: string): Todo {
+    const current = this.mustGetTodo(ref, currentBoardId);
     const now = nowIso();
     const changes: Record<string, [unknown, unknown]> = {};
 
@@ -732,13 +722,8 @@ export class TodoStore {
     return note;
   }
 
-  updateNote(
-    idOrPrefix: string,
-    patch: UpdateNotePatch,
-    actor: string,
-    currentBoardId?: string,
-  ): Note {
-    const current = this.mustGetNote(idOrPrefix, currentBoardId);
+  updateNote(ref: string, patch: UpdateNotePatch, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | null)[] = [];
@@ -773,8 +758,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  archiveNote(idOrPrefix: string, actor: string, currentBoardId?: string): Note {
-    const current = this.mustGetNote(idOrPrefix, currentBoardId);
+  archiveNote(ref: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = ?, updated_at = ? WHERE id = ?')
       .run(nowIso(), nowIso(), current.id);
@@ -782,8 +767,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  unarchiveNote(idOrPrefix: string, actor: string, currentBoardId?: string): Note {
-    const current = this.mustGetNote(idOrPrefix, currentBoardId);
+  unarchiveNote(ref: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = NULL, updated_at = ? WHERE id = ?')
       .run(nowIso(), current.id);
@@ -934,15 +919,15 @@ export class TodoStore {
       );
     }
 
-    const bare = /^#?(\d+)$/.exec(trimmed);
-    if (bare?.[1] && trimmed.length < ID_LENGTH) {
+    const bare = /^(#)?(\d+)$/.exec(trimmed);
+    if (bare?.[2] && (bare[1] || bare[2].length < ID_LENGTH)) {
       if (!currentBoardId) {
         throw new Error(`board context required to resolve ${trimmed} — use board#number`);
       }
       return (
         this.db
           .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
-          .get(currentBoardId, Number(bare[1])) ?? undefined
+          .get(currentBoardId, Number(bare[2])) ?? undefined
       );
     }
 
