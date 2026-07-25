@@ -39,7 +39,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
-    "test": "bun test ./src ./hooks",
+    "test": "bun test ./src ./hooks ./scripts",
     "typecheck": "bun x tsc --noEmit -p tsconfig.json",
     "changeset": "bunx changeset",
     "changeset:version": "bunx changeset version && bun scripts/sync-plugin-version.ts",

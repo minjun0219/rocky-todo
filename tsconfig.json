@@ -17,5 +17,5 @@
     "noImplicitOverride": true,
     "useUnknownInCatchVariables": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "hooks/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "hooks/**/*.ts", "scripts/**/*.ts"]
 }

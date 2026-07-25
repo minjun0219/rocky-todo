@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# push 전 무거운 게이트를 조기 차단 (CI 와 중복이나 왕복 절약).
+# 우회가 필요하면: git push --no-verify
+bun run typecheck && bun run test

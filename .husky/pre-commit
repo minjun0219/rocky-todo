@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# staged 파일만 biome check/format
+bun x lint-staged || exit 1
+
+# 시크릿 스캔 — gitleaks 가 있으면 사용, 없으면 내장 grep fallback.
+# 우회가 필요하면: git commit --no-verify
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner || {
+    echo "❌ gitleaks: staged 변경에서 시크릿 의심 패턴을 발견해 커밋을 중단합니다."
+    exit 1
+  }
+else
+  pattern='ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|ntn_[A-Za-z0-9]{20,}|secret_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}'
+  added="$(git diff --cached -U0 --no-color | grep -E '^\+[^+]' || true)"
+  if printf '%s\n' "$added" | grep -Eiqn "$pattern"; then
+    echo "❌ 시크릿 의심 패턴이 staged 변경에 있어 커밋을 중단합니다:"
+    printf '%s\n' "$added" | grep -EinI "$pattern"
+    echo "   (오탐이면: git commit --no-verify)"
+    exit 1
+  fi
+fi
