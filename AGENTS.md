@@ -39,7 +39,7 @@ rocky-todo/
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
 │   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 아카이브 + history + change 이벤트
 │   ├── cli.ts                      # CLI — 얇은 HTTP 클라이언트 + 컴팩트 출력 (runCli)
-│   ├── client.ts                   # REST 클라이언트 (buildContext/health/ensureDaemon/request)
+│   ├── client.ts                   # REST 클라이언트 (buildContext/daemonHealth/health/ensureDaemon/stopDaemon/request)
 │   ├── actor.ts                    # actor 감지 + board key 유추(git remote > toplevel > cwd)
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
@@ -49,7 +49,7 @@ rocky-todo/
 │   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
 ├── hooks/
 │   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo
-│   ├── ensure-daemon.ts (+test)    # health→없으면 spawn (fail-open, health/spawn DI)
+│   ├── ensure-daemon.ts (+test)    # health→없으면 spawn / 구버전이면 stop 후 재기동 (fail-open, DI)
 │   └── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op)
 ├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
@@ -65,6 +65,13 @@ rocky-todo/
 - **설치 = 활성화**: `todo.enabled` 스위치 없음. `claude plugin disable rocky-todo` 로 끈다.
 - **데몬 기동**: SessionStart(startup) 훅 `ensure-daemon.ts` 가 health→없으면 detached spawn.
   CLI 도 온디맨드 spawn. 상시 상주는 `rocky-todo daemon install`(launchd KeepAlive).
+- **버전 인식 재기동**: 데몬은 플러그인 캐시의 **버전 디렉터리**(`.../rocky-todo/<v>/src/daemon.ts`)
+  에서 실행되고 프로세스는 그 설치본보다 오래 산다. 그래서 훅은 health 유무만 보지 않고
+  `/api/health` 의 `version` 을 자기 `package.json` 버전과 비교해, 다르면 `pid` 로 SIGTERM →
+  종료 확인 → 현재 버전으로 재기동한다 (version 미보고 데몬 ≤0.1.0 도 stale 취급). 못 내리면
+  재기동하지 않는다 — 보드가 없는 것보다 구버전이라도 있는 게 낫다.
+  한계: **버전이 같으면 경로가 달라도 재기동하지 않는다** — 로컬 레포 데몬과 설치본 버전이
+  같을 때(개발 중) 서로 갈아치우지 않는 건 의도된 동작. 강제 교체는 `rocky-todo daemon stop`.
 - **첫 세션 순서 미보장**: SessionStart 데몬 기동 ↔ http MCP 초기화 순서는 보장 안 됨. 첫 세션
   MCP `failed` 는 `/mcp` retry / 다음 세션 / launchd 로 해소 — 감안 사항.
 - **전역 단일 인스턴스**: 포트가 락. project rocky.json 무시, user rocky.json 의 todo 블록만.

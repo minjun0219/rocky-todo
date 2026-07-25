@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { formatTodoLine, parseFlags } from './cli';
 import type { Todo } from './store';
@@ -88,5 +89,19 @@ describe('formatTodoLine', () => {
     expect(line).toContain('~2026-08-01');
     expect(line).toContain('↗r#3');
     expect(line.startsWith('    ')).toBe(true);
+  });
+});
+
+describe('bin/rocky-todo entry', () => {
+  // bin/ 은 확장자가 없어 tsc(include: src/hooks/scripts)·biome 어느 쪽도 검사하지
+  // 않는다. 진입점이 실제로 로드되는지는 이 스모크만 보장한다 — `help` 는 데몬을
+  // 건드리지 않으므로 부작용 없이 import 체인 전체를 태울 수 있다.
+  test('help runs without touching the daemon', () => {
+    const binPath = join(import.meta.dir, '..', 'bin', 'rocky-todo');
+    const proc = Bun.spawnSync({ cmd: [binPath, 'help'], stdout: 'pipe', stderr: 'pipe' });
+    const stderr = proc.stderr.toString();
+    expect(stderr).toBe('');
+    expect(proc.exitCode).toBe(0);
+    expect(proc.stdout.toString()).toContain('rocky-todo');
   });
 });

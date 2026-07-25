@@ -14,6 +14,17 @@ export const LAUNCHD_LABEL = 'com.rocky.todo';
 
 const PLIST_PATH = join(homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
 
+/**
+ * launchd(KeepAlive) 상주 job 이 등록돼 있나 — plist 존재 여부로 판별한다 (macOS 전용).
+ *
+ * 등록돼 있으면 데몬은 launchd 가 관리하므로, 구버전을 교체할 때 PID 만 죽여선 안 된다
+ * (KeepAlive 가 같은 plist 경로의 구버전을 즉시 되살린다). `installLaunchd` 로 job 자체를
+ * 현재 설치 경로로 교체해야 한다.
+ */
+export function isLaunchdRegistered(): boolean {
+  return process.platform === 'darwin' && existsSync(PLIST_PATH);
+}
+
 function daemonEntryPath(): string {
   return join(import.meta.dir, 'daemon.ts');
 }

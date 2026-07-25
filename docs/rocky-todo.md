@@ -110,6 +110,9 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
   수동 제어: `rocky-todo tailscale on|off|status`.
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
 - 데몬 설정 변경 후에는 재시작해야 반영된다: `rocky-todo daemon stop && rocky-todo daemon start`.
+- 플러그인 업데이트는 다음 세션 시작 때 자동 반영된다 — SessionStart 훅이 실행 중인 데몬의
+  버전을 확인해 구버전이면 내리고 새 버전으로 재기동한다 (보드 데이터는 `~/.config/rocky/todo`
+  에 있어 그대로 보존). 즉시 반영하고 싶으면 `rocky-todo daemon stop` 후 아무 명령이나 실행.
 
 ## CLI 표면 (사람/스크립트/폴백)
 
