@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { NoteView } from '../../server';
-import { formatElapsed } from '../lib';
+import { copyRef, formatElapsed } from '../lib';
 import { useUiStore } from '../store';
 
 /** 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영. */
@@ -40,6 +40,7 @@ function NoteCard({ note }: { note: NoteView }) {
   const openNoteDetail = useUiStore((s) => s.openNoteDetail);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
+  const [copied, setCopied] = useState(false);
 
   // 다른 경로(에이전트)의 편집이 SSE refetch 로 들어오면, 내가 수정중이 아닐 때만 동기화
   useEffect(() => {
@@ -56,9 +57,30 @@ function NoteCard({ note }: { note: NoteView }) {
     void saveNote(note.id, { title, content });
   };
 
+  // TodoItem 의 todo-ref 버튼과 동일한 복사 흐름. 글로벌 메모는 note.ref 가 `#3` 처럼
+  // 보드 접두사 없이 오는데, copyRef 는 그 문자열을 그대로 복사하므로 별도 분기가 없다.
+  const handleCopyRef = async () => {
+    const ok = await copyRef(note.ref);
+    if (ok) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+      return;
+    }
+    window.prompt('클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:', note.ref);
+  };
+
   return (
     <div className={`note-card ${note.archivedAt ? 'is-archived' : ''}`}>
       <div className="note-card-head">
+        <button
+          type="button"
+          className="todo-ref"
+          onClick={() => void handleCopyRef()}
+          title={copied ? '복사됨' : `${note.ref} 복사`}
+          aria-label={copied ? '복사됨' : `${note.ref} 복사`}
+        >
+          {copied ? '✓' : `#${note.number}`}
+        </button>
         <input
           className="note-title"
           value={title}
