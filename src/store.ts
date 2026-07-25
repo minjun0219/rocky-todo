@@ -308,10 +308,9 @@ export class TodoStore {
     this.db.run('PRAGMA journal_mode = WAL');
     this.db.run('PRAGMA foreign_keys = ON');
     this.db.run(SCHEMA);
-    runMigrations(this.db, {
-      dbPath: options.dbPath,
-      backupPath: `${options.dbPath}.bak-v0`,
-    });
+    // backupPath 는 지정하지 않는다 — runMigrations 가 실제 시작 버전으로
+    // `${dbPath}.bak-v<version>` 을 스스로 계산한다 (하드코딩된 v0 방지).
+    runMigrations(this.db, { dbPath: options.dbPath });
   }
 
   close(): void {

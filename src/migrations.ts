@@ -44,11 +44,16 @@ export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */
   migrations?: Migration[];
   /**
-   * 적용 전 DB 를 복사해 둘 경로. dbPath 가 없거나(:memory: 등) 파일이 없거나, todos/notes
-   * 에 아직 아무 행도 없는 신규 DB(백업할 내용이 없음)면 생략한다.
+   * 적용 전 DB 를 복사해 둘 경로. 생략하면 `${dbPath}.bak-v<현재 user_version>` 로
+   * 자동 계산한다 — 실제로 몇 버전에서 마이그레이션을 시작했는지가 파일명에 남아야
+   * 여러 번 재기동을 거친 DB 의 백업 이력을 구분할 수 있다("v0" 로 고정하면 세 번째
+   * 마이그레이션에서 만든 백업도 전부 v0 로 보여 오해를 부른다).
    */
   backupPath?: string;
-  /** 백업 원본 경로. backupPath 와 함께 줄 때만 백업한다. */
+  /**
+   * 백업 원본 경로. dbPath 가 없거나(:memory: 등) 파일이 없거나, todos/notes 에 아직
+   * 아무 행도 없는 신규 DB(백업할 내용이 없음)면 백업을 생략한다.
+   */
   dbPath?: string;
 }
 
@@ -73,6 +78,39 @@ function hasDataWorthBackingUp(db: Database): boolean {
 }
 
 /**
+ * WAL 을 메인 파일로 체크포인트한 뒤 파일 복사로 백업한다.
+ *
+ * `journal_mode = WAL` 에서는 마지막 체크포인트 이후의 커밋이 `-wal` 사이드카에만
+ * 있고 메인 db 파일에는 없을 수 있다 — `copyFileSync` 로 메인 파일만 복사하면 그
+ * 트랜잭션들이 통째로 빠진(심하면 스키마조차 없는) 백업이 만들어진다. 매 기동마다
+ * `PRAGMA wal_checkpoint(TRUNCATE)` 로 WAL 을 메인 파일에 흡수시키고 `-wal` 을
+ * 비운 뒤 복사한다 — `VACUUM INTO` 보다 저렴하고(테이블 전체 재작성이 없다), 이미
+ * 열려 있는 handle 로 바로 실행할 수 있어 별도 연결이 필요 없다.
+ *
+ * 복사 자체가 실패하면(디스크 풀·권한) 예외를 던지지 않고 경고만 남긴 채 진행한다.
+ * 백업 실패로 데몬 기동 전체가 막히면 "백업 없이 보드가 뜨는 것"보다 나쁜 결과를
+ * 만든다 — 이 레포의 다른 fail-open 판단들(예: 버전 재기동 실패 시 구버전 유지)과
+ * 같은 원칙이다. 정말 디스크가 가득 찼다면 뒤따르는 마이그레이션 자체(ALTER TABLE 등)도
+ * 실패해 자연히 표면화된다.
+ */
+function backupDatabase(db: Database, dbPath: string, backupPath: string): void {
+  try {
+    db.run('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch {
+    // 체크포인트가 실패해도 최선을 다해 복사는 시도한다 — WAL 이 반영 안 된 백업이라도
+    // 백업이 아예 없는 것보다는 낫다.
+  }
+  try {
+    copyFileSync(dbPath, backupPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `rocky-todo: pre-migration backup failed (${backupPath}) — 백업 없이 진행: ${message}`,
+    );
+  }
+}
+
+/**
  * user_version 보다 뒤에 있는 마이그레이션만 순서대로 적용한다.
  *
  * 각 마이그레이션은 트랜잭션 안에서 실행되며, 던지면 롤백하고 user_version 도 올리지
@@ -90,13 +128,9 @@ export function runMigrations(db: Database, options: RunMigrationsOptions = {}):
     return current;
   }
 
-  if (
-    options.backupPath &&
-    options.dbPath &&
-    existsSync(options.dbPath) &&
-    hasDataWorthBackingUp(db)
-  ) {
-    copyFileSync(options.dbPath, options.backupPath);
+  if (options.dbPath && existsSync(options.dbPath) && hasDataWorthBackingUp(db)) {
+    const backupPath = options.backupPath ?? `${options.dbPath}.bak-v${current}`;
+    backupDatabase(db, options.dbPath, backupPath);
   }
 
   let version = current;
