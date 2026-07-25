@@ -242,6 +242,30 @@ describe('boards & sections REST', () => {
     ).toBe(400);
   });
 
+  test('POST /api/sections/:id/archive 는 섹션을 보관하고 항목을 미분류로 돌린다', async () => {
+    const todo = (await (
+      await req('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: 'x', section: '설계' }),
+      })
+    ).json()) as { id: string; sectionId: string };
+
+    const res = await req(`/api/sections/${todo.sectionId}/archive`, { method: 'POST' });
+    expect(res.status).toBe(200);
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as unknown[];
+    expect(listed).toHaveLength(0);
+
+    const detail = (await (await req(`/api/todos/${todo.id}`)).json()) as {
+      todo: { sectionId?: string };
+    };
+    expect(detail.todo.sectionId).toBeUndefined();
+  });
+
+  test('POST /api/sections/:id/archive 는 없는 섹션에 404', async () => {
+    expect((await req('/api/sections/zzzzzzzz/archive', { method: 'POST' })).status).toBe(404);
+  });
+
   // 보드 key 규칙(공백·# 금지)은 파싱 가능한 ref 를 보장하려고 둔 것이다. UI 가 이 에러를
   // 사용자에게 보여줘야 하므로, 서버가 400 으로 분명히 거절하는지 고정한다.
   test('POST /api/boards 는 참조에 쓸 수 없는 key 를 400 으로 거절한다', async () => {

@@ -856,8 +856,7 @@ textarea {
   padding: 2px 0;
 }
 
-.board-add-input,
-.section-add-input {
+.board-add-input {
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--warm-dim);
@@ -867,37 +866,33 @@ textarea {
   font-size: 13px;
 }
 
-.board-add-error,
-.section-add-error {
+.board-add-error {
   color: var(--p1);
   font-size: 12px;
   line-height: 1.4;
   padding: 4px 2px 0;
 }
 
-.section-add-open {
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font-size: 12px;
-  margin: -8px 0 14px;
-  cursor: pointer;
-}
-
-.section-add-open:hover {
-  color: var(--muted);
-}
-
-.section-add {
-  margin: -8px 0 14px;
-}
-
 @media (max-width: 900px) {
   /* 터치 타깃 — 백로그 rocky-todo#1 과 같은 방침 */
-  .board-add-open,
-  .section-add-open {
+  .board-add-open {
     min-height: 44px;
   }
+}
+
+.drawer-section-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.drawer-select {
+  flex: 1 1 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 13px;
 }

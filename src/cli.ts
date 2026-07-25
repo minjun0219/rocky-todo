@@ -238,7 +238,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
   rocky-todo start|stop|done|reopen|archive|unarchive REF
-  rocky-todo section add "이름" [--board K] · section ls [--board K]
+  rocky-todo section add "이름" [--board K] · section ls · section archive "이름"
   rocky-todo note add "제목" [--board K|--global] [--content MD]
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
@@ -478,19 +478,27 @@ export async function runCli(): Promise<void> {
     case 'section': {
       const sub = rest[0];
       if (sub === 'add' && rest[1]) {
-        // 섹션은 todo_write 경로처럼 upsert — 빈 섹션 생성을 위해 보드만 보장
+        // 보드를 먼저 보장한다 — POST /api/sections 는 없는 보드를 만들어주지 않는다.
         await request<Board>(ctx, 'POST', '/api/boards', { key: board });
+        const section = await request<Section>(ctx, 'POST', '/api/sections', {
+          board,
+          title: rest[1],
+        });
+        console.log(`✓ 섹션: ${section.title}`);
+        return;
+      }
+      if (sub === 'archive' && rest[1]) {
         const sections = await request<Section[]>(
           ctx,
           'GET',
           `/api/sections?board=${encodeURIComponent(board)}`,
         );
-        if (sections.some((s) => s.title === rest[1])) {
-          console.log(`✓ 섹션 이미 있음: ${rest[1]}`);
-          return;
+        const target = sections.find((s) => s.title === rest[1]);
+        if (!target) {
+          throw new Error(`섹션 없음: ${rest[1]} (board: ${board})`);
         }
-        // 섹션 단독 생성 API 는 없다 — 자리표시 todo 없이 만들려면 todo 추가 시 --section 사용 안내
-        console.log(`섹션은 todo 추가 시 생성된다: rocky-todo add "..." --section "${rest[1]}"`);
+        await request(ctx, 'POST', `/api/sections/${encodeURIComponent(target.id)}/archive`);
+        console.log(`✓ 섹션 보관: ${target.title} — 속해 있던 작업은 미분류로 돌아간다`);
         return;
       }
       if (sub === 'ls') {
@@ -502,7 +510,7 @@ export async function runCli(): Promise<void> {
         print(sections, () => sections.map((s) => `# ${s.title}`).join('\n') || '(섹션 없음)');
         return;
       }
-      throw new Error('usage: rocky-todo section add "이름" | section ls');
+      throw new Error('usage: rocky-todo section add "이름" | section ls | section archive "이름"');
     }
 
     case 'note': {

@@ -114,7 +114,8 @@ export interface CreateTodoInput {
 export interface UpdateTodoPatch {
   title?: string;
   description?: string;
-  section?: string;
+  /** 이름으로 upsert. `null`(또는 공백뿐인 문자열)이면 섹션에서 뺀다 — parentId 와 같은 대칭. */
+  section?: string | null;
   parentId?: string | null;
   priority?: TodoPriority;
   due?: string | null;
@@ -452,6 +453,10 @@ export class TodoStore {
     if (!row) {
       throw new Error(`section not found: ${id}`);
     }
+    // 항목의 section_id 를 남겨두면 UI 가 그 항목을 어느 그룹에도 못 넣어 화면에서
+    // 사라진다 (섹션 그룹은 없어지고 미분류 그룹은 section_id 가 빈 것만 모은다).
+    // 섹션이 사라지면 항목은 미분류로 돌려놓는다 — 항목 자체는 건드리지 않는다.
+    this.db.query('UPDATE todos SET section_id = NULL WHERE section_id = ?').run(id);
     this.db.query('UPDATE sections SET archived_at = ? WHERE id = ?').run(nowIso(), id);
     this.recordHistory('section', id, actor, 'archive', undefined, row.board_id);
   }
@@ -601,8 +606,14 @@ export class TodoStore {
       apply('links', 'links', current.links, patch.links, JSON.stringify(patch.links));
     }
     if (patch.section !== undefined) {
-      const section = this.ensureSection(current.boardId, patch.section, actor);
-      apply('section_id', 'section', current.sectionId, section.id, section.id);
+      // 빈 이름 섹션을 만들어 두는 건 사고다 — 공백뿐인 입력은 해제로 본다.
+      const title = patch.section?.trim() ?? '';
+      if (title === '') {
+        apply('section_id', 'section', current.sectionId, undefined, null);
+      } else {
+        const section = this.ensureSection(current.boardId, title, actor);
+        apply('section_id', 'section', current.sectionId, section.id, section.id);
+      }
     }
     if (patch.parentId !== undefined) {
       if (patch.parentId === null) {

@@ -48,11 +48,6 @@ interface UiState {
    *   없어 400 이 온다. 호출자가 사용자에게 보여줘야 한다 (조용히 삼키면 안 된다).
    */
   createBoard: (key: string) => Promise<void>;
-  /**
-   * 현재 선택된 보드에 섹션을 만든다.
-   * @throws `전체` 뷰에서는 대상 보드를 알 수 없어 던진다.
-   */
-  createSection: (title: string) => Promise<void>;
   addTodo: (input: { board: string; title: string; section?: string }) => Promise<void>;
   patchTodo: (id: string, patch: Record<string, unknown>) => Promise<void>;
   setTodoStatus: (id: string, action: StatusAction) => Promise<void>;
@@ -152,18 +147,6 @@ export const useUiStore = create<UiState>((set, get) => ({
     });
     await get().refetch();
     set({ selected: board.key });
-  },
-
-  createSection: async (title) => {
-    const { actor, selected } = get();
-    if (selected === 'all') {
-      throw new Error('섹션을 만들 보드를 먼저 골라라');
-    }
-    await api('/api/sections', actor, {
-      method: 'POST',
-      body: JSON.stringify({ board: selected, title }),
-    });
-    await get().refetch();
   },
 
   addTodo: async (input) => {

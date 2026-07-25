@@ -169,6 +169,13 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         return json(store.ensureSection(boardId, title, actor), 201);
       }
 
+      const sectionArchive = path.match(/^\/api\/sections\/([^/]+)\/archive$/);
+      if (sectionArchive?.[1] && method === 'POST') {
+        // 섹션은 id 로만 지정한다 — 이름은 보드 안에서만 유일해 REST 경로로 쓰기 애매하다.
+        store.archiveSection(decodeURIComponent(sectionArchive[1]), actor);
+        return json({ ok: true });
+      }
+
       // ── todos ──
       if (method === 'GET' && path === '/api/todos') {
         const filter: ListTodosFilter = {

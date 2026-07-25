@@ -44,6 +44,7 @@ function TodoDetail() {
   const detail = useUiStore((s) => s.detail);
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const patchTodo = useUiStore((s) => s.patchTodo);
+  const sections = useUiStore((s) => s.sections);
   const todo = detail?.todo;
   const [desc, setDesc] = useState(todo?.description ?? '');
   const [editingDesc, setEditingDesc] = useState(false);
@@ -139,6 +140,27 @@ function TodoDetail() {
         {todo.due && <span className="chip chip-due">{todo.due}</span>}
         {todo.archivedAt && <span className="chip">보관됨</span>}
       </div>
+      {/* 섹션 이동 — 이 보드의 섹션만 후보다. 빈 값은 섹션 해제(store 가 공백을 해제로 읽는다). */}
+      <label className="drawer-section-pick">
+        <span className="drawer-section-label">섹션</span>
+        <select
+          className="drawer-select"
+          value={todo.sectionId ?? ''}
+          onChange={(e) => {
+            const picked = sections.find((s) => s.id === e.target.value);
+            void patchTodo(todo.id, { section: picked ? picked.title : null });
+          }}
+        >
+          <option value="">(없음)</option>
+          {sections
+            .filter((s) => s.boardId === todo.boardId)
+            .map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.title}
+              </option>
+            ))}
+        </select>
+      </label>
       {todo.links.length > 0 && (
         <div className="drawer-links">
           {todo.links.map((link) => (
