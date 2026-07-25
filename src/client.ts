@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -24,12 +25,65 @@ export function buildContext(opts: { port: number; dir: string; actor: string })
   };
 }
 
-export async function health(baseUrl: string): Promise<boolean> {
+/** `/api/health` 응답 — version/pid 는 0.2.0 이전 데몬에는 없다. */
+export interface DaemonHealth {
+  ok: boolean;
+  name?: string;
+  version?: string;
+  pid?: number;
+}
+
+/**
+ * 데몬 health 를 본문째 돌려준다 — 호출자가 실행 중인 코드의 버전/pid 를 볼 수 있다.
+ * @returns 응답이 없거나 비정상이면 null.
+ */
+export async function daemonHealth(baseUrl: string): Promise<DaemonHealth | null> {
   try {
     const res = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(700) });
-    return res.ok;
+    if (!res.ok) {
+      return null;
+    }
+    return (await res.json()) as DaemonHealth;
   } catch {
+    return null;
+  }
+}
+
+export async function health(baseUrl: string): Promise<boolean> {
+  return (await daemonHealth(baseUrl)) !== null;
+}
+
+/**
+ * 실행 중인 데몬에 SIGTERM 을 보내고 포트가 풀릴 때까지 (최대 ~3s) 기다린다.
+ * @param pid health 가 보고한 pid. 없으면 `daemon.pid` 파일로 폴백한다.
+ * @returns 종료가 확인되면 true. pid 를 못 찾거나 시간 안에 안 죽으면 false.
+ */
+export async function stopDaemon(ctx: CliContext, pid?: number): Promise<boolean> {
+  const target = pid ?? readPidFile(ctx.dir);
+  if (target === undefined) {
     return false;
+  }
+  try {
+    process.kill(target, 'SIGTERM');
+  } catch {
+    // 이미 죽었거나 (ESRCH) 남의 프로세스 (EPERM) — 어느 쪽이든 우리가 내릴 수 없다.
+    return false;
+  }
+  for (let i = 0; i < 15; i++) {
+    await Bun.sleep(200);
+    if ((await daemonHealth(ctx.baseUrl)) === null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function readPidFile(dir: string): number | undefined {
+  try {
+    const pid = Number(readFileSync(join(dir, 'daemon.pid'), 'utf8').trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
   }
 }
 

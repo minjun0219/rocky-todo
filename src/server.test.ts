@@ -38,6 +38,13 @@ describe('health', () => {
     const body = (await res.json()) as { ok: boolean };
     expect(body.ok).toBe(true);
   });
+
+  test('reports the running code version so callers can detect a stale daemon', async () => {
+    const res = await req('/api/health');
+    const body = (await res.json()) as { name: string; version: string };
+    expect(body.name).toBe('rocky-todo');
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
 });
 
 describe('todos REST', () => {
