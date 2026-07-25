@@ -86,16 +86,67 @@ CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS N
 현재 보드가 불명확한데 `#12` 만 온 경우(글로벌 API 호출 등)는 에러로 모호성을 노출한다 —
 `ambiguous id prefix` 와 같은 방침이다.
 
-### 5. 표시
+### 5. 표시 — CLI / REST / MCP
 
 - **CLI** — 목록/상세에서 제목 앞에 `#12`. 랜덤 id 는 `show` 상세 하단에만 남긴다.
-- **웹 UI** — 항목 행에 `#12` 를 옅은 색으로. 드로어(상세)에 랜덤 id 병기.
 - **REST/MCP** — 응답에 `number: 12` 와 `ref: "rocky#12"` 를 함께 싣는다. 에이전트가
   대화에서 `#12` 로 부를 수 있게 하는 것이 `ref` 의 목적이다.
 - **MCP 입력** — `todo_list` / `todo_write` / `todo_status` / `note_*` 의 `id` 인자가
   위 해석 규칙을 그대로 받는다. 스키마 설명에 `"id, #12, or rocky#12"` 를 명시한다.
 
-### 6. 노트
+### 6. 표시 — 웹 UI
+
+웹 UI 가 사람이 항목을 만들고 보는 주 표면이므로 여기가 이 기능의 본체다. 번호는
+"보이기만 하는 장식"이 아니라 **웹에서 세션으로 항목을 넘기는 통로**여야 한다.
+
+#### 6.1 항목 행 (`components/TodoItem.tsx`)
+
+체크박스와 제목 사이에 `#12` 를 넣는다. 메타 칩(우선순위·라벨·마감·링크)이 아니라
+제목 라인의 고정 요소다 — 칩 줄에 섞으면 개수에 따라 위치가 흔들리고, 모바일 칩 과밀
+문제(백로그 `mxndnikm` 8번)를 키운다.
+
+```tsx
+<button type="button" className="todo-ref" onClick={copyRef} title="참조 복사">
+  #{todo.number}
+</button>
+<button type="button" className="todo-title" onClick={...}>{todo.title}</button>
+```
+
+#### 6.2 클릭 복사 (핵심 워크플로)
+
+번호를 누르면 `rocky#12` 를 클립보드에 복사하고 짧게 "복사됨" 피드백을 준다.
+
+이것이 이 설계의 실사용 경로다: **브라우저에서 항목을 보고 → 번호를 눌러 복사 →
+세션 입력창에 붙여넣어 "rocky#12 진행해줘"**. 번호를 눈으로 읽고 손으로 옮겨 치는
+단계가 사라진다. 보드 접두사를 포함한 완전 참조를 복사하므로 어느 보드에서 붙여넣어도
+모호하지 않다.
+
+`navigator.clipboard` 는 보안 컨텍스트에서만 동작한다. 루프백(`127.0.0.1`)과 tailscale
+HTTPS 는 해당되지만 **LAN 평문 HTTP(`192.168.x.x:8636`)는 아니다** — 이 경우 조용히
+실패하지 않도록 `document.execCommand('copy')` 폴백을 두고, 그마저 안 되면 번호를
+선택된 상태로 만들어 수동 복사가 가능하게 한다.
+
+#### 6.3 상세 드로어 (`components/DetailDrawer.tsx`)
+
+`drawer-id` 가 지금 랜덤 id 를 그대로 노출한다. 이 자리를 `rocky#12` 로 바꾸고,
+랜덤 id 는 그 아래 더 옅게 병기한다(API/디버깅 용도로만 필요하다).
+
+#### 6.4 노트 레일 (`components/NotesRail.tsx`)
+
+`note-card-head` 에 같은 방식으로 번호와 복사 버튼을 둔다.
+
+#### 6.5 번호와 정렬의 관계
+
+목록 정렬은 `position` 기준이고 번호는 생성 순이라 둘은 어긋날 수 있다. 이는 의도된
+동작이다(GitHub 이슈도 같다) — 번호는 **순서가 아니라 이름**이다. UI 에서 번호로
+정렬하는 기능은 넣지 않는다(YAGNI).
+
+#### 6.6 스타일 (`styles.css`)
+
+`.todo-ref` 는 tabular 숫자에 옅은 색, 제목보다 한 단계 작게. 모바일 폭에서는 터치
+타깃 44×44 를 확보한다(백로그 `mxndnikm` 1번과 같은 방침).
+
+### 7. 노트
 
 노트도 같은 문제를 겪으므로 동일하게 번호를 준다. 보드 소속 노트는 보드별, 글로벌
 노트는 전역 시퀀스(`board_id IS NULL` 그룹)를 쓴다. CLI 명령이 `show` 와 `note show` 로
@@ -109,7 +160,10 @@ CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS N
 | `src/server.ts` | 응답 직렬화에 `number`/`ref`, 경로 파라미터가 참조 문법 수용 |
 | `src/cli.ts` | `formatTodoLine` 등 출력에 `#N`, 인자 파싱 |
 | `src/mcp.ts` | 도구 스키마 설명 갱신, 응답에 `number`/`ref` |
-| `src/ui/` | 항목 행·드로어 표시 |
+| `src/ui/components/TodoItem.tsx` | 제목 앞 `#N` + 클릭 복사 |
+| `src/ui/components/DetailDrawer.tsx` | `drawer-id` 를 `rocky#12` 로, 랜덤 id 병기 |
+| `src/ui/components/NotesRail.tsx` | 노트 카드 헤드에 번호 + 복사 |
+| `src/ui/lib.ts` · `styles.css` | 클립보드 헬퍼(폴백 포함), `.todo-ref` 스타일 |
 | `AGENTS.md` · `FEATURES.md` · `docs/rocky-todo.md` | 참조 문법 문서화 |
 
 ## 테스트
@@ -121,6 +175,7 @@ CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS N
   없는 번호 조회 시 에러
 - 하위호환: 기존 랜덤 id 와 prefix 가 계속 동작
 - 글로벌 노트 번호가 보드 노트와 독립인지
+- 클립보드 헬퍼: `navigator.clipboard` 부재 시 폴백 경로를 타는지 (UI 유닛 테스트)
 
 ## 리스크
 
