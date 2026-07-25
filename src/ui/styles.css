@@ -571,13 +571,6 @@ textarea {
   margin: 2px 0 10px;
 }
 
-.drawer-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 4px 0 10px;
-  line-height: 1.35;
-}
-
 .drawer-chips,
 .drawer-links {
   display: flex;
@@ -816,4 +809,95 @@ textarea {
   position: absolute;
   inset: 0;
   cursor: default;
+}
+
+/* ── 인라인 편집·생성 (제목 수정 / 보드·섹션 생성) ───────────────────────── */
+
+/* 제목은 버튼이지만 h2 처럼 보여야 한다 — 클릭 가능하다는 힌트만 hover 로 준다. */
+.drawer-title {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  line-height: 1.35;
+  cursor: text;
+}
+
+.drawer-title:hover {
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--surface);
+  border-radius: 3px;
+}
+
+.drawer-title-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--warm-dim);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  line-height: 1.35;
+}
+
+.board-add-open {
+  color: var(--faint);
+}
+
+.board-add {
+  padding: 2px 0;
+}
+
+.board-add-input,
+.section-add-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--warm-dim);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.board-add-error,
+.section-add-error {
+  color: var(--p1);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 2px 0;
+}
+
+.section-add-open {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 12px;
+  margin: -8px 0 14px;
+  cursor: pointer;
+}
+
+.section-add-open:hover {
+  color: var(--muted);
+}
+
+.section-add {
+  margin: -8px 0 14px;
+}
+
+@media (max-width: 900px) {
+  /* 터치 타깃 — 백로그 rocky-todo#1 과 같은 방침 */
+  .board-add-open,
+  .section-add-open {
+    min-height: 44px;
+  }
 }

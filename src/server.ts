@@ -151,6 +151,23 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
         return json(store.listSections(boardId));
       }
+      if (method === 'POST' && path === '/api/sections') {
+        const body = await readBody(req);
+        if (typeof body.board !== 'string' || body.board === '') {
+          return errorResponse('board is required', 400);
+        }
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        if (title === '') {
+          return errorResponse('title is required', 400);
+        }
+        // 없는 보드를 자동 생성하지 않는다 — 섹션은 이미 있는 보드에 붙이는 것이고,
+        // 오타난 board key 로 빈 보드가 생기는 편이 조용한 사고가 된다.
+        const boardId = store.boardIdOf(body.board);
+        if (!boardId) {
+          return errorResponse(`board not found: ${body.board}`, 404);
+        }
+        return json(store.ensureSection(boardId, title, actor), 201);
+      }
 
       // ── todos ──
       if (method === 'GET' && path === '/api/todos') {

@@ -187,6 +187,69 @@ describe('boards & sections REST', () => {
 
     expect((await req('/api/sections')).status).toBe(400);
   });
+
+  // 웹 UI 에서 섹션을 만들려면 빈 섹션 생성 경로가 필요하다 — 기존에는 todo 를 만들 때
+  // `section` 이름으로 upsert 되는 길뿐이라, 항목 없이 섹션만 먼저 둘 수 없었다.
+  test('POST /api/sections 는 빈 섹션을 만든다', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'a' }) });
+    const res = await req('/api/sections', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'a', title: '설계' }),
+    });
+    expect(res.status).toBe(201);
+    const section = (await res.json()) as { id: string; title: string; boardId: string };
+    expect(section.title).toBe('설계');
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as { title: string }[];
+    expect(listed.map((s) => s.title)).toEqual(['설계']);
+  });
+
+  test('POST /api/sections 는 같은 이름을 두 번 만들지 않는다 (upsert)', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'a' }) });
+    const first = (await (
+      await req('/api/sections', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: '설계' }),
+      })
+    ).json()) as { id: string };
+    const second = (await (
+      await req('/api/sections', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: '설계' }),
+      })
+    ).json()) as { id: string };
+    expect(second.id).toBe(first.id);
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as unknown[];
+    expect(listed).toHaveLength(1);
+  });
+
+  test('POST /api/sections 는 board/title 이 없으면 400', async () => {
+    expect(
+      (await req('/api/sections', { method: 'POST', body: JSON.stringify({ title: '설계' }) }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await req('/api/sections', { method: 'POST', body: JSON.stringify({ board: 'a' }) })).status,
+    ).toBe(400);
+    expect(
+      (
+        await req('/api/sections', {
+          method: 'POST',
+          body: JSON.stringify({ board: 'a', title: '  ' }),
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  // 보드 key 규칙(공백·# 금지)은 파싱 가능한 ref 를 보장하려고 둔 것이다. UI 가 이 에러를
+  // 사용자에게 보여줘야 하므로, 서버가 400 으로 분명히 거절하는지 고정한다.
+  test('POST /api/boards 는 참조에 쓸 수 없는 key 를 400 으로 거절한다', async () => {
+    for (const key of ['my repo', 'a#b', '']) {
+      const res = await req('/api/boards', { method: 'POST', body: JSON.stringify({ key }) });
+      expect(res.status).toBe(400);
+    }
+  });
 });
 
 describe('changes feed', () => {

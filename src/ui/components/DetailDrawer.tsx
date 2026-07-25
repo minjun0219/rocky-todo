@@ -48,6 +48,8 @@ function TodoDetail() {
   const [desc, setDesc] = useState(todo?.description ?? '');
   const [editingDesc, setEditingDesc] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [title, setTitle] = useState(todo?.title ?? '');
+  const [editingTitle, setEditingTitle] = useState(false);
 
   useEffect(() => {
     if (!editingDesc) {
@@ -55,11 +57,28 @@ function TodoDetail() {
     }
   }, [todo?.description, editingDesc]);
 
+  useEffect(() => {
+    if (!editingTitle) {
+      setTitle(todo?.title ?? '');
+    }
+  }, [todo?.title, editingTitle]);
+
   if (!todo) {
     return null;
   }
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
+
+  /** 제목은 필수 필드다 — 빈 값이면 저장하지 않고 편집 모드만 닫는다. */
+  const commitTitle = () => {
+    const next = title.trim();
+    setEditingTitle(false);
+    if (next === '' || next === todo.title) {
+      setTitle(todo.title);
+      return;
+    }
+    void patchTodo(todo.id, { title: next });
+  };
 
   const statusButton = (label: string, action: Parameters<typeof setTodoStatus>[1]) => (
     <button
@@ -82,7 +101,33 @@ function TodoDetail() {
       >
         {copied ? '✓' : todo.ref}
       </button>
-      <h2 className="drawer-title">{todo.title}</h2>
+      {editingTitle ? (
+        <input
+          className="drawer-title-input"
+          value={title}
+          // biome-ignore lint/a11y/noAutofocus: 클릭으로 진입한 편집이라 즉시 입력이 기대 동작
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={commitTitle}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commitTitle();
+            } else if (e.key === 'Escape') {
+              setTitle(todo.title);
+              setEditingTitle(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="drawer-title"
+          onClick={() => setEditingTitle(true)}
+          title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
+        >
+          {todo.title}
+        </button>
+      )}
       <div className="drawer-id">{todo.id}</div>
       <div className="drawer-chips">
         <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>

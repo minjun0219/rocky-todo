@@ -13,7 +13,31 @@ export function TodoPane() {
   const sections = useUiStore((s) => s.sections);
   const selected = useUiStore((s) => s.selected);
   const addTodo = useUiStore((s) => s.addTodo);
+  const createSection = useUiStore((s) => s.createSection);
   const [draft, setDraft] = useState('');
+  const [sectionDraft, setSectionDraft] = useState('');
+  const [addingSection, setAddingSection] = useState(false);
+  const [sectionError, setSectionError] = useState<string | null>(null);
+
+  const closeSectionAdd = () => {
+    setAddingSection(false);
+    setSectionDraft('');
+    setSectionError(null);
+  };
+
+  const submitSection = async () => {
+    const title = sectionDraft.trim();
+    if (title === '') {
+      closeSectionAdd();
+      return;
+    }
+    try {
+      await createSection(title);
+      closeSectionAdd();
+    } catch (e) {
+      setSectionError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const byId = new Map(todos.map((t) => [t.id, t]));
   const childrenOf = new Map<string, TodoView[]>();
@@ -82,6 +106,36 @@ export function TodoPane() {
           />
         </form>
       )}
+
+      {/* 섹션은 보드에 속하므로 `전체` 뷰에서는 대상을 정할 수 없다 — 그때는 숨긴다. */}
+      {selected !== 'all' &&
+        (addingSection ? (
+          <div className="section-add">
+            <input
+              className="section-add-input"
+              placeholder="섹션 이름 (Enter 추가 · Esc 취소)"
+              value={sectionDraft}
+              // biome-ignore lint/a11y/noAutofocus: 버튼을 눌러 진입한 입력이라 즉시 타이핑이 기대 동작
+              autoFocus
+              onChange={(e) => {
+                setSectionDraft(e.target.value);
+                setSectionError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void submitSection();
+                } else if (e.key === 'Escape') {
+                  closeSectionAdd();
+                }
+              }}
+            />
+            {sectionError && <div className="section-add-error">{sectionError}</div>}
+          </div>
+        ) : (
+          <button type="button" className="section-add-open" onClick={() => setAddingSection(true)}>
+            + 섹션
+          </button>
+        ))}
 
       {groups.length === 0 && (
         <div className="empty-state">
