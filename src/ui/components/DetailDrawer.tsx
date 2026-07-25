@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { HistoryEntry } from '../../store';
 import {
   actorTone,
@@ -60,6 +60,8 @@ function TodoDetail() {
   const [copied, setCopied] = useState(false);
   const [title, setTitle] = useState(todo?.title ?? '');
   const [editingTitle, setEditingTitle] = useState(false);
+  /** Esc 로 빠져나온 blur 인지 — 커밋 경로가 onBlur 하나이므로 취소 의사를 여기로 넘긴다. */
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     if (!editingDesc) {
@@ -79,15 +81,28 @@ function TodoDetail() {
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
 
-  /** 제목은 필수 필드다 — 빈 값이면 저장하지 않고 편집 모드만 닫는다. */
-  const commitTitle = () => {
-    const next = title.trim();
+  /**
+   * 제목 커밋은 **onBlur 한 곳**에서만 일어난다. Enter 도 Esc 도 blur 로 빠지고, 취소인지
+   * 여부만 ref 로 남긴다 — 커밋 경로가 둘이면 Enter 후 blur 로 같은 PATCH 가 두 번 나가고,
+   * Esc 로 되돌린 값도 blur 클로저가 옛 state 를 읽어 저장돼 버린다.
+   *
+   * 값은 state 대신 실제 input 값을 받는다. Esc 직후의 blur 처럼 state 갱신이 아직
+   * 반영되지 않은 시점에도 화면에 있는 값과 어긋나지 않게 하기 위해서다.
+   * 제목은 필수 필드라 빈 값이면 저장하지 않는다.
+   */
+  const commitTitle = (raw: string) => {
+    const next = raw.trim();
     setEditingTitle(false);
     if (next === '' || next === todo.title) {
       setTitle(todo.title);
       return;
     }
     void patchTodo(todo.id, { title: next });
+  };
+
+  const cancelTitle = () => {
+    setTitle(todo.title);
+    setEditingTitle(false);
   };
 
   const statusButton = (label: string, action: Parameters<typeof setTodoStatus>[1]) => (
@@ -118,18 +133,26 @@ function TodoDetail() {
           // biome-ignore lint/a11y/noAutofocus: 클릭으로 진입한 편집이라 즉시 입력이 기대 동작
           autoFocus
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={commitTitle}
+          onBlur={(e) => {
+            // Esc 로 빠져나온 blur 면 저장하지 않는다 — 플래그는 여기서 소비한다.
+            if (cancelledRef.current) {
+              cancelledRef.current = false;
+              cancelTitle();
+              return;
+            }
+            commitTitle(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
-              // 커밋은 onBlur 한 곳에서만 — 여기서 직접 부르면 뒤따르는 blur 와 겹쳐
-              // 같은 변경이 두 번 PATCH 되고 히스토리에도 두 줄 남는다.
+              // Enter 도 Esc 도 blur 로 빠진다 — 커밋 경로를 onBlur 하나로 유지해야
+              // 같은 변경이 두 번 PATCH 되지 않는다.
               e.currentTarget.blur();
             } else if (e.key === 'Escape') {
               // 드로어의 window keydown 리스너까지 올라가면 편집 취소가 아니라 드로어가
               // 통째로 닫힌다 — 안내한 "Esc 취소"와 다른 동작이 되므로 여기서 끊는다.
               e.stopPropagation();
-              setTitle(todo.title);
-              setEditingTitle(false);
+              cancelledRef.current = true;
+              e.currentTarget.blur();
             }
           }}
         />

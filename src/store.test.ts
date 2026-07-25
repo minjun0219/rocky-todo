@@ -136,6 +136,20 @@ describe('todos', () => {
     expect(store.listSections(todo.boardId)).toHaveLength(1);
   });
 
+  // updateTodo 만 공백을 걸러내면 createTodo 로는 여전히 빈 이름 섹션이 생긴다.
+  test('createTodo 도 공백뿐인 section 이름으로 섹션을 만들지 않는다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: 'a', section: '  ' }, 'tester');
+    expect(todo.sectionId).toBeUndefined();
+    expect(store.listSections(todo.boardId)).toHaveLength(0);
+  });
+
+  test('createTodo 는 section 이름의 앞뒤 공백을 다듬어 같은 섹션으로 모은다', () => {
+    const a = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const b = store.createTodo({ board: 'rocky', title: 'b', section: '  설계  ' }, 'tester');
+    expect(b.sectionId).toBe(a.sectionId as string);
+    expect(store.listSections(a.boardId)).toHaveLength(1);
+  });
+
   test('section 을 빈 문자열로 주면 빈 이름 섹션을 만들지 않고 해제로 본다', () => {
     const todo = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
     const bare = store.updateTodo(todo.id, { section: '  ' }, 'tester');

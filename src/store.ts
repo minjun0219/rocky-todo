@@ -505,8 +505,11 @@ export class TodoStore {
   createTodo(input: CreateTodoInput, actor: string): Todo {
     const board = this.ensureBoard(input.board, { actor });
     let sectionId: string | undefined;
-    if (input.section) {
-      sectionId = this.ensureSection(board.id, input.section, actor).id;
+    // updateTodo 와 같은 규칙 — 공백뿐인 이름으로 섹션을 만들지 않고, 앞뒤 공백은
+    // 다듬어 같은 이름이 두 섹션으로 갈라지지 않게 한다.
+    const sectionTitle = input.section?.trim() ?? '';
+    if (sectionTitle !== '') {
+      sectionId = this.ensureSection(board.id, sectionTitle, actor).id;
     }
     let parentId: string | undefined;
     if (input.parentId) {
