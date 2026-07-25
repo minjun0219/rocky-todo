@@ -176,17 +176,43 @@ export const MIGRATIONS: Migration[] = [addNumbers];
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */
   migrations?: Migration[];
-  /** 적용 전 DB 를 복사해 둘 경로. 메모리 DB 나 신규 DB 면 생략한다. */
+  /**
+   * 적용 전 DB 를 복사해 둘 경로. dbPath 가 없거나(:memory: 등) 파일이 없거나, todos/notes
+   * 에 아직 아무 행도 없는 신규 DB(백업할 내용이 없음)면 생략한다.
+   */
   backupPath?: string;
   /** 백업 원본 경로. backupPath 와 함께 줄 때만 백업한다. */
   dbPath?: string;
 }
 
 /**
+ * todos/notes 에 백업할 만한 데이터가 있는지 본다.
+ *
+ * 두 테이블 다 비어 있으면(막 만든 신규 DB) 백업이 무의미하다 — 신규 설치·임시 디렉터리
+ * 테스트마다 `*.bak-v0` 잔재가 남는 걸 막는다. 테이블 자체가 없는 등 판단할 수 없는 경우는
+ * 보수적으로 true(백업함) 를 반환한다.
+ */
+function hasDataWorthBackingUp(db: Database): boolean {
+  try {
+    const todos = db.query<{ n: number }, []>('SELECT COUNT(*) AS n FROM todos').get()?.n ?? 0;
+    if (todos > 0) {
+      return true;
+    }
+    const notes = db.query<{ n: number }, []>('SELECT COUNT(*) AS n FROM notes').get()?.n ?? 0;
+    return notes > 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * user_version 보다 뒤에 있는 마이그레이션만 순서대로 적용한다.
  *
  * 각 마이그레이션은 트랜잭션 안에서 실행되며, 던지면 롤백하고 user_version 도 올리지
- * 않는다 — 실패한 마이그레이션은 다음 기동에서 다시 시도된다.
+ * 않는다 — 실패한 마이그레이션은 다음 기동에서 다시 시도된다. user_version 갱신은 같은
+ * 트랜잭션 안에서 스키마 변경과 함께 커밋된다 — COMMIT 뒤 별도로 쓰면 그 사이 프로세스가
+ * 죽었을 때 스키마는 적용됐는데 user_version 은 0 인 상태가 남아, 다음 기동에서 같은
+ * 마이그레이션이 재실행되며 (예: ALTER TABLE 의 duplicate column) 영구히 기동 불가에 빠진다.
  * @returns 적용 후 최종 user_version.
  */
 export function runMigrations(db: Database, options: RunMigrationsOptions = {}): number {
@@ -197,7 +223,12 @@ export function runMigrations(db: Database, options: RunMigrationsOptions = {}):
     return current;
   }
 
-  if (options.backupPath && options.dbPath && existsSync(options.dbPath)) {
+  if (
+    options.backupPath &&
+    options.dbPath &&
+    existsSync(options.dbPath) &&
+    hasDataWorthBackingUp(db)
+  ) {
     copyFileSync(options.dbPath, options.backupPath);
   }
 
@@ -210,14 +241,16 @@ export function runMigrations(db: Database, options: RunMigrationsOptions = {}):
     db.run('BEGIN');
     try {
       migration(db);
+      version = i + 1;
+      // PRAGMA 는 바인딩을 받지 않는다 — 값이 정수임은 루프 인덱스로 보장된다.
+      // COMMIT 전에 실행해야 스키마 변경과 원자적으로 묶인다(SQLite user_version 은
+      // 데이터베이스 헤더에 있고 트랜잭션에 참여한다).
+      db.run(`PRAGMA user_version = ${version}`);
       db.run('COMMIT');
     } catch (error) {
       db.run('ROLLBACK');
       throw error;
     }
-    version = i + 1;
-    // PRAGMA 는 바인딩을 받지 않는다 — 값이 정수임은 루프 인덱스로 보장된다.
-    db.run(`PRAGMA user_version = ${version}`);
   }
   return version;
 }
@@ -226,7 +259,7 @@ export function runMigrations(db: Database, options: RunMigrationsOptions = {}):
 - [ ] **Step 4: 통과 확인**
 
 Run: `bun test ./src/migrations.test.ts`
-Expected: PASS (3 tests)
+Expected: PASS (6 tests — 원래 3개 + user_version/COMMIT 원자성 회귀 1개 + 백업 스킵/수행 2개)
 
 - [ ] **Step 5: store 생성자에서 러너 호출**
 
