@@ -349,4 +349,25 @@ describe('참조 해석', () => {
     // 구분할 수 없으므로 id 취급이 의도된 동작이다. 대응하는 id 가 없으니 undefined 여야 한다.
     expect(store.getTodo('00000012')).toBeUndefined();
   });
+
+  test('글로벌 노트는 보드 컨텍스트 없이 #N 으로 전역 번호 공간에서 찾는다', () => {
+    const g = store.createNote({ title: '글로벌 메모', content: '' }, 'tester');
+    expect(store.getNote(`#${g.number}`)?.id).toBe(g.id);
+    expect(store.getNote(String(g.number))?.id).toBe(g.id);
+  });
+
+  test('보드 노트와 글로벌 노트가 번호를 공유해도 서로 다른 행으로 해석된다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const boardNote = store.createNote({ board: 'alpha', title: '보드 메모' }, 'tester');
+    const globalNote = store.createNote({ title: '글로벌 메모' }, 'tester');
+    expect(boardNote.number).toBe(globalNote.number);
+
+    expect(store.getNote(`#${globalNote.number}`)?.id).toBe(globalNote.id);
+    expect(store.getNote(`#${boardNote.number}`, board.id)?.id).toBe(boardNote.id);
+  });
+
+  test('todos 는 글로벌 번호 공간이 없어 보드 컨텍스트 없는 #N 은 여전히 에러다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(() => store.getTodo('#1')).toThrow(/board/i);
+  });
 });

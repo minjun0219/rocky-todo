@@ -532,10 +532,13 @@ function newId(): string {
   /**
    * 참조 문자열을 행으로 해석한다. 순서대로:
    *   `rocky#12` → 그 보드의 12번 · `#12`/`12` → currentBoardId 의 12번
+   *   (notes 이고 currentBoardId 없으면 → 전역 note 공간의 12번)
    *   `921gvwnr`(ID_LENGTH 자 base36) → id 정확 일치 · 그 외 → 유일한 id prefix
    *
    * 길이 기준으로 번호와 id 를 가르므로, id 길이를 바꾸면 ID_LENGTH 만 고치면 된다.
-   * @throws 다중 prefix 매칭이거나, 현재 보드 없이 번호만 온 경우 (모호성 노출)
+   * notes 는 board_id IS NULL 인 전역 행을 가질 수 있어 자체 번호 시퀀스를 갖지만(부분 유니크
+   * 인덱스 `idx_notes_number_global`), todos 는 항상 보드에 속하므로 전역 번호 공간이 없다.
+   * @throws 다중 prefix 매칭이거나, todos 에 현재 보드 없이 번호만 온 경우 (모호성 노출)
    */
   private resolveRef<Row>(
     table: 'todos' | 'notes',
@@ -563,6 +566,14 @@ function newId(): string {
     const bare = /^(#)?(\d+)$/.exec(trimmed);
     if (bare?.[2] && (bare[1] || bare[2].length < ID_LENGTH)) {
       if (!currentBoardId) {
+        // notes 는 board_id IS NULL 인 전역 번호 공간이 있다 — 웹 UI 가 글로벌 note 를
+        // 보드 접두사 없이 `#3` 으로만 보여주므로, 그 참조가 복붙으로 다시 풀려야 한다.
+        // todos 는 전역 번호 공간이 없으므로 그대로 에러를 던진다.
+        if (table === 'notes') {
+          return this.db
+            .query<Row, [number]>(`SELECT * FROM ${table} WHERE board_id IS NULL AND number = ?`)
+            .get(Number(bare[2]));
+        }
         throw new Error(`board context required to resolve ${trimmed} — use board#number`);
       }
       return this.db

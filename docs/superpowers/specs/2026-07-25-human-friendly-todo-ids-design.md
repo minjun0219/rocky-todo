@@ -75,7 +75,9 @@ CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS N
 | 입력 | 해석 |
 |---|---|
 | `rocky#12` | `rocky` 보드의 12번 |
-| `#12` · `12` | 현재 보드의 12번 |
+| `#12` · `12` (현재 보드 있음) | 현재 보드의 12번 |
+| `#12` · `12` (현재 보드 없음, `notes` 테이블) | **전역** note 번호 공간의 12번(`board_id IS NULL`) |
+| `#12` · `12` (현재 보드 없음, `todos` 테이블) | 에러 — 전역 todo 번호 공간은 없다 |
 | `921gvwnr` | id 정확 일치 |
 | `921g` | id prefix (유일할 때만, 기존 동작) |
 
@@ -83,8 +85,13 @@ CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS N
 고정이라, **길이 8 이상이면서 base36 문자만으로 이뤄진 입력은 id 로 먼저 해석**해
 모호성을 없앤다. 그 외 짧은 숫자는 번호로 본다.
 
-현재 보드가 불명확한데 `#12` 만 온 경우(글로벌 API 호출 등)는 에러로 모호성을 노출한다 —
-`ambiguous id prefix` 와 같은 방침이다.
+note 는 board_id IS NULL 인 전역 행을 가질 수 있고(부분 유니크 인덱스
+`idx_notes_number_global` 로 보장되는 자체 번호 시퀀스), 웹 UI 는 그 참조를 보드 접두사
+없이 `#3` 으로만 표시한다. 그래서 `notes` 테이블에서 현재 보드가 불명확한 채 `#12` 만 온
+경우는 에러가 아니라 **전역 번호 공간에서 조회**한다 — 그래야 UI 가 보여준 `#3` 을 그대로
+복붙해 다시 찾을 수 있다. todos 는 항상 어떤 보드에 속해 전역 번호 공간이 없으므로, 현재
+보드가 불명확한 채 `#12` 만 온 경우는 여전히 에러로 모호성을 노출한다(`ambiguous id
+prefix` 와 같은 방침).
 
 ### 5. 표시 — CLI / REST / MCP
 
