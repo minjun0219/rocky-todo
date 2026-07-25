@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { formatTodoLine, noteRefPath, parseFlags, withBoard } from './cli';
+import { formatTodoLine, noteRefPath, parseFlags, todoRefPath, withBoard } from './cli';
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
@@ -57,6 +57,23 @@ describe('withBoard', () => {
 
   test('encodes board keys with special characters', () => {
     expect(withBoard('/api/notes/3', 'my repo')).toBe('/api/notes/3?board=my%20repo');
+  });
+});
+
+describe('todoRefPath', () => {
+  // finding B 회귀 테스트: 예전엔 show/update/status/history 4곳이 각자
+  // `withBoard(\`/api/todos/${encodeURIComponent(id)}\`, board)` 를 인라인으로 반복했고,
+  // 이를 검증하는 테스트도 같은 문자열을 테스트 본문에서 다시 조립해 비교했다 — 그러면
+  // 프로덕션 코드의 encodeURIComponent 를 되돌려도(리뷰어가 실제로 4곳 다 되돌려봄) 테스트가
+  // production 코드를 안 거치니 그대로 통과한다. `todoRefPath` 를 단일 chokepoint 로 만들고
+  // 그 함수 자체를 검증해야 되돌리면 테스트가 깨진다.
+  test('ref 를 인코딩하고 board 쿼리를 붙인다', () => {
+    expect(todoRefPath('#1', '', 'rocky')).toBe('/api/todos/%231?board=rocky');
+    expect(todoRefPath('rocky#1', '', 'rocky')).toBe('/api/todos/rocky%231?board=rocky');
+  });
+
+  test('suffix 는 인코딩 없이 그대로 붙는다', () => {
+    expect(todoRefPath('#1', '/status', 'rocky')).toBe('/api/todos/%231/status?board=rocky');
   });
 });
 
@@ -117,11 +134,7 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
   test('bare "#N" ref (board 컨텍스트와 함께) 은 200 으로 해석된다', async () => {
     store.createTodo({ board: 'rocky', title: '참조 확인' }, 'tester');
 
-    const detail = await request<{ todo: TodoView }>(
-      ctx,
-      'GET',
-      withBoard(`/api/todos/${encodeURIComponent('#1')}`, 'rocky'),
-    );
+    const detail = await request<{ todo: TodoView }>(ctx, 'GET', todoRefPath('#1', '', 'rocky'));
     expect(detail.todo.title).toBe('참조 확인');
   });
 
@@ -131,7 +144,7 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
     const detail = await request<{ todo: TodoView }>(
       ctx,
       'GET',
-      withBoard(`/api/todos/${encodeURIComponent('rocky#1')}`, 'rocky'),
+      todoRefPath('rocky#1', '', 'rocky'),
     );
     expect(detail.todo.title).toBe('보드 스코프 참조');
   });

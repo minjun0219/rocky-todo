@@ -275,6 +275,19 @@ export function withBoard(path: string, board: string): string {
 }
 
 /**
+ * todo 단건 조회/수정 엔드포인트 경로를 만든다 — show/update/status/history 4곳이 이 함수를
+ * 거친다. `noteRefPath` 와 마찬가지로 ref 를 URL 인코딩한다: ref 는 `#`(URL 조각 구분자)
+ * 를 담을 수 있어(맨숫자 `#12`) 인코딩하지 않으면 브라우저/fetch 가 ref 뒷부분과 뒤에
+ * 붙는 `?board=` 쿼리를 통째로 fragment 로 잘라 버린다(finding 1 회귀 클래스). 호출부가
+ * 각자 `encodeURIComponent` 를 흩어 넣으면 그중 하나가 되돌려져도(리팩터 실수 등) 테스트가
+ * 여기를 거치지 않으면 못 잡는다 — 그래서 4곳 전부 이 함수를 거친다.
+ */
+export function todoRefPath(id: string, suffix: string, board: string): string {
+  const path = `/api/todos/${encodeURIComponent(id)}${suffix}`;
+  return withBoard(path, board);
+}
+
+/**
  * note 단건 조회/수정 엔드포인트 경로를 만든다. `--global` 이면 board 컨텍스트를 보내지 않아
  * 맨 번호(`#N`)가 전역 메모 공간(`board_id IS NULL`)으로 풀리고, 아니면 todos 와 동일하게
  * 현재 보드로 스코프된다. 기본을 board-스코프로 유지하는 이유: `note add`/`note ls` 가 이미
@@ -370,7 +383,7 @@ export async function runCli(): Promise<void> {
       const detail = await request<{ todo: TodoView; history: HistoryEntry[] }>(
         ctx,
         'GET',
-        withBoard(`/api/todos/${encodeURIComponent(id)}`, board),
+        todoRefPath(id, '', board),
       );
       print(detail, () => {
         const t = detail.todo;
@@ -395,21 +408,16 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error('usage: rocky-todo update REF [플래그]');
       }
-      const todo = await request<TodoView>(
-        ctx,
-        'PATCH',
-        withBoard(`/api/todos/${encodeURIComponent(id)}`, board),
-        {
-          title: str(flags.title),
-          description: str(flags.desc),
-          section: str(flags.section),
-          parentId: str(flags.parent),
-          priority: str(flags.priority),
-          due: str(flags.due),
-          labels: list(flags.label),
-          links: list(flags.link)?.map((url) => ({ url })),
-        },
-      );
+      const todo = await request<TodoView>(ctx, 'PATCH', todoRefPath(id, '', board), {
+        title: str(flags.title),
+        description: str(flags.desc),
+        section: str(flags.section),
+        parentId: str(flags.parent),
+        priority: str(flags.priority),
+        due: str(flags.due),
+        labels: list(flags.label),
+        links: list(flags.link)?.map((url) => ({ url })),
+      });
       print(todo, () => `✓ ${todo.ref} 수정`);
       return;
     }
@@ -424,12 +432,9 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error(`usage: rocky-todo ${command} REF`);
       }
-      const todo = await request<TodoView>(
-        ctx,
-        'POST',
-        withBoard(`/api/todos/${encodeURIComponent(id)}/status`, board),
-        { action: command },
-      );
+      const todo = await request<TodoView>(ctx, 'POST', todoRefPath(id, '/status', board), {
+        action: command,
+      });
       print(todo, () => `✓ ${todo.ref} ${command}`);
       return;
     }
@@ -479,7 +484,7 @@ export async function runCli(): Promise<void> {
       const detail: { todo?: TodoView; note?: NoteView } = await request<{
         todo?: TodoView;
         note?: NoteView;
-      }>(ctx, 'GET', withBoard(`/api/todos/${encodeURIComponent(id)}`, board)).catch(() =>
+      }>(ctx, 'GET', todoRefPath(id, '', board)).catch(() =>
         request<{ todo?: TodoView; note?: NoteView }>(
           ctx,
           'GET',
