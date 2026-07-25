@@ -35,7 +35,12 @@ export interface DaemonHealth {
 
 /**
  * 데몬 health 를 본문째 돌려준다 — 호출자가 실행 중인 코드의 버전/pid 를 볼 수 있다.
- * @returns 응답이 없거나 비정상이면 null.
+ *
+ * **신원 검증**: 설정된 포트에 rocky-todo 가 아닌 서비스가 떠 2xx JSON 을 돌려줄 수
+ * 있으므로 `ok === true` 와 `name === 'rocky-todo'` 를 확인한 응답만 데몬으로 인정한다.
+ * (version/pid 는 ≤0.1.0 데몬엔 없어 stale 판별의 근거라 검증 대상이 아니다.) 이 가드가
+ * 없으면 호출자가 무관한 프로세스의 pid 에 SIGTERM 을 보낼 수 있다.
+ * @returns 응답이 없거나, 비정상이거나, rocky-todo 데몬이 아니면 null.
  */
 export async function daemonHealth(baseUrl: string): Promise<DaemonHealth | null> {
   try {
@@ -43,7 +48,11 @@ export async function daemonHealth(baseUrl: string): Promise<DaemonHealth | null
     if (!res.ok) {
       return null;
     }
-    return (await res.json()) as DaemonHealth;
+    const body = (await res.json()) as DaemonHealth;
+    if (body?.ok !== true || body.name !== 'rocky-todo') {
+      return null;
+    }
+    return body;
   } catch {
     return null;
   }
