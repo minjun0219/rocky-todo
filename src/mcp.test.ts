@@ -19,6 +19,18 @@ let dir: string;
 let store: TodoStore;
 let client: Client;
 
+/**
+ * id prefix 테스트용 — 알파벳이 하나 이상 들어간 prefix 를 고른다.
+ *
+ * id 는 base36 이라 앞 4자가 전부 숫자일 확률이 약 1.15% 다. 그런 prefix 는 설계대로
+ * "번호"로 해석되므로(맨숫자 분기) prefix 조회 테스트가 확률적으로 깨진다. 알파벳이
+ * 나오는 지점까지 늘려 그 분기를 확실히 피한다 — 전부 숫자면 id 전체(정확 일치).
+ */
+function idPrefix(id: string): string {
+  const at = id.search(/[a-z]/);
+  return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
+}
+
 async function connect(): Promise<Client> {
   const server = buildTodoMcpServer({ store });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -373,7 +385,7 @@ describe('number / ref 참조 문법', () => {
       const detail = resultJson(
         await client.callTool({
           name: 'todo_list',
-          arguments: { id: created.id.slice(0, 4), board: 'typo-board' },
+          arguments: { id: idPrefix(created.id), board: 'typo-board' },
         }),
       ) as { todo: { title: string } };
       expect(detail.todo.title).toBe('prefix 확인');

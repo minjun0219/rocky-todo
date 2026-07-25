@@ -20,6 +20,18 @@ function req(path: string, init?: RequestInit & { actor?: string }): Promise<Res
   return handle(new Request(`${BASE}${path}`, { ...init, headers }));
 }
 
+/**
+ * id prefix 테스트용 — 알파벳이 하나 이상 들어간 prefix 를 고른다.
+ *
+ * id 는 base36 이라 앞 4자가 전부 숫자일 확률이 약 1.15% 다. 그런 prefix 는 설계대로
+ * "번호"로 해석되므로(맨숫자 분기) prefix 조회 테스트가 확률적으로 깨진다. 알파벳이
+ * 나오는 지점까지 늘려 그 분기를 확실히 피한다 — 전부 숫자면 id 전체(정확 일치).
+ */
+function idPrefix(id: string): string {
+  const at = id.search(/[a-z]/);
+  return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'rocky-todo-server-'));
   store = new TodoStore({ dbPath: join(dir, 'todo.db') });
@@ -322,8 +334,7 @@ describe('number / ref 직렬화', () => {
           body: JSON.stringify({ board: 'rocky', title: 'prefix 확인' }),
         })
       ).json()) as { id: string };
-      const prefix = created.id.slice(0, 4);
-      const res = await req(`/api/todos/${prefix}?board=typo-board`);
+      const res = await req(`/api/todos/${idPrefix(created.id)}?board=typo-board`);
       expect(res.status).toBe(200);
       const body = (await res.json()) as { todo: { title: string } };
       expect(body.todo.title).toBe('prefix 확인');
