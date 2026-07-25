@@ -55,7 +55,7 @@ export function refOf(
     return `#${number}`;
   }
   const key = store.boardKeyOf(boardId);
-  if (!key) {
+  if (key === undefined) {
     throw new Error(`cannot build ref: board not found for boardId ${boardId}`);
   }
   if (!isRefSafeBoardKey(key)) {

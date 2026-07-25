@@ -480,12 +480,19 @@ export class TodoStore {
     return (row?.max ?? 0) + 1;
   }
 
-  /** boardId → board key. ref(`rocky#12`) 조립에 쓴다. 없는 보드면 빈 문자열. */
-  boardKeyOf(boardId: string): string {
+  /**
+   * boardId → board key. ref(`rocky#12`) 조립에 쓴다.
+   *
+   * "보드가 없음"과 "key 가 빈 문자열인 보드"를 구분해서 돌려준다 — 전자는 FK 가 깨진
+   * 상태라 호출자가 실패시켜야 하고, 후자는 (레거시 데이터로만 가능한) malformed key 라
+   * raw id 폴백 대상이다. 둘을 같은 값으로 뭉개면 후자가 폴백에 닿지 못한다.
+   * @returns 보드가 없으면 `undefined`.
+   */
+  boardKeyOf(boardId: string): string | undefined {
     const row = this.db
       .query<{ key: string }, [string]>('SELECT key FROM boards WHERE id = ?')
       .get(boardId);
-    return row?.key ?? '';
+    return row?.key;
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────

@@ -214,6 +214,41 @@ describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)',
     expect(resolved?.id).toBe(todo.id);
   });
 
+  /**
+   * 빈 key 는 "보드를 못 찾음"과 같은 값(옛 `boardKeyOf` 의 `''`)으로 뭉개지기 쉬운데,
+   * 그러면 throw 로 막혀 raw id 폴백에 닿지 못하고 그 보드의 응답 직렬화 전체가 4xx 가
+   * 된다. 빈 key 도 malformed key 의 한 종류라 폴백 대상이어야 한다.
+   */
+  test('빈 legacy board key: throw 하지 않고 raw id 로 폴백한다', () => {
+    seedLegacyBoard('legacy-empty-board', '');
+    const raw = new Database(join(dir, 'todo.db'));
+    const todo = store.createTodo({ board: 'placeholder', title: '빈 key 보드 작업' }, 'tester');
+    // createTodo 는 빈 key 보드를 만들 수 없으므로, 만든 항목을 그 보드로 옮겨 심는다.
+    raw.query('UPDATE todos SET board_id = ? WHERE id = ?').run('legacy-empty-board', todo.id);
+    raw.close();
+
+    const moved = store.getTodo(todo.id);
+    if (!moved) {
+      throw new Error('fixture broken');
+    }
+    const view = withRef(store, moved);
+    expect(view.ref).toBe(todo.id);
+    expect(store.getTodo(view.ref)?.id).toBe(todo.id);
+  });
+
+  test('보드 자체가 없으면(FK 손상) 위조 ref 대신 명시적으로 실패한다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: 'FK 확인' }, 'tester');
+    const raw = new Database(join(dir, 'todo.db'));
+    raw.query('UPDATE todos SET board_id = ? WHERE id = ?').run('no-such-board', todo.id);
+    raw.close();
+
+    const orphan = store.getTodo(todo.id);
+    if (!orphan) {
+      throw new Error('fixture broken');
+    }
+    expect(() => withRef(store, orphan)).toThrow(/board not found/);
+  });
+
   test('정상 board 는 영향 없음 — ref === "rocky#1" 이고 왕복된다', () => {
     const todo = store.createTodo({ board: 'rocky', title: '평범한 작업' }, 'tester');
 
