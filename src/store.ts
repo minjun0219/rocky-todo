@@ -456,7 +456,11 @@ export class TodoStore {
     // 항목의 section_id 를 남겨두면 UI 가 그 항목을 어느 그룹에도 못 넣어 화면에서
     // 사라진다 (섹션 그룹은 없어지고 미분류 그룹은 section_id 가 빈 것만 모은다).
     // 섹션이 사라지면 항목은 미분류로 돌려놓는다 — 항목 자체는 건드리지 않는다.
-    this.db.query('UPDATE todos SET section_id = NULL WHERE section_id = ?').run(id);
+    // updated_at 도 함께 올린다 — updateTodo 로 섹션을 뗄 때와 같은 변경인데 여기서만
+    // 시간이 멈추면 정렬·동기화가 이 행을 낡지 않은 것으로 오해한다.
+    this.db
+      .query('UPDATE todos SET section_id = NULL, updated_at = ? WHERE section_id = ?')
+      .run(nowIso(), id);
     this.db.query('UPDATE sections SET archived_at = ? WHERE id = ?').run(nowIso(), id);
     this.recordHistory('section', id, actor, 'archive', undefined, row.board_id);
   }

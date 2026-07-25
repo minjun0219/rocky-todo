@@ -188,8 +188,8 @@ describe('boards & sections REST', () => {
     expect((await req('/api/sections')).status).toBe(400);
   });
 
-  // 웹 UI 에서 섹션을 만들려면 빈 섹션 생성 경로가 필요하다 — 기존에는 todo 를 만들 때
-  // `section` 이름으로 upsert 되는 길뿐이라, 항목 없이 섹션만 먼저 둘 수 없었다.
+  // 빈 섹션 생성 경로 — 기존에는 todo 를 만들 때 `section` 이름으로 upsert 되는 길뿐이라
+  // 항목 없이 섹션만 먼저 둘 수 없었다. CLI/에이전트가 이 라우트를 쓴다.
   test('POST /api/sections 는 빈 섹션을 만든다', async () => {
     await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'a' }) });
     const res = await req('/api/sections', {

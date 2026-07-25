@@ -80,6 +80,7 @@ function TodoDetail() {
   }
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
+  const boardSections = sections.filter((s) => s.boardId === todo.boardId);
 
   /**
    * 제목 커밋은 **onBlur 한 곳**에서만 일어난다. Enter 도 Esc 도 blur 로 빠지고, 취소인지
@@ -177,27 +178,32 @@ function TodoDetail() {
         {todo.due && <span className="chip chip-due">{todo.due}</span>}
         {todo.archivedAt && <span className="chip">보관됨</span>}
       </div>
-      {/* 섹션 이동 — 이 보드의 섹션만 후보다. 빈 값은 섹션 해제(store 가 공백을 해제로 읽는다). */}
-      <label className="drawer-section-pick">
-        <span className="drawer-section-label">섹션</span>
-        <select
-          className="drawer-select"
-          value={todo.sectionId ?? ''}
-          onChange={(e) => {
-            const picked = sections.find((s) => s.id === e.target.value);
-            void patchTodo(todo.id, { section: picked ? picked.title : null });
-          }}
-        >
-          <option value="">(없음)</option>
-          {sections
-            .filter((s) => s.boardId === todo.boardId)
-            .map((section) => (
+      {/*
+        섹션 이동 — 이 보드의 섹션만 후보다. 빈 값은 섹션 해제(store 가 공백을 해제로 읽는다).
+        `전체` 뷰에서는 스토어가 sections 를 비워 두므로 피커를 아예 감춘다. 그대로 두면
+        현재 섹션에 해당하는 option 이 없어 값이 (없음) 으로 잘못 보이고, 건드리는 순간
+        멀쩡한 섹션이 해제된다.
+      */}
+      {boardSections.length > 0 && (
+        <label className="drawer-section-pick">
+          <span className="drawer-section-label">섹션</span>
+          <select
+            className="drawer-select"
+            value={todo.sectionId ?? ''}
+            onChange={(e) => {
+              const picked = boardSections.find((s) => s.id === e.target.value);
+              void patchTodo(todo.id, { section: picked ? picked.title : null });
+            }}
+          >
+            <option value="">(없음)</option>
+            {boardSections.map((section) => (
               <option key={section.id} value={section.id}>
                 {section.title}
               </option>
             ))}
-        </select>
-      </label>
+          </select>
+        </label>
+      )}
       {todo.links.length > 0 && (
         <div className="drawer-links">
           {todo.links.map((link) => (

@@ -488,14 +488,16 @@ export async function runCli(): Promise<void> {
         return;
       }
       if (sub === 'archive' && rest[1]) {
+        // 서버는 title 을 trim 해서 저장한다 — 인자에 공백이 붙어도 같은 섹션을 찾게 맞춘다.
+        const wanted = rest[1].trim();
         const sections = await request<Section[]>(
           ctx,
           'GET',
           `/api/sections?board=${encodeURIComponent(board)}`,
         );
-        const target = sections.find((s) => s.title === rest[1]);
+        const target = sections.find((s) => s.title === wanted);
         if (!target) {
-          throw new Error(`섹션 없음: ${rest[1]} (board: ${board})`);
+          throw new Error(`섹션 없음: ${wanted} (board: ${board})`);
         }
         await request(ctx, 'POST', `/api/sections/${encodeURIComponent(target.id)}/archive`);
         console.log(`✓ 섹션 보관: ${target.title} — 속해 있던 작업은 미분류로 돌아간다`);
