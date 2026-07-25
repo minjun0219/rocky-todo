@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,6 +53,28 @@ describe('boards', () => {
       const board = store.ensureBoard(key, { actor: 'tester' });
       expect(board.key).toBe(key);
     }
+  });
+
+  // finding 2 회귀 테스트: validation 이 생기기 전 구버전 데몬이 `my repo` 같은 malformed
+  // key 로 보드를 이미 만들어놨을 수 있다(공용 API 로는 더 이상 재현 불가 — public API 는
+  // 이제 이런 key 의 CREATE 를 거부하므로, raw SQL 로 직접 심어 옛 상태를 흉내낸다).
+  // 업그레이드 후에도 그 보드는 `ensureBoard`(lookup)로 계속 찾아지고, 거기에 todo 를
+  // 추가하는 것도 계속 되어야 한다 — 검증은 CREATE 에만 걸려야지 기존 row 의 LOOKUP 을
+  // 막으면 안 된다.
+  test('ensureBoard returns a pre-existing malformed-key board unchanged (lookup, not create)', () => {
+    const dbPath = join(dir, 'todo.db');
+    const raw = new Database(dbPath);
+    raw
+      .query('INSERT INTO boards (id, key, title, created_at) VALUES (?, ?, ?, ?)')
+      .run('legacy-board-id', 'my repo', 'my repo', new Date().toISOString());
+    raw.close();
+
+    const board = store.ensureBoard('my repo', { actor: 'tester' });
+    expect(board.id).toBe('legacy-board-id');
+    expect(board.key).toBe('my repo');
+
+    const todo = store.createTodo({ board: 'my repo', title: '레거시 보드 작업' }, 'tester');
+    expect(todo.boardId).toBe('legacy-board-id');
   });
 });
 
