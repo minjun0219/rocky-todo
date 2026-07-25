@@ -6,7 +6,8 @@ import { buildContext, type CliContext, ensureDaemon, health, request } from './
 import { resolveTodoRuntimeConfig } from './config';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { loadTodoConfig } from './rocky-config';
-import type { Board, HistoryEntry, Note, Section, Todo } from './store';
+import type { NoteView, TodoView } from './server';
+import type { Board, HistoryEntry, Section } from './store';
 import { tailscaleServeOff, tailscaleServeOn, tailscaleServeStatus } from './tailscale';
 import { linkLabel } from './ui/lib';
 
@@ -84,11 +85,15 @@ export function parseFlags(argv: string[]): ParsedFlags {
 
 // ── 출력 포맷 (순수) ─────────────────────────────────────────────────────────
 
-const STATUS_GLYPH: Record<Todo['status'], string> = { todo: '○', doing: '▶', done: '✓' };
+const STATUS_GLYPH: Record<TodoView['status'], string> = { todo: '○', doing: '▶', done: '✓' };
 
-/** `○ a1b2c3 제목 p1 [label] ~due ↗link (doingBy 12분)` 한 줄. depth 는 2칸 들여쓰기. */
-export function formatTodoLine(todo: Todo, depth: number): string {
-  const parts: string[] = [STATUS_GLYPH[todo.status], todo.id.slice(0, 6), todo.title];
+/** `○ #12  제목 p1 [label] ~due ↗link (doingBy 12분)` 한 줄. depth 는 2칸 들여쓰기. */
+export function formatTodoLine(todo: TodoView, depth: number): string {
+  const parts: string[] = [
+    STATUS_GLYPH[todo.status],
+    `#${String(todo.number).padEnd(3)}`,
+    todo.title,
+  ];
   if (todo.priority !== 'p4') {
     parts.push(todo.priority);
   }
@@ -114,10 +119,10 @@ export function formatTodoLine(todo: Todo, depth: number): string {
 }
 
 function renderTree(
-  todos: Todo[],
+  todos: TodoView[],
   out: string[],
   depth: number,
-  children: Map<string, Todo[]>,
+  children: Map<string, TodoView[]>,
 ): void {
   for (const todo of todos) {
     out.push(formatTodoLine(todo, depth));
@@ -126,14 +131,14 @@ function renderTree(
 }
 
 function groupAndRender(
-  todos: Todo[],
+  todos: TodoView[],
   sections: Section[],
   boards: Board[],
   allView: boolean,
 ): string {
   const byId = new Map(todos.map((t) => [t.id, t]));
-  const children = new Map<string, Todo[]>();
-  const roots: Todo[] = [];
+  const children = new Map<string, TodoView[]>();
+  const roots: TodoView[] = [];
   for (const todo of todos) {
     if (todo.parentId && byId.has(todo.parentId)) {
       const list = children.get(todo.parentId) ?? [];
@@ -229,21 +234,33 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
 
 사용:
   rocky-todo ls [--board K|--all] [--archived] [--json]
-  rocky-todo add "제목" [--board K] [--section S] [--parent ID] [--desc MD]
+  rocky-todo add "제목" [--board K] [--section S] [--parent REF] [--desc MD]
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
-  rocky-todo show ID · update ID [플래그] [--title "새 제목"]
-  rocky-todo start|stop|done|reopen|archive|unarchive ID
+  rocky-todo show REF · update REF [플래그] [--title "새 제목"]
+  rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
-  rocky-todo note ls|show ID|edit ID --content MD|append ID "텍스트"|archive ID
-  rocky-todo history ID [--limit N] · board ls · board add KEY [제목]
+  rocky-todo note ls|show REF|edit REF --content MD|append REF "텍스트"|archive REF
+  rocky-todo history REF [--limit N] · board ls · board add KEY [제목]
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
   rocky-todo tailscale on|off|status           테일넷 한정 HTTPS 노출 (옵션, 기본 off)
 
+REF 는 #12 / 12 (현재 보드) 또는 rocky#12 (보드 지정) 또는 raw id 를 받는다.
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추한다. actor 는 --actor >
 ROCKY_TODO_ACTOR > 호스트 자동 감지. 삭제는 없다 — 아카이브만 존재한다.`;
+
+/**
+ * ref 로 단건 조회/수정하는 엔드포인트에 `?board=` 를 붙인다. 스토어의 참조 문법은
+ * `rocky#12`/raw id/id prefix 는 board 없이도 유일하게 풀리지만, 맨 번호(`#12`/`12`)는
+ * 현재 보드 컨텍스트가 없으면 todos 는 에러, notes 는 전역 메모로 풀린다 — CLI 가 유추한
+ * board 를 실어 보내지 않으면 `rocky-todo show 12` 같은 흔한 입력이 조용히 실패한다.
+ */
+function withBoard(path: string, board: string): string {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}board=${encodeURIComponent(board)}`;
+}
 
 function str(flag: string | boolean | string[] | undefined): string | undefined {
   return typeof flag === 'string' ? flag : undefined;
@@ -289,7 +306,7 @@ export async function runCli(): Promise<void> {
         params.set('includeArchived', 'true');
       }
       const qs = params.size > 0 ? `?${params.toString()}` : '';
-      const todos = await request<Todo[]>(ctx, 'GET', `/api/todos${qs}`);
+      const todos = await request<TodoView[]>(ctx, 'GET', `/api/todos${qs}`);
       const boards = await request<Board[]>(ctx, 'GET', '/api/boards');
       const sections = allView
         ? []
@@ -303,7 +320,7 @@ export async function runCli(): Promise<void> {
       if (!title) {
         throw new Error('usage: rocky-todo add "제목" [플래그]');
       }
-      const todo = await request<Todo>(ctx, 'POST', '/api/todos', {
+      const todo = await request<TodoView>(ctx, 'POST', '/api/todos', {
         board,
         title,
         description: str(flags.desc),
@@ -314,30 +331,30 @@ export async function runCli(): Promise<void> {
         labels: list(flags.label),
         links: list(flags.link)?.map((url) => ({ url })),
       });
-      print(todo, () => `✓ ${todo.id.slice(0, 6)} 생성 (${board})`);
+      print(todo, () => `✓ ${todo.ref} 생성 (${board})`);
       return;
     }
 
     case 'show': {
       const id = rest[0];
       if (!id) {
-        throw new Error('usage: rocky-todo show ID');
+        throw new Error('usage: rocky-todo show REF');
       }
-      const detail = await request<{ todo: Todo; history: HistoryEntry[] }>(
+      const detail = await request<{ todo: TodoView; history: HistoryEntry[] }>(
         ctx,
         'GET',
-        `/api/todos/${id}`,
+        withBoard(`/api/todos/${id}`, board),
       );
       print(detail, () => {
         const t = detail.todo;
-        const lines = [formatTodoLine(t, 0)];
+        const lines = [t.ref, formatTodoLine(t, 0)];
         if (t.description !== '') {
           lines.push('', t.description);
         }
         if (t.links.length > 0) {
           lines.push('', ...t.links.map((l) => `↗ ${l.url}`));
         }
-        lines.push('', '히스토리:');
+        lines.push('', `id: ${t.id}`, '', '히스토리:');
         for (const h of detail.history.slice(0, 8)) {
           lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
         }
@@ -349,9 +366,9 @@ export async function runCli(): Promise<void> {
     case 'update': {
       const id = rest[0];
       if (!id) {
-        throw new Error('usage: rocky-todo update ID [플래그]');
+        throw new Error('usage: rocky-todo update REF [플래그]');
       }
-      const todo = await request<Todo>(ctx, 'PATCH', `/api/todos/${id}`, {
+      const todo = await request<TodoView>(ctx, 'PATCH', withBoard(`/api/todos/${id}`, board), {
         title: str(flags.title),
         description: str(flags.desc),
         section: str(flags.section),
@@ -361,7 +378,7 @@ export async function runCli(): Promise<void> {
         labels: list(flags.label),
         links: list(flags.link)?.map((url) => ({ url })),
       });
-      print(todo, () => `✓ ${todo.id.slice(0, 6)} 수정`);
+      print(todo, () => `✓ ${todo.ref} 수정`);
       return;
     }
 
@@ -373,10 +390,15 @@ export async function runCli(): Promise<void> {
     case 'unarchive': {
       const id = rest[0];
       if (!id) {
-        throw new Error(`usage: rocky-todo ${command} ID`);
+        throw new Error(`usage: rocky-todo ${command} REF`);
       }
-      const todo = await request<Todo>(ctx, 'POST', `/api/todos/${id}/status`, { action: command });
-      print(todo, () => `✓ ${todo.id.slice(0, 6)} ${command}`);
+      const todo = await request<TodoView>(
+        ctx,
+        'POST',
+        withBoard(`/api/todos/${id}/status`, board),
+        { action: command },
+      );
+      print(todo, () => `✓ ${todo.ref} ${command}`);
       return;
     }
 
@@ -418,15 +440,20 @@ export async function runCli(): Promise<void> {
     case 'history': {
       const id = rest[0];
       if (!id) {
-        throw new Error('usage: rocky-todo history ID [--limit N]');
+        throw new Error('usage: rocky-todo history REF [--limit N]');
       }
       const limit = str(flags.limit) ?? '20';
       // prefix 로 들어와도 detail 조회로 전체 id 를 확정한 뒤 히스토리를 가져온다
-      const detail: { todo?: Todo; note?: Note } = await request<{ todo?: Todo; note?: Note }>(
-        ctx,
-        'GET',
-        `/api/todos/${id}`,
-      ).catch(() => request<{ todo?: Todo; note?: Note }>(ctx, 'GET', `/api/notes/${id}`));
+      const detail: { todo?: TodoView; note?: NoteView } = await request<{
+        todo?: TodoView;
+        note?: NoteView;
+      }>(ctx, 'GET', withBoard(`/api/todos/${id}`, board)).catch(() =>
+        request<{ todo?: TodoView; note?: NoteView }>(
+          ctx,
+          'GET',
+          withBoard(`/api/notes/${id}`, board),
+        ),
+      );
       const entityId = detail.todo?.id ?? detail.note?.id ?? id;
       const history = await request<HistoryEntry[]>(
         ctx,
@@ -524,12 +551,12 @@ async function handleNote(
       if (!title) {
         throw new Error('usage: rocky-todo note add "제목" [--content MD] [--global]');
       }
-      const note = await request<Note>(ctx, 'POST', '/api/notes', {
+      const note = await request<NoteView>(ctx, 'POST', '/api/notes', {
         board: flags.global === true ? undefined : board,
         title,
         content: str(flags.content),
       });
-      print(note, () => `✓ 메모 ${note.id.slice(0, 6)}`);
+      print(note, () => `✓ 메모 ${note.ref}`);
       return;
     }
     case 'ls': {
@@ -543,58 +570,69 @@ async function handleNote(
         params.set('includeArchived', 'true');
       }
       const qs = params.size > 0 ? `?${params.toString()}` : '';
-      const notes = await request<Note[]>(ctx, 'GET', `/api/notes${qs}`);
+      const notes = await request<NoteView[]>(ctx, 'GET', `/api/notes${qs}`);
       print(
         notes,
         () =>
-          notes
-            .map((n) => `▤ ${n.id.slice(0, 6)} ${n.title}${n.archivedAt ? ' (보관됨)' : ''}`)
-            .join('\n') || '(메모 없음)',
+          notes.map((n) => `▤ ${n.ref}  ${n.title}${n.archivedAt ? ' (보관됨)' : ''}`).join('\n') ||
+          '(메모 없음)',
       );
       return;
     }
     case 'show': {
       const id = rest[1];
       if (!id) {
-        throw new Error('usage: rocky-todo note show ID');
+        throw new Error('usage: rocky-todo note show REF');
       }
-      const detail = await request<{ note: Note }>(ctx, 'GET', `/api/notes/${id}`);
-      print(detail, () => `▤ ${detail.note.title}\n\n${detail.note.content}`);
+      const detail = await request<{ note: NoteView }>(
+        ctx,
+        'GET',
+        withBoard(`/api/notes/${id}`, board),
+      );
+      print(
+        detail,
+        () =>
+          `▤ ${detail.note.ref}  ${detail.note.title}\n\n${detail.note.content}\n\nid: ${detail.note.id}`,
+      );
       return;
     }
     case 'edit': {
       const id = rest[1];
       const content = str(flags.content);
       if (!id || content === undefined) {
-        throw new Error('usage: rocky-todo note edit ID --content MD [--title 제목]');
+        throw new Error('usage: rocky-todo note edit REF --content MD [--title 제목]');
       }
-      const note = await request<Note>(ctx, 'PATCH', `/api/notes/${id}`, {
+      const note = await request<NoteView>(ctx, 'PATCH', withBoard(`/api/notes/${id}`, board), {
         title: str(flags.title),
         content,
       });
-      print(note, () => `✓ 메모 ${note.id.slice(0, 6)} 수정`);
+      print(note, () => `✓ 메모 ${note.ref} 수정`);
       return;
     }
     case 'append': {
       const id = rest[1];
       const text = rest[2];
       if (!id || !text) {
-        throw new Error('usage: rocky-todo note append ID "텍스트"');
+        throw new Error('usage: rocky-todo note append REF "텍스트"');
       }
-      const note = await request<Note>(ctx, 'PATCH', `/api/notes/${id}`, {
+      const note = await request<NoteView>(ctx, 'PATCH', withBoard(`/api/notes/${id}`, board), {
         content: text,
         mode: 'append',
       });
-      print(note, () => `✓ 메모 ${note.id.slice(0, 6)} append`);
+      print(note, () => `✓ 메모 ${note.ref} append`);
       return;
     }
     case 'archive': {
       const id = rest[1];
       if (!id) {
-        throw new Error('usage: rocky-todo note archive ID');
+        throw new Error('usage: rocky-todo note archive REF');
       }
-      const note = await request<Note>(ctx, 'POST', `/api/notes/${id}/archive`);
-      print(note, () => `✓ 메모 ${note.id.slice(0, 6)} 보관`);
+      const note = await request<NoteView>(
+        ctx,
+        'POST',
+        withBoard(`/api/notes/${id}/archive`, board),
+      );
+      print(note, () => `✓ 메모 ${note.ref} 보관`);
       return;
     }
     default:

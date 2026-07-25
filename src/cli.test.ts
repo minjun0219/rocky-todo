@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { formatTodoLine, parseFlags } from './cli';
-import type { Todo } from './store';
+import type { TodoView } from './server';
 
 describe('parseFlags', () => {
   test('separates positionals and flags', () => {
@@ -40,9 +40,10 @@ describe('parseFlags', () => {
 });
 
 describe('formatTodoLine', () => {
-  const base: Todo = {
+  const base: TodoView = {
     id: 'a1b2c3d4',
     number: 1,
+    ref: 'rocky#1',
     boardId: 'b',
     title: '작업 제목',
     description: '',
@@ -55,11 +56,34 @@ describe('formatTodoLine', () => {
     updatedAt: '2026-07-23T00:00:00.000Z',
   };
 
-  test('todo status glyph and id prefix', () => {
+  test('todo status glyph and number prefix', () => {
     const line = formatTodoLine(base, 0);
     expect(line).toContain('○');
-    expect(line).toContain('a1b2c3');
+    expect(line).toContain('#1');
     expect(line).toContain('작업 제목');
+  });
+
+  test('번호를 #N 으로 앞에 붙인다', () => {
+    const line = formatTodoLine(
+      {
+        id: 'a1b2c3d4',
+        number: 12,
+        ref: 'rocky#12',
+        boardId: 'b1',
+        title: '보드·섹션 생성',
+        description: '',
+        status: 'todo',
+        priority: 'p2',
+        labels: [],
+        links: [],
+        position: 1,
+        createdAt: '2026-07-25T00:00:00.000Z',
+        updatedAt: '2026-07-25T00:00:00.000Z',
+      } as TodoView,
+      0,
+    );
+    expect(line).toContain('#12');
+    expect(line.indexOf('#12')).toBeLessThan(line.indexOf('보드·섹션 생성'));
   });
 
   test('doing shows actor, done shows check', () => {
