@@ -91,8 +91,12 @@ export function readCursor(file: string, sessionId: string): number | undefined 
 export function writeCursor(file: string, sessionId: string, lastId: number): void {
   const all = readCursorFile(file);
   all[sessionId] = { lastId, at: new Date().toISOString() };
+  // `at` desc 로 최신 100개만 유지. 같은 밀리초에 여러 세션이 기록되면 `at` 이 동률이라
+  // 삽입 순서로 tie-break 해야 한다 — reverse() 로 최신 삽입을 앞에 두고, 3-way 비교(동률 0)로
+  // stable sort 를 보장해 최신이 살아남게 한다. (동률에 1/-1 만 반환하면 불안정 → 최신이 잘릴 수 있다.)
   const entries = Object.entries(all)
-    .sort(([, a], [, b]) => (a.at < b.at ? 1 : -1))
+    .reverse()
+    .sort(([, a], [, b]) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
     .slice(0, MAX_CURSOR_SESSIONS);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(Object.fromEntries(entries)));
