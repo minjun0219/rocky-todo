@@ -188,9 +188,33 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
       store.createNote({ title: `전역 메모 ${i}` }, 'tester');
     }
 
-    const detail = await resolveHistoryEntity(ctx, '3', 'rocky', true);
+    const detail = await resolveHistoryEntity(ctx, '3', 'rocky', { global: true });
     expect(detail.todo).toBeUndefined();
     expect(detail.note?.title).toBe('전역 메모 3');
+  });
+
+  // 같은 사고가 **보드 소속** note 에도 있다: 보드 안에서 todo 와 note 가 각자 1부터
+  // 번호를 매기므로 todo #2 와 note #2 가 공존할 수 있고, 그때 todo 조회가 먼저 성공해
+  // note 히스토리에 도달할 길이 없다. `--note` 가 note 를 확정하는지 검증한다.
+  test('history --note 는 같은 번호의 board todo 가 있어도 보드 note 를 가리킨다', async () => {
+    for (let i = 1; i <= 2; i++) {
+      store.createTodo({ board: 'rocky', title: `todo ${i}` }, 'tester');
+    }
+    for (let i = 1; i <= 2; i++) {
+      store.createNote({ board: 'rocky', title: `보드 메모 ${i}` }, 'tester');
+    }
+
+    const detail = await resolveHistoryEntity(ctx, '2', 'rocky', { note: true });
+    expect(detail.todo).toBeUndefined();
+    expect(detail.note?.title).toBe('보드 메모 2');
+  });
+
+  test('플래그가 없으면 기존 todo 우선 fallback 을 유지한다', async () => {
+    store.createTodo({ board: 'rocky', title: 'todo 1' }, 'tester');
+    store.createNote({ board: 'rocky', title: '보드 메모 1' }, 'tester');
+
+    const detail = await resolveHistoryEntity(ctx, '1', 'rocky');
+    expect(detail.todo?.title).toBe('todo 1');
   });
 });
 

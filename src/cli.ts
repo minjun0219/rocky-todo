@@ -21,7 +21,7 @@ import { linkLabel } from './ui/lib';
 
 // ── 인자 파싱 (순수) ─────────────────────────────────────────────────────────
 
-const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'help']);
+const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'note', 'help']);
 const VALUE_FLAGS = new Set([
   'board',
   'section',
@@ -243,7 +243,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] [--global] · board ls · board add KEY [제목]
+  rocky-todo history REF [--limit N] [--global|--note] · board ls · board add KEY [제목]
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -310,18 +310,23 @@ export function noteRefPath(id: string, suffix: string, board: string, global: b
  * 번호의 board todo 가 있을 때 그게 먼저 성공해 사용자가 명시적으로 요청한 전역 note 대신
  * 엉뚱한 TODO 의 히스토리를 조용히 돌려준다(finding 1). `--global` 이 없을 때만 기존
  * todo→note fallback 을 쓴다.
+ *
+ * 같은 이유로 **보드 소속** note 도 `--note` 로 확정할 수 있어야 한다: 보드 안에서 todo #1 과
+ * note #1 이 동시에 존재할 수 있고(번호 공간이 독립), 그때 `history '#1'` 은 todo 조회가 먼저
+ * 성공해 note 히스토리에 도달할 길이 없다. `--global` 이 전역 note 를 확정하듯 `--note` 는
+ * 보드 note 를 확정한다.
  */
 export async function resolveHistoryEntity(
   ctx: CliContext,
   id: string,
   board: string,
-  global: boolean,
+  opts: { global?: boolean; note?: boolean } = {},
 ): Promise<{ todo?: TodoView; note?: NoteView }> {
-  if (global) {
+  if (opts.global === true || opts.note === true) {
     return request<{ todo?: TodoView; note?: NoteView }>(
       ctx,
       'GET',
-      noteRefPath(id, '', board, true),
+      noteRefPath(id, '', board, opts.global === true),
     );
   }
   return request<{ todo?: TodoView; note?: NoteView }>(
@@ -508,11 +513,14 @@ export async function runCli(): Promise<void> {
     case 'history': {
       const id = rest[0];
       if (!id) {
-        throw new Error('usage: rocky-todo history REF [--limit N] [--global]');
+        throw new Error('usage: rocky-todo history REF [--limit N] [--global|--note]');
       }
       const limit = str(flags.limit) ?? '20';
       // prefix 로 들어와도 detail 조회로 전체 id 를 확정한 뒤 히스토리를 가져온다
-      const detail = await resolveHistoryEntity(ctx, id, board, flags.global === true);
+      const detail = await resolveHistoryEntity(ctx, id, board, {
+        global: flags.global === true,
+        note: flags.note === true,
+      });
       const entityId = detail.todo?.id ?? detail.note?.id ?? id;
       const history = await request<HistoryEntry[]>(
         ctx,

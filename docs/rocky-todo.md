@@ -130,7 +130,7 @@ rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global] · board ls|add · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
@@ -140,7 +140,9 @@ REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky#12`(�
 그대로 다음 명령의 REF 로 쓰면 된다. 랜덤 id 는 여전히 기본 키이고 `show` 상세 출력의
 `id:` 줄에서 볼 수 있다. 보드 미소속 글로벌 메모는 번호가 `#3` 처럼 접두사 없이 표시되고,
 그 번호를 보드 번호와 구분해 조회하려면 `note show|edit|append|archive`/`history` 에
-`--global` 을 붙인다.
+`--global` 을 붙인다. todo 와 메모는 같은 보드 안에서도 번호 공간이 따로라 `#2` 가 둘 다일 수
+있는데, `history` 는 todo 를 먼저 찾으므로 메모의 히스토리를 보려면 `--note`(보드 메모) 또는
+`--global`(전역 메모)로 대상을 확정한다.
 
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. actor 는 `--actor` >
 `ROCKY_TODO_ACTOR` > 호스트 자동 감지 (claude-code / opencode / codex).

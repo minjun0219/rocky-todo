@@ -39,7 +39,7 @@ rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global] · board ls|add · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
@@ -48,6 +48,9 @@ REF 는 `rocky#12`(보드 지정) / `#12` 또는 `12`(현재 보드의 번호) /
 중 아무거나 받는다 — `ls` 출력의 `#12` 를 그대로 다음 명령에 복사해 쓰면 된다.
 글로벌 메모(보드 미소속)는 번호가 `#3` 처럼 접두사 없이 표시되며, `note show|edit|append|archive`
 와 `history` 는 `--global` 을 붙여야 보드 번호와 헷갈리지 않고 그 공간을 조회한다.
+todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2` 가 둘 다일 수 있다 — `history` 는
+기본적으로 todo 를 먼저 찾으니, 메모 쪽을 보려면 `--note`(보드 메모) 나 `--global`(전역 메모)로
+대상을 확정한다.
 
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. **삭제는 없다 — 아카이브만.**
 
