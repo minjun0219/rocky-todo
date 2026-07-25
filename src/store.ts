@@ -907,18 +907,21 @@ export class TodoStore {
    * notes 는 board_id IS NULL 인 전역 행을 가질 수 있어 자체 번호 시퀀스를 갖지만(부분 유니크
    * 인덱스 `idx_notes_number_global`), todos 는 항상 보드에 속하므로 전역 번호 공간이 없다.
    *
-   * `rocky#12` 스코프 매칭은 board key 가 `[a-z0-9]` 로 시작하는 경우만 인식한다 —
-   * `boardKeyFrom` 은 이론상 그렇지 않은 키(예: 레포 이름이 `.dotfiles`)도 만들 수 있는데,
-   * 그런 보드는 `board#number` 형태로 지정할 수 없다(대신 `board` 인자 + 맨숫자를 쓴다).
-   * 패턴을 넓히면 `#12` 자체가 스코프 매칭에 잡아먹힐 위험이 생겨, 이 레포 규모에서는
-   * 흔치 않은 케이스를 위해 그 위험을 감수하지 않기로 했다 — 위 제약으로 문서화한다.
+   * `rocky#12` 스코프 매칭의 board key 부분은 `sanitizeKey`(`src/actor.ts`)가 만들 수 있는
+   * 모든 키를 받아야 한다 — `[a-zA-Z0-9_-]` 를 보존하므로 대문자로 시작하거나(`MyProject`)
+   * `_`/`-` 로 시작하는(`_private`) 키도 나올 수 있다. 그래서 패턴은 `#` 와 공백만 제외한
+   * `[^#\s]+` 를 쓴다 — 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에
+   * 복사하는 문자열을 이 함수가 못 읽으면(과거 `/^([a-z0-9][\w.-]*)#(\d+)$/` 가 그랬다)
+   * 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다. 이 분기는 wildcard 가드(아래
+   * `[%_]` 거부)보다 먼저 매칭돼 빠져나가므로, board 부분에 `%`/`_` 가 섞여도(예:
+   * `_private#1`) LIKE 가드에 걸리지 않고 board 조회로 간다 — 가드는 id-prefix 분기 전용이다.
    *
-   * board key 조회는 대소문자를 구분한다(SQLite 기본) — 스코프 정규식에 `/i` 를 붙이지
-   * 않는 것도 그래서다. `/i` 를 붙이면 `ROCKY#1` 이 정규식엔 매칭되고도 `WHERE key = ?`
-   * 조회는 실패해(`ROCKY` != `rocky`) 사용자가 "왜 케이스를 허용한다면서 안 되지" 하고
-   * 오해할 수 있다. 조회 자체를 대소문자 무시로 바꾸는 대안도 있었지만, board key 는
-   * UNIQUE(대소문자 구분) 라 `rocky`/`Rocky` 가 둘 다 존재하면 대소문자 무시 조회가
-   * 모호성 체크 없이 둘 중 하나를 조용히 골라버릴 수 있어 채택하지 않았다.
+   * board key 조회는 대소문자를 구분한다(SQLite 기본) — 정규식이 대소문자를 가리지 않고
+   * 넓게 받아도(`/i` 없음) `WHERE key = ?` 조회 자체가 대소문자를 구분해 `ROCKY#1` 은
+   * `rocky` 보드에 매칭되지 않고 `undefined` 로 끝난다. 조회를 대소문자 무시로 바꾸는
+   * 대안도 있었지만, board key 는 UNIQUE(대소문자 구분) 라 `rocky`/`Rocky` 가 둘 다
+   * 존재하면 대소문자 무시 조회가 모호성 체크 없이 둘 중 하나를 조용히 골라버릴 수 있어
+   * 채택하지 않았다.
    *
    * @throws 다중 prefix 매칭, todos 에 현재 보드 없이 번호만 온 경우, 빈/공백 ref,
    *   id 앞부분에 SQL LIKE 와일드카드(`%`/`_`) 가 섞인 경우 (모두 모호성 노출)
@@ -935,7 +938,7 @@ export class TodoStore {
       throw new Error('empty ref');
     }
 
-    const scoped = /^([a-z0-9][\w.-]*)#(\d+)$/.exec(trimmed);
+    const scoped = /^([^#\s]+)#(\d+)$/.exec(trimmed);
     if (scoped?.[1] && scoped[2]) {
       const board = this.db
         .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')

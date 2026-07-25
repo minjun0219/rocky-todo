@@ -435,13 +435,35 @@ describe('참조 해석', () => {
     expect(() => store.getTodo('%')).toThrow(/invalid id prefix/);
   });
 
-  // finding 6: 스코프 정규식의 /i 가 대소문자 구분 SQL 조회와 어긋나던 문제. 정규식에서
-  // /i 를 뺐으니 대문자가 섞인 스코프 참조는 애초에 scoped 분기에 매칭되지 않고, id
-  // exact/prefix 매칭으로도 이어지지 않아(대문자 id 는 없음) undefined 로 끝나야 한다 —
-  // 대소문자를 다르게 해석해 놓고 조용히 실패하는 대신, 형태 자체가 안 맞는다고 취급한다.
-  test('대문자가 섞인 board#N 참조는 스코프 매칭에 걸리지 않고 undefined 다', () => {
+  // finding A/6: 스코프 정규식은 board key 부분을 넓게 받아야 하지만(`sanitizeKey` 가
+  // 만들 수 있는 모든 키), board 조회 자체는 SQLite 기본대로 대소문자를 구분해야 한다.
+  // 이전 테스트(`getTodo('ROCKY#1') === undefined`)는 고치기 전 코드(스코프 정규식이
+  // 대문자를 애초에 매칭하지 않던 상태)에서도 우연히 통과해 아무것도 pin 하지 못했다 —
+  // 여기서는 `ROCKY` 가 정규식엔 매칭되고도(board 부분이 넓어졌으니) 대소문자 다른
+  // 보드로 조용히 풀리지 않는지를 실제로 검증한다.
+  test('대소문자가 다른 board#N 참조는 다른 보드로 조용히 풀리지 않고 undefined 다', () => {
     store.ensureBoard('rocky', { actor: 'tester' });
     store.createTodo({ board: 'rocky', title: '대상' }, 'tester');
     expect(store.getTodo('ROCKY#1')).toBeUndefined();
+  });
+
+  // finding A: sanitizeKey(src/actor.ts) 는 `[a-zA-Z0-9_-]` 를 보존하므로 대문자로
+  // 시작하거나(`MyProject`) `_`/`-` 로 시작하는(`_private`) board key 도 나올 수 있다.
+  // 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에 복사하는 값이라,
+  // resolveRef 가 이 형태를 못 읽으면 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다.
+  test('대문자로 시작하는 board key 의 board#N 참조가 resolve 된다', () => {
+    store.ensureBoard('MyProject', { actor: 'tester' });
+    const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
+    expect(store.getTodo('MyProject#1')?.id).toBe(t.id);
+  });
+
+  test('밑줄로 시작하는 board key 의 board#N 참조가 resolve 된다 — id-prefix 와일드카드 가드를 타지 않는다', () => {
+    store.ensureBoard('_private', { actor: 'tester' });
+    const t = store.createTodo({ board: '_private', title: '대상' }, 'tester');
+    // 고치기 전엔 `_private#1` 이 scoped 분기에 안 걸리고 id-prefix 분기까지 흘러가,
+    // '_' 가 SQL LIKE 와일드카드로 해석돼 `invalid id prefix` 에러를 던졌다(제품이 만든
+    // 참조를 제품이 못 먹는 정도가 아니라 크래시까지 났다).
+    expect(() => store.getTodo('_private#1')).not.toThrow();
+    expect(store.getTodo('_private#1')?.id).toBe(t.id);
   });
 });
