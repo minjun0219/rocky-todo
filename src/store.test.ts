@@ -175,6 +175,30 @@ describe('todos', () => {
     expect(store.listSections(a.boardId).map((s) => s.title)).toEqual(['검증']);
   });
 
+  // store 의 원칙은 "모든 mutation 은 history 를 남긴다" 다. 섹션 아카이브가 todo 의
+  // section_id 를 바꾸는 것도 그 todo 에 일어난 변경이므로, 상세 타임라인에서 왜 섹션이
+  // 풀렸는지 설명될 수 있어야 한다.
+  test('섹션 아카이브는 영향받은 각 todo 에도 히스토리를 남긴다', () => {
+    const a = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const b = store.createTodo({ board: 'rocky', title: 'b', section: '설계' }, 'tester');
+    const sectionId = a.sectionId as string;
+
+    store.archiveSection(sectionId, 'logan');
+
+    for (const todo of [a, b]) {
+      const entries = store.listHistory({ entityId: todo.id });
+      const unset = entries.find((e) => e.changes && 'section' in e.changes);
+      expect(unset).toBeDefined();
+      expect(unset?.actor).toBe('logan');
+      expect(unset?.changes?.section).toEqual([sectionId, null]);
+    }
+
+    // 섹션 자체의 archive 이력도 그대로 남는다
+    expect(store.listHistory({ entityId: sectionId }).some((e) => e.action === 'archive')).toBe(
+      true,
+    );
+  });
+
   test('hierarchy: child references parent via parentId', () => {
     const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
     const child = store.createTodo(
