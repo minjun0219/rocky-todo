@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { runMigrations } from './migrations';
 
 /**
  * rocky-todo 의 저장 계층 — SQLite (bun:sqlite) 단일 파일.
@@ -41,6 +42,8 @@ export interface Section {
 
 export interface Todo {
   id: string;
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  number: number;
   boardId: string;
   sectionId?: string;
   parentId?: string;
@@ -62,6 +65,8 @@ export interface Todo {
 
 export interface Note {
   id: string;
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  number: number;
   boardId?: string;
   title: string;
   content: string;
@@ -156,9 +161,12 @@ export interface TodoStoreOptions {
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
+/** 랜덤 id 길이 — 참조 해석이 "번호냐 id 냐"를 가르는 기준이라 상수로 묶어 둔다. */
+export const ID_LENGTH = 8;
+
 /** 8자 base36 랜덤 id — 짧아서 CLI/대화에서 다루기 좋고 prefix 매칭을 허용한다. */
 function newId(): string {
-  const bytes = randomBytes(8);
+  const bytes = randomBytes(ID_LENGTH);
   let id = '';
   for (const b of bytes) {
     id += ID_ALPHABET[b % 36];
@@ -172,6 +180,7 @@ function nowIso(): string {
 
 interface TodoRow {
   id: string;
+  number: number;
   board_id: string;
   section_id: string | null;
   parent_id: string | null;
@@ -193,6 +202,7 @@ interface TodoRow {
 
 interface NoteRow {
   id: string;
+  number: number;
   board_id: string | null;
   title: string;
   content: string;
@@ -298,6 +308,9 @@ export class TodoStore {
     this.db.run('PRAGMA journal_mode = WAL');
     this.db.run('PRAGMA foreign_keys = ON');
     this.db.run(SCHEMA);
+    // backupPath 는 지정하지 않는다 — runMigrations 가 실제 시작 버전으로
+    // `${dbPath}.bak-v<version>` 을 스스로 계산한다 (하드코딩된 v0 방지).
+    runMigrations(this.db, { dbPath: options.dbPath });
   }
 
   close(): void {
@@ -336,12 +349,39 @@ export class TodoStore {
 
   // ── boards ────────────────────────────────────────────────────────────────
 
+  /**
+   * board key 를 만든다. `resolveRef` 의 스코프 ref 정규식(`^([^#\s]+)#(\d+)$`)이
+   * key 부분에서 공백과 `#` 를 허용하지 않으므로, 그 두 문자(부류)가 섞인 key 를
+   * 저장하면 `refOf` 가 만든 `<key>#<number>` 를 서버 스스로 못 읽는 모순이 생긴다
+   * (예: `my repo#1` → scoped 정규식 불일치 → `resolveRef` 가 undefined; `a#b#1` 도
+   * 동일). `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
+   * REST(`POST /api/boards`)·MCP(`todo_write`/`note_write` 의 `board`)로 직접
+   * 들어오기도 해 여기서 한 번 더 막는다. 조용히 정규화(공백→`-` 치환 등)하지 않는다
+   * — `my repo` 를 요청했는데 다른 이름의 보드가 말없이 만들어지면 더 혼란스럽다.
+   *
+   * 검증은 새 보드를 CREATE 할 때만 적용한다 — 먼저 기존 row 를 조회하고, 있으면 모양과
+   * 무관하게 그대로 돌려준다. 이 validation 이 들어오기 전 구버전 데몬이 `my repo` 같은
+   * key 로 보드를 이미 만들어놨을 수 있고(직접 `POST /api/boards` 또는 MCP `board` 인자로
+   * 도달 가능), 업그레이드 후 그 보드에 todo/note 를 하나 추가하기만 해도 여기서 하드
+   * 실패하면 안 된다 — 보드와 기존 항목은 멀쩡한데. 새 malformed 보드가 생기는 것만 막는다.
+   * @throws key 가 비어 있거나 공백/`#` 를 포함하는 **새** 보드를 만들려 하면 — 어느 문자가
+   * 문제인지 명시한다. 이미 존재하는 보드는 이 검증을 건너뛴다.
+   */
   ensureBoard(key: string, options: { title?: string; actor: string }): Board {
     const existing = this.db
       .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
       .get(key);
     if (existing) {
       return toBoard(existing);
+    }
+    if (key === '') {
+      throw new Error('board key must not be empty');
+    }
+    if (/\s/.test(key)) {
+      throw new Error(`board key must not contain whitespace: ${JSON.stringify(key)}`);
+    }
+    if (key.includes('#')) {
+      throw new Error(`board key must not contain '#': ${JSON.stringify(key)}`);
     }
     const board: Board = {
       id: newId(),
@@ -368,6 +408,15 @@ export class TodoStore {
   private boardByKey(key: string): Board | undefined {
     const row = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?').get(key);
     return row ? toBoard(row) : undefined;
+  }
+
+  /**
+   * 보드 key → boardId. 아카이브된 보드도 포함해서 찾는다(참조 해석/조회 목적이라
+   * 아카이브 여부로 실패시키지 않는다). 없는 key 면 undefined — 존재하지 않는 보드를
+   * 지어내지 않고, 호출자가 "보드 컨텍스트 없음"으로 취급하게 한다.
+   */
+  boardIdOf(key: string): string | undefined {
+    return this.boardByKey(key)?.id;
   }
 
   // ── sections ──────────────────────────────────────────────────────────────
@@ -417,6 +466,35 @@ export class TodoStore {
     return (row?.max ?? 0) + 1;
   }
 
+  /**
+   * 보드 안에서 다음 번호 — MAX(number)+1 이라 아카이브된 항목이 있어도 회수하지 않는다.
+   * @param boardId null 이면 글로벌 노트 공간.
+   */
+  private nextNumber(table: 'todos' | 'notes', boardId: string | null): number {
+    const where = boardId === null ? 'board_id IS NULL' : 'board_id = ?';
+    const row = this.db
+      .query<{ max: number | null }, string[]>(
+        `SELECT MAX(number) AS max FROM ${table} WHERE ${where}`,
+      )
+      .get(...(boardId === null ? [] : [boardId]));
+    return (row?.max ?? 0) + 1;
+  }
+
+  /**
+   * boardId → board key. ref(`rocky#12`) 조립에 쓴다.
+   *
+   * "보드가 없음"과 "key 가 빈 문자열인 보드"를 구분해서 돌려준다 — 전자는 FK 가 깨진
+   * 상태라 호출자가 실패시켜야 하고, 후자는 (레거시 데이터로만 가능한) malformed key 라
+   * raw id 폴백 대상이다. 둘을 같은 값으로 뭉개면 후자가 폴백에 닿지 못한다.
+   * @returns 보드가 없으면 `undefined`.
+   */
+  boardKeyOf(boardId: string): string | undefined {
+    const row = this.db
+      .query<{ key: string }, [string]>('SELECT key FROM boards WHERE id = ?')
+      .get(boardId);
+    return row?.key;
+  }
+
   // ── todos ─────────────────────────────────────────────────────────────────
 
   createTodo(input: CreateTodoInput, actor: string): Todo {
@@ -427,7 +505,7 @@ export class TodoStore {
     }
     let parentId: string | undefined;
     if (input.parentId) {
-      const parent = this.getTodo(input.parentId);
+      const parent = this.getTodo(input.parentId, board.id);
       if (!parent || parent.boardId !== board.id) {
         throw new Error(`parent todo not found in board ${input.board}: ${input.parentId}`);
       }
@@ -436,6 +514,7 @@ export class TodoStore {
     const now = nowIso();
     const todo: Todo = {
       id: newId(),
+      number: this.nextNumber('todos', board.id),
       boardId: board.id,
       sectionId,
       parentId,
@@ -452,11 +531,12 @@ export class TodoStore {
     };
     this.db
       .query(
-        `INSERT INTO todos (id, board_id, section_id, parent_id, title, description, status, priority, due, labels, links, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO todos (id, number, board_id, section_id, parent_id, title, description, status, priority, due, labels, links, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         todo.id,
+        todo.number,
         todo.boardId,
         sectionId ?? null,
         parentId ?? null,
@@ -475,8 +555,8 @@ export class TodoStore {
     return todo;
   }
 
-  updateTodo(idOrPrefix: string, patch: UpdateTodoPatch, actor: string): Todo {
-    const current = this.mustGetTodo(idOrPrefix);
+  updateTodo(ref: string, patch: UpdateTodoPatch, actor: string, currentBoardId?: string): Todo {
+    const current = this.mustGetTodo(ref, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | number | null)[] = [];
@@ -528,7 +608,7 @@ export class TodoStore {
       if (patch.parentId === null) {
         apply('parent_id', 'parentId', current.parentId, undefined, null);
       } else {
-        const parent = this.mustGetTodo(patch.parentId);
+        const parent = this.mustGetTodo(patch.parentId, current.boardId);
         if (parent.boardId !== current.boardId) {
           throw new Error(`parent todo not in same board: ${patch.parentId}`);
         }
@@ -550,8 +630,8 @@ export class TodoStore {
     return this.mustGetTodo(current.id);
   }
 
-  setTodoStatus(idOrPrefix: string, action: StatusAction, actor: string): Todo {
-    const current = this.mustGetTodo(idOrPrefix);
+  setTodoStatus(ref: string, action: StatusAction, actor: string, currentBoardId?: string): Todo {
+    const current = this.mustGetTodo(ref, currentBoardId);
     const now = nowIso();
     const changes: Record<string, [unknown, unknown]> = {};
 
@@ -635,15 +715,15 @@ export class TodoStore {
     return todos;
   }
 
-  getTodo(idOrPrefix: string): Todo | undefined {
-    const row = this.resolveByPrefix<TodoRow>('todos', idOrPrefix);
+  getTodo(ref: string, currentBoardId?: string): Todo | undefined {
+    const row = this.resolveRef<TodoRow>('todos', ref, currentBoardId);
     return row ? toTodo(row) : undefined;
   }
 
-  private mustGetTodo(idOrPrefix: string): Todo {
-    const todo = this.getTodo(idOrPrefix);
+  private mustGetTodo(ref: string, currentBoardId?: string): Todo {
+    const todo = this.getTodo(ref, currentBoardId);
     if (!todo) {
-      throw new Error(`todo not found: ${idOrPrefix}`);
+      throw new Error(`todo not found: ${ref}`);
     }
     return todo;
   }
@@ -658,6 +738,7 @@ export class TodoStore {
     const now = nowIso();
     const note: Note = {
       id: newId(),
+      number: this.nextNumber('notes', boardId),
       boardId: boardId ?? undefined,
       title: input.title,
       content: input.content ?? '',
@@ -667,10 +748,11 @@ export class TodoStore {
     };
     this.db
       .query(
-        'INSERT INTO notes (id, board_id, title, content, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO notes (id, number, board_id, title, content, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         note.id,
+        note.number,
         boardId,
         note.title,
         note.content,
@@ -682,8 +764,8 @@ export class TodoStore {
     return note;
   }
 
-  updateNote(idOrPrefix: string, patch: UpdateNotePatch, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  updateNote(ref: string, patch: UpdateNotePatch, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | null)[] = [];
@@ -718,8 +800,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  archiveNote(idOrPrefix: string, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  archiveNote(ref: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = ?, updated_at = ? WHERE id = ?')
       .run(nowIso(), nowIso(), current.id);
@@ -727,8 +809,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  unarchiveNote(idOrPrefix: string, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  unarchiveNote(ref: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(ref, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = NULL, updated_at = ? WHERE id = ?')
       .run(nowIso(), current.id);
@@ -759,15 +841,15 @@ export class TodoStore {
       .map(toNote);
   }
 
-  getNote(idOrPrefix: string): Note | undefined {
-    const row = this.resolveByPrefix<NoteRow>('notes', idOrPrefix);
+  getNote(ref: string, currentBoardId?: string): Note | undefined {
+    const row = this.resolveRef<NoteRow>('notes', ref, currentBoardId);
     return row ? toNote(row) : undefined;
   }
 
-  private mustGetNote(idOrPrefix: string): Note {
-    const note = this.getNote(idOrPrefix);
+  private mustGetNote(ref: string, currentBoardId?: string): Note {
+    const note = this.getNote(ref, currentBoardId);
     if (!note) {
-      throw new Error(`note not found: ${idOrPrefix}`);
+      throw new Error(`note not found: ${ref}`);
     }
     return note;
   }
@@ -849,19 +931,97 @@ export class TodoStore {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  /** 정확 일치 우선, 아니면 유일한 prefix 매칭. 다중 매칭이면 에러 (모호성 노출). */
-  private resolveByPrefix<Row>(table: 'todos' | 'notes', idOrPrefix: string): Row | undefined {
-    const exact = this.db
-      .query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`)
-      .get(idOrPrefix);
+  /**
+   * 참조 문자열을 행으로 해석한다. 순서대로:
+   *   `rocky#12` → 그 보드의 12번 · `#12`/`12` → currentBoardId 의 12번
+   *   (notes 이고 currentBoardId 없으면 → 전역 note 공간의 12번)
+   *   `921gvwnr`(ID_LENGTH 자 base36) → id 정확 일치 · 그 외 → 유일한 id prefix
+   *
+   * 길이 기준으로 번호와 id 를 가르므로, id 길이를 바꾸면 ID_LENGTH 만 고치면 된다.
+   * notes 는 board_id IS NULL 인 전역 행을 가질 수 있어 자체 번호 시퀀스를 갖지만(부분 유니크
+   * 인덱스 `idx_notes_number_global`), todos 는 항상 보드에 속하므로 전역 번호 공간이 없다.
+   *
+   * `rocky#12` 스코프 매칭의 board key 부분은 `sanitizeKey`(`src/actor.ts`)가 만들 수 있는
+   * 모든 키를 받아야 한다 — `[a-zA-Z0-9_-]` 를 보존하므로 대문자로 시작하거나(`MyProject`)
+   * `_`/`-` 로 시작하는(`_private`) 키도 나올 수 있다. 그래서 패턴은 `#` 와 공백만 제외한
+   * `[^#\s]+` 를 쓴다 — 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에
+   * 복사하는 문자열을 이 함수가 못 읽으면(과거 `/^([a-z0-9][\w.-]*)#(\d+)$/` 가 그랬다)
+   * 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다. 이 분기는 wildcard 가드(아래
+   * `[%_]` 거부)보다 먼저 매칭돼 빠져나가므로, board 부분에 `%`/`_` 가 섞여도(예:
+   * `_private#1`) LIKE 가드에 걸리지 않고 board 조회로 간다 — 가드는 id-prefix 분기 전용이다.
+   *
+   * board key 조회는 대소문자를 구분한다(SQLite 기본) — 정규식이 대소문자를 가리지 않고
+   * 넓게 받아도(`/i` 없음) `WHERE key = ?` 조회 자체가 대소문자를 구분해 `ROCKY#1` 은
+   * `rocky` 보드에 매칭되지 않고 `undefined` 로 끝난다. 조회를 대소문자 무시로 바꾸는
+   * 대안도 있었지만, board key 는 UNIQUE(대소문자 구분) 라 `rocky`/`Rocky` 가 둘 다
+   * 존재하면 대소문자 무시 조회가 모호성 체크 없이 둘 중 하나를 조용히 골라버릴 수 있어
+   * 채택하지 않았다.
+   *
+   * @throws 다중 prefix 매칭, todos 에 현재 보드 없이 번호만 온 경우, 빈/공백 ref,
+   *   id 앞부분에 SQL LIKE 와일드카드(`%`/`_`) 가 섞인 경우 (모두 모호성 노출)
+   */
+  private resolveRef<Row>(
+    table: 'todos' | 'notes',
+    ref: string,
+    currentBoardId?: string,
+  ): Row | undefined {
+    const trimmed = ref.trim();
+    if (trimmed === '') {
+      // 빈 ref 를 그대로 흘리면 아래 LIKE 프리픽스 매칭이 ''로 모든 행에 매치돼(테이블에
+      // 행이 하나면 조용히 그 행을 반환) 참조하지 않은 항목을 건드리게 된다.
+      throw new Error('empty ref');
+    }
+
+    const scoped = /^([^#\s]+)#(\d+)$/.exec(trimmed);
+    if (scoped?.[1] && scoped[2]) {
+      const board = this.db
+        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
+        .get(scoped[1]);
+      if (!board) {
+        return undefined;
+      }
+      return (
+        this.db
+          .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
+          .get(board.id, Number(scoped[2])) ?? undefined
+      );
+    }
+
+    const bare = /^(#)?(\d+)$/.exec(trimmed);
+    if (bare?.[2] && (bare[1] || bare[2].length < ID_LENGTH)) {
+      if (!currentBoardId) {
+        if (table === 'notes') {
+          return (
+            this.db
+              .query<Row, [number]>(`SELECT * FROM ${table} WHERE board_id IS NULL AND number = ?`)
+              .get(Number(bare[2])) ?? undefined
+          );
+        }
+        throw new Error(`board context required to resolve ${trimmed} — use board#number`);
+      }
+      return (
+        this.db
+          .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
+          .get(currentBoardId, Number(bare[2])) ?? undefined
+      );
+    }
+
+    const exact = this.db.query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`).get(trimmed);
     if (exact) {
       return exact;
     }
+    if (/[%_]/.test(trimmed)) {
+      // 진짜 id 는 base36(0-9a-z, ID_ALPHABET) 뿐이라 `%`/`_` 를 담을 수 없다 — 그대로
+      // LIKE 에 흘리면 SQL 와일드카드로 해석돼(예: `_yaz90tj` 가 `xyaz90tj` 에도 매치) 의도한
+      // 적 없는 행을 조용히 골라올 수 있다. ESCAPE 절 대신 통째로 거부한다 — 어차피 유효한
+      // id/prefix 가 될 수 없는 입력이라 잃는 기능이 없다.
+      throw new Error(`invalid id prefix: ${trimmed}`);
+    }
     const matches = this.db
       .query<Row, [string]>(`SELECT * FROM ${table} WHERE id LIKE ? || '%' LIMIT 2`)
-      .all(idOrPrefix);
+      .all(trimmed);
     if (matches.length > 1) {
-      throw new Error(`ambiguous id prefix: ${idOrPrefix}`);
+      throw new Error(`ambiguous id prefix: ${trimmed}`);
     }
     return matches[0];
   }
@@ -890,6 +1050,7 @@ function toSection(row: SectionRow): Section {
 function toTodo(row: TodoRow): Todo {
   return {
     id: row.id,
+    number: row.number,
     boardId: row.board_id,
     sectionId: row.section_id ?? undefined,
     parentId: row.parent_id ?? undefined,
@@ -913,6 +1074,7 @@ function toTodo(row: TodoRow): Todo {
 function toNote(row: NoteRow): Note {
   return {
     id: row.id,
+    number: row.number,
     boardId: row.board_id ?? undefined,
     title: row.title,
     content: row.content,

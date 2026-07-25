@@ -299,6 +299,24 @@ textarea {
   font-weight: 700;
 }
 
+.todo-ref {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: pointer;
+}
+
+.todo-ref:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .todo-title {
   text-align: left;
   color: var(--text);
@@ -529,11 +547,28 @@ textarea {
   color: var(--text);
 }
 
+.drawer-ref {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.drawer-ref:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 .drawer-id {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--faint);
+  opacity: 0.6;
+  margin: 2px 0 10px;
 }
 
 .drawer-title {
@@ -737,6 +772,17 @@ textarea {
   .todo-title {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+  /* 터치 타깃 44×44 — 백로그 mxndnikm 1번과 같은 방침 */
+  .todo-ref {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .drawer-ref {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
   }
   .notes-rail {
     border-left: none;

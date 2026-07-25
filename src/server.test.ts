@@ -20,6 +20,18 @@ function req(path: string, init?: RequestInit & { actor?: string }): Promise<Res
   return handle(new Request(`${BASE}${path}`, { ...init, headers }));
 }
 
+/**
+ * id prefix 테스트용 — 알파벳이 하나 이상 들어간 prefix 를 고른다.
+ *
+ * id 는 base36 이라 앞 4자가 전부 숫자일 확률이 약 1.15% 다. 그런 prefix 는 설계대로
+ * "번호"로 해석되므로(맨숫자 분기) prefix 조회 테스트가 확률적으로 깨진다. 알파벳이
+ * 나오는 지점까지 늘려 그 분기를 확실히 피한다 — 전부 숫자면 id 전체(정확 일치).
+ */
+function idPrefix(id: string): string {
+  const at = id.search(/[a-z]/);
+  return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'rocky-todo-server-'));
   store = new TodoStore({ dbPath: join(dir, 'todo.db') });
@@ -200,6 +212,165 @@ describe('changes feed', () => {
     };
     expect(feed.lastId).toBeGreaterThan(base.lastId);
     expect(feed.entries.some((e) => e.entityId === created.id && e.actor === 'logan')).toBe(true);
+  });
+});
+
+describe('number / ref 직렬화', () => {
+  test('todo 응답에 number 와 ref 가 실린다', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const todo = (await created.json()) as { number: number; ref: string };
+    expect(todo.number).toBe(1);
+    expect(todo.ref).toBe('rocky#1');
+  });
+
+  test('번호 참조로 조회된다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/rocky%231');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { todo: { title: string; ref: string } };
+    expect(body.todo.title).toBe('번호 확인');
+    expect(body.todo.ref).toBe('rocky#1');
+  });
+
+  test('GET /api/todos 목록도 각 항목에 ref 를 싣는다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '목록 확인' }),
+    });
+    const list = (await (await req('/api/todos?board=rocky')).json()) as { ref: string }[];
+    expect(list[0]?.ref).toBe('rocky#1');
+  });
+
+  test('노트 응답에도 number 와 ref 가 실린다 (보드 소속 / 글로벌)', async () => {
+    const boardNote = (await (
+      await req('/api/notes', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'rocky', title: '보드 메모' }),
+      })
+    ).json()) as { number: number; ref: string };
+    expect(boardNote.ref).toBe('rocky#1');
+
+    const globalNote = (await (
+      await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '글로벌 메모' }) })
+    ).json()) as { number: number; ref: string };
+    expect(globalNote.ref).toBe('#1');
+  });
+
+  test('보드 컨텍스트 없이 맨숫자 참조를 조회하면 500 이 아닌 4xx 를 반환한다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/1');
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
+
+  test('?board= 로 보드 스코프를 주면 맨숫자 참조가 해석된다', async () => {
+    await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '번호 확인' }),
+    });
+    const res = await req('/api/todos/1?board=rocky');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { todo: { ref: string } };
+    expect(body.todo.ref).toBe('rocky#1');
+  });
+
+  // finding C: `?board=` 가 알려지지 않은 키로 안 풀리면(오타 등) currentBoardIdOf 가
+  // undefined 로 조용히 폴백해선 안 된다 — todos 는 우연히(board context required) 에러가
+  // 났지만, notes 는 폴백이 "board 를 아예 안 준 것"과 같아져 맨숫자가 전역 메모 번호
+  // 공간으로 조용히 풀렸다. board 를 줬는데 못 찾으면 무조건 4xx.
+  test('?board= 가 알 수 없는 키면 note 참조가 전역 메모로 조용히 풀리지 않고 에러다', async () => {
+    const created = (await (
+      await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '전역 메모' }) })
+    ).json()) as { number: number };
+    expect(created.number).toBe(1);
+
+    const res = await req(`/api/notes/${created.number}?board=typo-board`);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
+
+  // finding: 위 가드가 ref 를 보기도 전에 걸려 있었다 — CLI 가 모든 단건 라우트에
+  // cwd 로 유추한 `?board=` 를 무조건 붙이는데, 보드는 지연 생성(add/section add/
+  // board add 만 만든다)이라 흔히 아직 없는 키가 실린다. `rocky#1`/raw id/id-prefix
+  // 처럼 board 컨텍스트를 아예 안 쓰는 ref 는 안 풀리는 `?board=` 를 무시해야 한다.
+  describe('안 풀리는 ?board= 를 무시해야 하는 ref (finding: 이전 가드가 너무 일찍 걸림)', () => {
+    test('board-scoped ref(rocky#1)는 알 수 없는 ?board= 가 있어도 풀린다', async () => {
+      await req('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'rocky', title: '스코프 확인' }),
+      });
+      const res = await req('/api/todos/rocky%231?board=typo-board');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { todo: { title: string } };
+      expect(body.todo.title).toBe('스코프 확인');
+    });
+
+    test('raw id 는 알 수 없는 ?board= 가 있어도 풀린다', async () => {
+      const created = (await (
+        await req('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify({ board: 'rocky', title: 'raw id 확인' }),
+        })
+      ).json()) as { id: string };
+      const res = await req(`/api/todos/${created.id}?board=typo-board`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { todo: { title: string } };
+      expect(body.todo.title).toBe('raw id 확인');
+    });
+
+    test('id prefix 는 알 수 없는 ?board= 가 있어도 풀린다', async () => {
+      const created = (await (
+        await req('/api/todos', {
+          method: 'POST',
+          body: JSON.stringify({ board: 'rocky', title: 'prefix 확인' }),
+        })
+      ).json()) as { id: string };
+      const res = await req(`/api/todos/${idPrefix(created.id)}?board=typo-board`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { todo: { title: string } };
+      expect(body.todo.title).toBe('prefix 확인');
+    });
+
+    test('맨숫자 참조는 알 수 없는 ?board= 를 여전히 에러로 취급한다 (wrong-row 보호 유지)', async () => {
+      await req('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'rocky', title: '맨숫자 확인' }),
+      });
+      const res = await req('/api/todos/1?board=typo-board');
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+    });
+
+    test('board 없이 맨숫자 todo 참조는 "unknown board" 가 아니라 "board context required" 로 실패한다', async () => {
+      await req('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'rocky', title: '컨텍스트 확인' }),
+      });
+      const res = await req('/api/todos/1');
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/board context required/);
+      expect(body.error).not.toMatch(/unknown board/);
+    });
+
+    test('board 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {
+      const created = (await (
+        await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '전역 메모' }) })
+      ).json()) as { number: number };
+
+      const res = await req(`/api/notes/${created.number}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { note: { title: string } };
+      expect(body.note.title).toBe('전역 메모');
+    });
   });
 });
 

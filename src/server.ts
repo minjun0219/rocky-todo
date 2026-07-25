@@ -1,4 +1,5 @@
 import pkg from '../package.json' with { type: 'json' };
+import { refNeedsBoardContext, withRef } from './refs';
 import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 
 /**
@@ -12,6 +13,10 @@ import type { ListTodosFilter, StatusAction, TodoStore } from './store';
 export interface TodoServerOptions {
   store: TodoStore;
 }
+
+// TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
+// CLI(`import type { NoteView, TodoView } from './server'`) 등 기존 import 경로를 보존한다.
+export type { NoteView, TodoView } from './refs';
 
 export interface TodoServer {
   fetch: (req: Request) => Promise<Response>;
@@ -61,6 +66,42 @@ function toHttpError(error: unknown): Response {
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
 
+  /**
+   * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
+   * 없으면 undefined(전역/현재 컨텍스트 없음). 쿼리가 있는데 알려진 보드로 안 풀리면(오타
+   * 등), `ref` 가 실제로 board 컨텍스트를 쓰는 맨숫자 꼴(`refNeedsBoardContext`)일
+   * 때만 에러를 던진다(→ catch 에서 toHttpError 로 400) — 그 경우 폴백을 허용하면
+   * todos 는 우연히 "board context required" 로 에러가 나지만, notes 는 전역 메모
+   * 번호 공간으로 조용히 재해석돼 엉뚱한 행을 돌려주게 된다(MCP 쪽과 동일한 wrong-row
+   * 위험 — `src/mcp.ts` 의 `resolveBoardId` 참고).
+   *
+   * 반대로 `rocky#12`/raw id/id-prefix 처럼 board 컨텍스트를 아예 안 쓰는 ref 에는
+   * 안 풀리는 `?board=` 를 무시한다 — CLI 가 모든 단건 라우트에 cwd 로 유추한
+   * `?board=` 를 무조건 붙이는데, 보드가 지연 생성이라(add/section add/board add
+   * 만 만든다) 흔히 존재하지 않는 키가 실려온다. ref 자체가 보드를 특정하는 경우까지
+   * 그 무관한 오타로 막으면 안 된다(finding: 이전 웨이브가 이 가드를 ref 를 보기도
+   * 전에 걸어 `rocky#12` 조회까지 400 을 내던 회귀).
+   */
+  const currentBoardIdOf = (url: URL, ref: string): string | undefined => {
+    const key = url.searchParams.get('board');
+    if (!key) {
+      return undefined;
+    }
+    const boardId = store.boardIdOf(key);
+    if (!boardId) {
+      if (refNeedsBoardContext(ref)) {
+        throw new Error(`unknown board: ${key}`);
+      }
+      return undefined;
+    }
+    return boardId;
+  };
+
+  // ref 직렬화(withRef)는 './refs' 공유 모듈로 옮겼다 — MCP 도구도 같은 로직을 쓴다
+  // (finding: MCP 응답이 number/ref 를 안 실어 REST 와 계약이 갈라졌던 문제).
+  // boardId 가 있는데 board 를 못 찾으면 refs.ts 의 refOf 가 던진다 — 아래 catch →
+  // toHttpError 경유로 400 이 된다 (조용히 위조 글로벌 참조를 만들지 않기 위함).
+
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -104,11 +145,11 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         if (!boardKey) {
           return errorResponse('board query parameter is required', 400);
         }
-        const board = store.listBoards(true).find((b) => b.key === boardKey);
-        if (!board) {
+        const boardId = store.boardIdOf(boardKey);
+        if (!boardId) {
           return json([]);
         }
-        return json(store.listSections(board.id));
+        return json(store.listSections(boardId));
       }
 
       // ── todos ──
@@ -119,7 +160,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           label: url.searchParams.get('label') ?? undefined,
           includeArchived: url.searchParams.get('includeArchived') === 'true',
         };
-        return json(store.listTodos(filter));
+        return json(store.listTodos(filter).map((todo) => withRef(store, todo)));
       }
       if (method === 'POST' && path === '/api/todos') {
         const body = await readBody(req);
@@ -143,43 +184,53 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(todo, 201);
+        return json(withRef(store, todo), 201);
       }
 
       const todoDetail = path.match(/^\/api\/todos\/([^/]+)$/);
       if (todoDetail?.[1]) {
-        const id = todoDetail[1];
+        const ref = decodeURIComponent(todoDetail[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
         if (method === 'GET') {
-          const todo = store.getTodo(id);
+          const todo = store.getTodo(ref, currentBoardId);
           if (!todo) {
-            return errorResponse(`todo not found: ${id}`, 404);
+            return errorResponse(`todo not found: ${ref}`, 404);
           }
-          return json({ todo, history: store.listHistory({ entityId: todo.id }) });
+          return json({
+            todo: withRef(store, todo),
+            history: store.listHistory({ entityId: todo.id }),
+          });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(store.updateTodo(id, body as never, actor));
+          return json(withRef(store, store.updateTodo(ref, body as never, actor, currentBoardId)));
         }
       }
 
       const todoStatus = path.match(/^\/api\/todos\/([^/]+)\/status$/);
       if (todoStatus?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoStatus[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
         const body = await readBody(req);
         const action = body.action;
         if (typeof action !== 'string' || !STATUS_ACTIONS.has(action)) {
           return errorResponse(`invalid action: ${String(action)}`, 400);
         }
-        return json(store.setTodoStatus(todoStatus[1], action as StatusAction, actor));
+        return json(
+          withRef(store, store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
+        );
       }
 
       // ── notes ──
       if (method === 'GET' && path === '/api/notes') {
         return json(
-          store.listNotes({
-            board: url.searchParams.get('board') ?? undefined,
-            global: url.searchParams.get('global') === 'true',
-            includeArchived: url.searchParams.get('includeArchived') === 'true',
-          }),
+          store
+            .listNotes({
+              board: url.searchParams.get('board') ?? undefined,
+              global: url.searchParams.get('global') === 'true',
+              includeArchived: url.searchParams.get('includeArchived') === 'true',
+            })
+            .map((note) => withRef(store, note)),
         );
       }
       if (method === 'POST' && path === '/api/notes') {
@@ -195,32 +246,40 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           },
           actor,
         );
-        return json(note, 201);
+        return json(withRef(store, note), 201);
       }
 
       const noteDetail = path.match(/^\/api\/notes\/([^/]+)$/);
       if (noteDetail?.[1]) {
-        const id = noteDetail[1];
+        const ref = decodeURIComponent(noteDetail[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
         if (method === 'GET') {
-          const note = store.getNote(id);
+          const note = store.getNote(ref, currentBoardId);
           if (!note) {
-            return errorResponse(`note not found: ${id}`, 404);
+            return errorResponse(`note not found: ${ref}`, 404);
           }
-          return json({ note, history: store.listHistory({ entityId: note.id }) });
+          return json({
+            note: withRef(store, note),
+            history: store.listHistory({ entityId: note.id }),
+          });
         }
         if (method === 'PATCH') {
           const body = await readBody(req);
-          return json(store.updateNote(id, body as never, actor));
+          return json(withRef(store, store.updateNote(ref, body as never, actor, currentBoardId)));
         }
       }
 
       const noteArchive = path.match(/^\/api\/notes\/([^/]+)\/(archive|unarchive)$/);
       if (noteArchive?.[1] && noteArchive[2] && method === 'POST') {
-        const id = noteArchive[1];
+        const ref = decodeURIComponent(noteArchive[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
         return json(
-          noteArchive[2] === 'archive'
-            ? store.archiveNote(id, actor)
-            : store.unarchiveNote(id, actor),
+          withRef(
+            store,
+            noteArchive[2] === 'archive'
+              ? store.archiveNote(ref, actor, currentBoardId)
+              : store.unarchiveNote(ref, actor, currentBoardId),
+          ),
         );
       }
 

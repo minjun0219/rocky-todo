@@ -77,6 +77,14 @@ url = "http://127.0.0.1:8636/mcp"
 Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash 로 쓰면 된다 — 표면은 동일하다.
 어느 호스트든 세션 시작 시 데몬이 떠 있어야 도구가 붙는다 — 상시 사용이면 `daemon install` 권장.
 
+## 웹 UI — 번호 클릭 복사
+
+목록의 각 행과 상세 드로어에는 랜덤 id 대신 사람이 읽을 수 있는 참조(`rocky#12`, 글로벌
+메모는 `#3`)가 뜬다. 그 참조를 클릭하면 전체 참조 문자열이 클립보드로 복사된다 — 세션에
+붙여넣어 "`rocky#12` 봐줘" 처럼 바로 부를 수 있게 하려는 용도다. `navigator.clipboard` 는
+보안 컨텍스트(HTTPS 또는 루프백)에서만 동작하므로, 평문 LAN HTTP(`todo.expose: "lan"`)로
+접속했을 때는 `execCommand` 폴백을, 그마저 안 되면 복사할 텍스트를 보여주는 프롬프트를 띄운다.
+
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
 에이전트→웹 방향은 SSE 로 실시간이고, 반대 방향은 **훅**이 닫는다: 사용자가 프롬프트를
@@ -118,17 +126,29 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 
 ```
 rocky-todo ls [--board K|--all] [--archived] [--json]
-rocky-todo add "제목" [--section S] [--parent ID] [--desc MD] [--due YYYY-MM-DD]
+rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
-rocky-todo show|start|stop|done|reopen|archive|unarchive|update ID
+rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history ID · board ls|add · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
 
+REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky#12`(보드 지정) → `#12`/`12`
+(현재 보드 안의 번호) → id 전체 → id 앞부분(유일하면) 순으로 해석한다. `ls` 출력의 `#12` 를
+그대로 다음 명령의 REF 로 쓰면 된다. 랜덤 id 는 여전히 기본 키이고 `show` 상세 출력의
+`id:` 줄에서 볼 수 있다. 보드 미소속 글로벌 메모는 번호가 `#3` 처럼 접두사 없이 표시되고,
+그 번호를 보드 번호와 구분해 조회하려면 `note show|edit|append|archive`/`history` 에
+`--global` 을 붙인다. todo 와 메모는 같은 보드 안에서도 번호 공간이 따로라 `#2` 가 둘 다일 수
+있는데, `history` 는 todo 를 먼저 찾으므로 메모의 히스토리를 보려면 `--note`(보드 메모) 또는
+`--global`(전역 메모)로 대상을 확정한다.
+
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. actor 는 `--actor` >
 `ROCKY_TODO_ACTOR` > 호스트 자동 감지 (claude-code / opencode / codex).
+
+`#` 로 시작하는 REF 는 셸(bash/zsh)에서 주석 시작 문자로 해석되므로 반드시 따옴표로 감싼다:
+`rocky-todo show '#12'`. 번호만 쓰면(`rocky-todo show 12`) 따옴표가 필요 없다.
 
 ## 설정
 

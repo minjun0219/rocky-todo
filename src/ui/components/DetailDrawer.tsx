@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { HistoryEntry } from '../../store';
-import { actorTone, formatElapsed, linkLabel, mdTokens } from '../lib';
+import { actorTone, copyRefWithFeedback, formatElapsed, linkLabel, mdTokens } from '../lib';
 import { useUiStore } from '../store';
 
 /** 우측 상세 드로어 — todo/note 상세 + 상태 버튼 + 히스토리 타임라인. */
@@ -47,6 +47,7 @@ function TodoDetail() {
   const todo = detail?.todo;
   const [desc, setDesc] = useState(todo?.description ?? '');
   const [editingDesc, setEditingDesc] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!editingDesc) {
@@ -57,6 +58,8 @@ function TodoDetail() {
   if (!todo) {
     return null;
   }
+
+  const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
 
   const statusButton = (label: string, action: Parameters<typeof setTodoStatus>[1]) => (
     <button
@@ -70,8 +73,17 @@ function TodoDetail() {
 
   return (
     <div className="drawer-body">
-      <div className="drawer-id">{todo.id}</div>
+      <button
+        type="button"
+        className="drawer-ref"
+        onClick={() => void handleCopyRef()}
+        title={copied ? '복사됨' : `${todo.ref} 복사`}
+        aria-label={copied ? '복사됨' : `${todo.ref} 복사`}
+      >
+        {copied ? '✓' : todo.ref}
+      </button>
       <h2 className="drawer-title">{todo.title}</h2>
+      <div className="drawer-id">{todo.id}</div>
       <div className="drawer-chips">
         <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
         {todo.labels.map((label) => (
@@ -147,13 +159,29 @@ function TodoDetail() {
 function NoteDetail() {
   const detail = useUiStore((s) => s.detail);
   const note = detail?.note;
+  const [copied, setCopied] = useState(false);
+
   if (!note) {
     return null;
   }
+
+  // 글로벌 메모는 note.ref 가 `#3` 처럼 보드 접두사 없이 오는데, copyRefWithFeedback 은
+  // 그 문자열을 그대로 복사하므로 별도 분기가 없다.
+  const handleCopyRef = () => copyRefWithFeedback(note.ref, setCopied);
+
   return (
     <div className="drawer-body">
-      <div className="drawer-id">{note.id}</div>
+      <button
+        type="button"
+        className="drawer-ref"
+        onClick={() => void handleCopyRef()}
+        title={copied ? '복사됨' : `${note.ref} 복사`}
+        aria-label={copied ? '복사됨' : `${note.ref} 복사`}
+      >
+        {copied ? '✓' : note.ref}
+      </button>
       <h2 className="drawer-title">{note.title}</h2>
+      <div className="drawer-id">{note.id}</div>
       <div className="drawer-desc drawer-desc-static">
         <Markdown text={note.content} />
       </div>

@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,6 +31,50 @@ describe('boards', () => {
   test('ensureBoard accepts an explicit title on first creation', () => {
     const board = store.ensureBoard('rocky', { title: '로키 보드', actor: 'tester' });
     expect(board.title).toBe('로키 보드');
+  });
+
+  // finding: board key 가 공백/`#` 를 포함하면 서버가 스스로 만든 스코프 ref
+  // (`refOf` → `<key>#<number>`) 를 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)
+  // 이 못 읽어 조용히 undefined 로 끝난다. 조용한 wrong-row 대신 생성 시점에 막는다.
+  test('ensureBoard rejects a key containing whitespace', () => {
+    expect(() => store.ensureBoard('my repo', { actor: 'tester' })).toThrow(/whitespace/);
+  });
+
+  test("ensureBoard rejects a key containing '#'", () => {
+    expect(() => store.ensureBoard('a#b', { actor: 'tester' })).toThrow(/#/);
+  });
+
+  test('ensureBoard rejects an empty key', () => {
+    expect(() => store.ensureBoard('', { actor: 'tester' })).toThrow(/empty/);
+  });
+
+  test('ensureBoard still accepts normal keys', () => {
+    for (const key of ['rocky', 'MyProject', '_private', 'a-b']) {
+      const board = store.ensureBoard(key, { actor: 'tester' });
+      expect(board.key).toBe(key);
+    }
+  });
+
+  // finding 2 회귀 테스트: validation 이 생기기 전 구버전 데몬이 `my repo` 같은 malformed
+  // key 로 보드를 이미 만들어놨을 수 있다(공용 API 로는 더 이상 재현 불가 — public API 는
+  // 이제 이런 key 의 CREATE 를 거부하므로, raw SQL 로 직접 심어 옛 상태를 흉내낸다).
+  // 업그레이드 후에도 그 보드는 `ensureBoard`(lookup)로 계속 찾아지고, 거기에 todo 를
+  // 추가하는 것도 계속 되어야 한다 — 검증은 CREATE 에만 걸려야지 기존 row 의 LOOKUP 을
+  // 막으면 안 된다.
+  test('ensureBoard returns a pre-existing malformed-key board unchanged (lookup, not create)', () => {
+    const dbPath = join(dir, 'todo.db');
+    const raw = new Database(dbPath);
+    raw
+      .query('INSERT INTO boards (id, key, title, created_at) VALUES (?, ?, ?, ?)')
+      .run('legacy-board-id', 'my repo', 'my repo', new Date().toISOString());
+    raw.close();
+
+    const board = store.ensureBoard('my repo', { actor: 'tester' });
+    expect(board.id).toBe('legacy-board-id');
+    expect(board.key).toBe('my repo');
+
+    const todo = store.createTodo({ board: 'my repo', title: '레거시 보드 작업' }, 'tester');
+    expect(todo.boardId).toBe('legacy-board-id');
   });
 });
 
@@ -93,6 +138,30 @@ describe('todos', () => {
     ).toThrow(/parent/i);
   });
 
+  test('createTodo accepts a bare-number parentId, resolved against its own board', () => {
+    const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
+    const child = store.createTodo(
+      { board: 'rocky', title: '자식', parentId: String(parent.number) },
+      'tester',
+    );
+    expect(child.parentId).toBe(parent.id);
+  });
+
+  test('createTodo does not leak a bare-number parentId across boards', () => {
+    // otherBoard#1 존재. rocky 보드에서 같은 번호(1)로 부모를 지정해도 rocky#1 만 봐야 한다 —
+    // withBoard 가 board 를 안 실어 보내는 실수를 하면 여기서 otherBoard#1 로 잘못 연결된다.
+    const otherParent = store.createTodo({ board: 'other', title: '다른 보드 부모' }, 'tester');
+    const rockyParent = store.createTodo({ board: 'rocky', title: 'rocky 부모' }, 'tester');
+    expect(otherParent.number).toBe(rockyParent.number); // 둘 다 각 보드의 1번
+
+    const child = store.createTodo(
+      { board: 'rocky', title: '자식', parentId: String(rockyParent.number) },
+      'tester',
+    );
+    expect(child.parentId).toBe(rockyParent.id);
+    expect(child.parentId).not.toBe(otherParent.id);
+  });
+
   test('updateTodo patches fields and bumps updatedAt', () => {
     const todo = store.createTodo({ board: 'rocky', title: '수정 전' }, 'tester');
     const updated = store.updateTodo(todo.id, { title: '수정 후', priority: 'p2' }, 'tester');
@@ -105,6 +174,30 @@ describe('todos', () => {
     const todo = store.createTodo({ board: 'rocky', title: 'prefix' }, 'tester');
     expect(store.getTodo(todo.id.slice(0, 4))?.id).toBe(todo.id);
     expect(store.getTodo('nope1234')).toBeUndefined();
+  });
+
+  // finding 7: createTodo 의 재부모 지정 경로(위 '보드 밖으로 안 샌다' 테스트)는 이미
+  // 커버돼 있었지만, updateTodo 로 기존 todo 를 재부모 지정하는 경로에는 대응하는
+  // 테스트가 없었다.
+  test('updateTodo accepts a bare-number parentId, resolved against its own board', () => {
+    const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
+    const child = store.createTodo({ board: 'rocky', title: '자식' }, 'tester');
+    const updated = store.updateTodo(child.id, { parentId: String(parent.number) }, 'tester');
+    expect(updated.parentId).toBe(parent.id);
+  });
+
+  test('updateTodo 의 bare-number parentId 는 보드 밖으로 새지 않는다', () => {
+    // other#1 존재. rocky 보드의 todo 를 같은 번호(1)로 재부모 지정해도 rocky#1 만
+    // 봐야 한다 — mustGetTodo(patch.parentId, current.boardId) 가 current 의 board 를
+    // 안 실어 보내면 other#1 로 잘못 연결된다.
+    const otherParent = store.createTodo({ board: 'other', title: '다른 보드 부모' }, 'tester');
+    const rockyParent = store.createTodo({ board: 'rocky', title: 'rocky 부모' }, 'tester');
+    expect(otherParent.number).toBe(rockyParent.number); // 둘 다 각 보드의 1번
+    const child = store.createTodo({ board: 'rocky', title: '자식' }, 'tester');
+
+    const updated = store.updateTodo(child.id, { parentId: String(rockyParent.number) }, 'tester');
+    expect(updated.parentId).toBe(rockyParent.id);
+    expect(updated.parentId).not.toBe(otherParent.id);
   });
 });
 
@@ -259,5 +352,163 @@ describe('change events', () => {
     unsubscribe();
     store.createTodo({ board: 'rocky', title: 'evt2' }, 'tester');
     expect(events.filter((e) => e === 'todo:create')).toHaveLength(1);
+  });
+});
+
+describe('number 발급', () => {
+  test('보드 안에서 1부터 연속으로 매겨진다', () => {
+    const a = store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    const b = store.createTodo({ board: 'alpha', title: '둘째' }, 'tester');
+    expect(a.number).toBe(1);
+    expect(b.number).toBe(2);
+  });
+
+  test('보드마다 번호 공간이 독립이다', () => {
+    store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    const other = store.createTodo({ board: 'beta', title: '다른 보드 첫째' }, 'tester');
+    expect(other.number).toBe(1);
+  });
+
+  test('아카이브해도 번호를 회수하지 않는다', () => {
+    const a = store.createTodo({ board: 'alpha', title: '첫째' }, 'tester');
+    store.setTodoStatus(a.id, 'archive', 'tester');
+    const b = store.createTodo({ board: 'alpha', title: '둘째' }, 'tester');
+    expect(b.number).toBe(2);
+  });
+
+  test('노트도 보드별로 번호를 받는다', () => {
+    const n = store.createNote({ board: 'alpha', title: '메모' }, 'tester');
+    expect(n.number).toBe(1);
+  });
+
+  test('글로벌 노트는 보드 노트와 독립된 번호 공간을 쓴다', () => {
+    store.createNote({ board: 'alpha', title: '보드 메모' }, 'tester');
+    const g = store.createNote({ title: '글로벌 메모' }, 'tester');
+    expect(g.number).toBe(1);
+  });
+});
+
+describe('참조 해석', () => {
+  test('rocky#12 형태로 보드를 지정해 찾는다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`alpha#${t.number}`)?.id).toBe(t.id);
+  });
+
+  test('#N 과 N 은 현재 보드에서 찾는다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`#${t.number}`, board.id)?.id).toBe(t.id);
+    expect(store.getTodo(String(t.number), board.id)?.id).toBe(t.id);
+  });
+
+  test('8자 base36 입력은 번호가 아니라 id 로 해석한다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(t.id)?.id).toBe(t.id);
+  });
+
+  test('짧은 문자열은 기존처럼 id prefix 로 해석한다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(t.id.slice(0, 5))?.id).toBe(t.id);
+  });
+
+  test('현재 보드 없이 #N 만 오면 모호성을 에러로 노출한다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(() => store.getTodo('#1')).toThrow(/board/i);
+  });
+
+  test('없는 번호는 undefined', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo('alpha#999')).toBeUndefined();
+  });
+
+  test('#N 은 자릿수가 ID_LENGTH 이상이어도 번호로 취급해 보드 컨텍스트를 요구한다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    // '#1234567' 는 '#' + 7자리 숫자 — 예전 길이 게이트는 '#' 포함 길이(8)로 비교해
+    // 번호 분기를 건너뛰고 undefined 를 돌려주는 버그가 있었다. '#' 가 붙으면 무조건 번호다.
+    expect(() => store.getTodo('#1234567')).toThrow(/board/i);
+  });
+
+  test('#N 은 보드 컨텍스트가 있으면 자릿수와 무관하게 번호로 해석한다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`#${t.number}`, board.id)?.id).toBe(t.id);
+    // 존재하지 않는 큰 자릿수 번호도 (undefined 가 아니라) 여전히 번호 분기로 라우팅된다 —
+    // id-exact/prefix 매칭으로 새지 않고 조회만 실패해야 한다.
+    expect(store.getTodo('#1234567', board.id)).toBeUndefined();
+  });
+
+  test('정확히 8자리 숫자로만 된 입력은 번호가 아니라 id 로 취급한다', () => {
+    // ID_LENGTH(8) 와 같은 자릿수의 순수 숫자는 실제 id(무작위 base36, 전부 숫자일 수 있음)와
+    // 구분할 수 없으므로 id 취급이 의도된 동작이다. 대응하는 id 가 없으니 undefined 여야 한다.
+    expect(store.getTodo('00000012')).toBeUndefined();
+  });
+
+  test('글로벌 노트는 보드 컨텍스트 없이 #N 으로 전역 번호 공간에서 찾는다', () => {
+    const g = store.createNote({ title: '글로벌 메모', content: '' }, 'tester');
+    expect(store.getNote(`#${g.number}`)?.id).toBe(g.id);
+    expect(store.getNote(String(g.number))?.id).toBe(g.id);
+  });
+
+  test('보드 노트와 글로벌 노트가 번호를 공유해도 서로 다른 행으로 해석된다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const boardNote = store.createNote({ board: 'alpha', title: '보드 메모' }, 'tester');
+    const globalNote = store.createNote({ title: '글로벌 메모' }, 'tester');
+    expect(boardNote.number).toBe(globalNote.number);
+
+    expect(store.getNote(`#${globalNote.number}`)?.id).toBe(globalNote.id);
+    expect(store.getNote(`#${boardNote.number}`, board.id)?.id).toBe(boardNote.id);
+  });
+
+  test('todos 는 글로벌 번호 공간이 없어 보드 컨텍스트 없는 #N 은 여전히 에러다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(() => store.getTodo('#1')).toThrow(/board/i);
+  });
+
+  // finding 5: id LIKE '?%' 에 입력이 이스케이프 없이 그대로 들어가던 문제.
+  test('빈 ref/공백 ref 는 모든 행에 매치되지 않고 에러로 거부된다', () => {
+    store.createTodo({ board: 'alpha', title: '유일한 항목' }, 'tester');
+    expect(() => store.getTodo('')).toThrow();
+    expect(() => store.getTodo('   ')).toThrow();
+  });
+
+  test('id prefix 에 SQL LIKE 와일드카드(%, _)가 섞이면 엉뚱한 행에 매치되지 않고 에러다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    // '_' 는 LIKE 에서 "아무 문자 1개" 와일드카드다 — 고치기 전에는 `_` + id[1:] 이
+    // id[0] 이 무엇이든 그 id 에 매치될 수 있었다(finding 5 재현: `_yaz90tj` → `xyaz90tj`).
+    const wildcardPrefix = `_${t.id.slice(1)}`;
+    expect(() => store.getTodo(wildcardPrefix)).toThrow(/invalid id prefix/);
+    expect(() => store.getTodo('%')).toThrow(/invalid id prefix/);
+  });
+
+  // finding A/6: 스코프 정규식은 board key 부분을 넓게 받아야 하지만(`sanitizeKey` 가
+  // 만들 수 있는 모든 키), board 조회 자체는 SQLite 기본대로 대소문자를 구분해야 한다.
+  // 이전 테스트(`getTodo('ROCKY#1') === undefined`)는 고치기 전 코드(스코프 정규식이
+  // 대문자를 애초에 매칭하지 않던 상태)에서도 우연히 통과해 아무것도 pin 하지 못했다 —
+  // 여기서는 `ROCKY` 가 정규식엔 매칭되고도(board 부분이 넓어졌으니) 대소문자 다른
+  // 보드로 조용히 풀리지 않는지를 실제로 검증한다.
+  test('대소문자가 다른 board#N 참조는 다른 보드로 조용히 풀리지 않고 undefined 다', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.createTodo({ board: 'rocky', title: '대상' }, 'tester');
+    expect(store.getTodo('ROCKY#1')).toBeUndefined();
+  });
+
+  // finding A: sanitizeKey(src/actor.ts) 는 `[a-zA-Z0-9_-]` 를 보존하므로 대문자로
+  // 시작하거나(`MyProject`) `_`/`-` 로 시작하는(`_private`) board key 도 나올 수 있다.
+  // 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에 복사하는 값이라,
+  // resolveRef 가 이 형태를 못 읽으면 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다.
+  test('대문자로 시작하는 board key 의 board#N 참조가 resolve 된다', () => {
+    store.ensureBoard('MyProject', { actor: 'tester' });
+    const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
+    expect(store.getTodo('MyProject#1')?.id).toBe(t.id);
+  });
+
+  test('밑줄로 시작하는 board key 의 board#N 참조가 resolve 된다 — id-prefix 와일드카드 가드를 타지 않는다', () => {
+    store.ensureBoard('_private', { actor: 'tester' });
+    const t = store.createTodo({ board: '_private', title: '대상' }, 'tester');
+    // 고치기 전엔 `_private#1` 이 scoped 분기에 안 걸리고 id-prefix 분기까지 흘러가,
+    // '_' 가 SQL LIKE 와일드카드로 해석돼 `invalid id prefix` 에러를 던졌다(제품이 만든
+    // 참조를 제품이 못 먹는 정도가 아니라 크래시까지 났다).
+    expect(() => store.getTodo('_private#1')).not.toThrow();
+    expect(store.getTodo('_private#1')?.id).toBe(t.id);
   });
 });

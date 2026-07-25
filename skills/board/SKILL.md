@@ -59,19 +59,40 @@ claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies �
 
 ## 자주 쓰는 호출
 
+id 자리는 랜덤 id 대신 번호 참조(REF)를 받는다: `rocky#12`(보드 지정) 또는 `board` 인자와
+함께 쓰는 `#12`/`12`(현재 보드 안의 번호). id 전체나 앞부분도 여전히 통한다.
+
 ```
 todo_list  { board: "rocky" }                            # 보드 현황
-todo_list  { id: "a1b2c3" }                              # 상세 + 히스토리
+todo_list  { id: "rocky#12" }                             # 상세 + 히스토리
 todo_write { board: "rocky", title: "...", section: "설계",
              priority: "p2", links: [{ url: "https://github.com/..." }],
              actor: "claude-code" }
-todo_status { id: "a1b2c3", action: "start", actor: "claude-code" }
+todo_status { id: "rocky#12", action: "start", actor: "claude-code" }
 note_write { board: "rocky", title: "조사 메모", content: "...", actor: "claude-code" }
-note_write { id: "z9y8x7", content: "추가 발견", mode: "append", actor: "claude-code" }
+note_write { id: "rocky#7", content: "추가 발견", mode: "append", actor: "claude-code" }
 ```
 
 CLI 대응: `rocky-todo ls` / `add "제목" --section 설계 --priority p2 --link URL` /
-`start ID` / `done ID` / `note add "제목" --content "..."` / `history ID`.
+`start REF` / `done REF` / `note add "제목" --content "..."` / `history REF`.
+
+사용자와 대화할 때도 항목을 `#12` 로 부를 수 있다 — 웹 UI 에서 번호를 클릭하면 `rocky#12`
+가 클립보드에 복사되므로, 사용자가 그걸 붙여넣으면 그대로 REF 로 알아듣고 처리하면 된다.
+
+## 메모의 전역 번호 공간 (틀리면 엉뚱한 메모를 건드린다)
+
+메모(note)는 todo 와 달리 보드 미소속(글로벌) 상태로도 존재할 수 있고, 그 전역 메모끼리
+자체 번호 공간을 쓴다. 웹 UI 는 전역 메모를 보드 접두사 없이 `#3` 처럼 보여준다 — 이게
+`rocky#3`(rocky 보드의 3번 메모)과 **다른 행**이다. 사용자가 붙여넣은 게 `rocky#3` 처럼
+보드 접두사가 있으면 있는 그대로 `id` 에 넣으면 되지만, 접두사 없는 `#3` 을 받았다면:
+
+- **`board` 인자를 절대 넣지 말 것.** `note_list`/`note_write` 에 `id: "#3"` 와 함께
+  `board` 를 넘기면 전역 3번이 아니라 **그 보드의** 3번 메모가 대신 잡힌다 — 에러 없이
+  조용히 엉뚱한 행을 수정/보관하게 된다(예: `note_write { id: "#3", board: "rocky",
+  mode: "archive" }` 는 사용자가 보여준 전역 `#3` 이 아니라 rocky 보드의 `#3` 을 archive한다).
+- 확신이 없으면 먼저 `note_list { id: "#3" }`(board 생략)로 조회해 제목이 사용자가
+  말한 것과 맞는지 확인하고 진행한다.
+- todo 는 이 문제가 없다 — todo 는 항상 보드에 속해서 전역 번호 공간이 아예 없다.
 
 ## 우선순위 의미 (Todoist 와 동일 관례)
 

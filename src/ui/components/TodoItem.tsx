@@ -1,20 +1,32 @@
-import type { Todo } from '../../store';
-import { actorTone, formatDue, formatElapsed, isOverdue, isStale, linkLabel } from '../lib';
+import { useState } from 'react';
+import type { TodoView } from '../../server';
+import {
+  actorTone,
+  copyRefWithFeedback,
+  formatDue,
+  formatElapsed,
+  isOverdue,
+  isStale,
+  linkLabel,
+} from '../lib';
 import { useUiStore } from '../store';
 
 interface TodoItemProps {
-  todo: Todo;
+  todo: TodoView;
   depth: number;
 }
 
-/** todo 한 줄 — 체크박스 + 제목 + 메타 칩 + doing 뱃지. 클릭 시 상세 드로어. */
+/** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + doing 뱃지. 클릭 시 상세 드로어. */
 export function TodoItem({ todo, depth }: TodoItemProps) {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const openTodoDetail = useUiStore((s) => s.openTodoDetail);
+  const [copied, setCopied] = useState(false);
 
   const done = todo.status === 'done';
   const doing = todo.status === 'doing';
   const stale = doing && isStale(todo.doingSince);
+
+  const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
 
   return (
     <div
@@ -28,6 +40,15 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
         title={done ? '다시 열기' : '완료'}
         onChange={() => void setTodoStatus(todo.id, done ? 'reopen' : 'done')}
       />
+      <button
+        type="button"
+        className="todo-ref"
+        onClick={() => void handleCopyRef()}
+        title={copied ? '복사됨' : `${todo.ref} 복사`}
+        aria-label={copied ? '복사됨' : `${todo.ref} 복사`}
+      >
+        {copied ? '✓' : `#${todo.number}`}
+      </button>
       <button type="button" className="todo-title" onClick={() => void openTodoDetail(todo.id)}>
         {todo.title}
       </button>
