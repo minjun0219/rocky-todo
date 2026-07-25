@@ -50,6 +50,21 @@ describe('surface', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
   });
+
+  // finding 4 회귀: note_list/note_write 설명이 예전엔 "맨숫자 #12 로 조회/수정하려면
+  // board 를 함께 줘야 한다" 고만 말해, 접두사 없는 #N 이 사실은 board 를 "생략"해야
+  // 하는 전역 메모 공간이라는 걸 알려주지 않았다. board 를 같이 주면(설명이 시키는 대로)
+  // 그 보드의 같은 번호 메모가 대신 잡혀 엉뚱한 행을 archive/수정하게 된다.
+  test('note_list/note_write 설명은 board 를 생략해야 전역 메모가 풀린다고 명시한다', async () => {
+    const { tools } = await client.listTools();
+    for (const name of ['note_list', 'note_write'] as const) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.description).toMatch(/global|전역/i);
+      expect(tool?.description).not.toMatch(
+        /맨숫자 #12 로 (조회|수정)하려면 board 를 함께 줘야 한다/,
+      );
+    }
+  });
 });
 
 describe('todo_write / todo_list / todo_status', () => {

@@ -150,17 +150,21 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'note_list',
     {
       description:
-        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모. id 를 주면 상세 + 히스토리. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 조회하려면 board 를 함께 줘야 한다.',
+        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모 목록. id 를 주면 상세 + 히스토리. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다. 주의: 맨숫자 #12 는 board 인자 유무로 완전히 다른 행을 가리킨다 — board 를 생략하면 전역(보드 미소속) 메모 번호 공간, board 를 주면 그 보드의 번호 공간이다. 웹 UI 가 보드 접두사 없이 보여주는 #N(전역 메모)을 그대로 조회하려면 board 를 절대 넘기지 않는다.',
       inputSchema: {
         board: z
           .string()
           .optional()
-          .describe('board key — also scopes a bare #12 in id when id has no board prefix'),
+          .describe(
+            'board key — scopes id to that board\'s number space. OMIT this when id is a prefix-less "#N" copied from the UI as a global note ref — passing board would resolve a different row (that board\'s own #N), not the global note',
+          ),
         global: z.boolean().optional(),
         id: z
           .string()
           .optional()
-          .describe('note ref — number (#12), board-scoped (rocky#12), or raw id'),
+          .describe(
+            "note ref — number (#12: resolves in the GLOBAL note space when board is omitted, or in board's space when board is given), board-scoped (rocky#12), or raw id",
+          ),
         includeArchived: z.boolean().optional(),
       },
     },
@@ -188,19 +192,19 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'note_write',
     {
       description:
-        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다.',
+        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다. 주의: 수정 시 맨숫자 #12 는 board 인자 유무로 완전히 다른 행을 가리킨다 — board 를 생략하면 전역(보드 미소속) 메모, board 를 주면 그 보드의 메모다. 웹 UI 가 보드 접두사 없이 보여주는 #N(전역 메모)을 그대로 archive/수정하려면 board 를 절대 넘기지 않는다 — 넘기면 그 보드의 같은 번호 메모가 대신 수정/보관된다(엉뚱한 행, 에러 없이 조용히).',
       inputSchema: {
         id: z
           .string()
           .optional()
           .describe(
-            'omit to create; note ref — number (#12), board-scoped (rocky#12), or raw id — to update',
+            "omit to create; note ref — number (#12: GLOBAL note space when board is omitted, or board's space when board is given), board-scoped (rocky#12), or raw id — to update",
           ),
         board: z
           .string()
           .optional()
           .describe(
-            'omit for a global note when creating; also scopes a bare #12 in id when updating',
+            'omit for a global note when creating; when updating with a prefix-less "#N" id, OMIT this to target the global note space — passing board resolves that board\'s own #N instead (a different row)',
           ),
         title: z.string().optional(),
         content: z.string().optional(),
