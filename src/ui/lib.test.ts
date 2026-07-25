@@ -183,7 +183,7 @@ describe('copyRefWithFeedback', () => {
 
 describe('isEditableTarget', () => {
   test('input / textarea / select 는 편집 중으로 본다', () => {
-    for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT', 'input', 'textarea']) {
+    for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT', 'input', 'textarea', 'select']) {
       expect(isEditableTarget({ tagName } as unknown as EventTarget)).toBe(true);
     }
   });

@@ -478,11 +478,12 @@ export async function runCli(): Promise<void> {
     case 'section': {
       const sub = rest[0];
       if (sub === 'add' && rest[1]) {
-        // 보드를 먼저 보장한다 — POST /api/sections 는 없는 보드를 만들어주지 않는다.
-        await request<Board>(ctx, 'POST', '/api/boards', { key: board });
+        // 보드를 자동 생성하지 않는다 — --board 오타로 빈 보드가 조용히 생기면
+        // 서버가 /api/sections 에서 없는 보드를 404 로 거절하는 취지가 무너진다.
+        // (보드를 새로 만들려면 `board add` 를 쓴다.)
         const section = await request<Section>(ctx, 'POST', '/api/sections', {
           board,
-          title: rest[1],
+          title: rest[1].trim(),
         });
         console.log(`✓ 섹션: ${section.title}`);
         return;
