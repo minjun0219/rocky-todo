@@ -1,8 +1,9 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { refNeedsBoardContext } from './refs';
+import { isRefSafeBoardKey, refNeedsBoardContext, withRef } from './refs';
 import { ID_LENGTH, TodoStore } from './store';
 
 /**
@@ -140,4 +141,96 @@ describe('refNeedsBoardContext — resolveRef 와의 일치(불변식)', () => {
       expect(refNeedsBoardContext(ref)).toBe(neededBoardContextInPractice(ref));
     });
   }
+});
+
+describe('isRefSafeBoardKey', () => {
+  test('공백/`#` 없는 일반 key 는 안전', () => {
+    for (const key of ['rocky', 'MyProject', '_private', 'a-b', '9x2mfa07']) {
+      expect(isRefSafeBoardKey(key)).toBe(true);
+    }
+  });
+
+  test('공백이 섞인 key 는 불안전', () => {
+    expect(isRefSafeBoardKey('my repo')).toBe(false);
+  });
+
+  test('`#` 가 섞인 key 는 불안전', () => {
+    expect(isRefSafeBoardKey('a#b')).toBe(false);
+  });
+
+  test('빈 key 는 불안전', () => {
+    expect(isRefSafeBoardKey('')).toBe(false);
+  });
+});
+
+describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)', () => {
+  let dir: string;
+  let store: TodoStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-refs-legacy-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * `ensureBoard` 의 key 검증은 CREATE 에만 걸린다(`src/store.ts`) — 검증 도입 전
+   * 구버전 데몬이 만들어둔 malformed key 보드가 존재할 수 있고, public API 로는 더 이상
+   * 재현 불가하므로 raw SQL 로 직접 심어 옛 상태를 흉내낸다(`src/store.test.ts` 의
+   * "ensureBoard returns a pre-existing malformed-key board unchanged" 테스트와 동일 기법).
+   */
+  function seedLegacyBoard(id: string, key: string): void {
+    const dbPath = join(dir, 'todo.db');
+    const raw = new Database(dbPath);
+    raw
+      .query('INSERT INTO boards (id, key, title, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, key, key, new Date().toISOString());
+    raw.close();
+  }
+
+  test('공백이 섞인 legacy board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다', () => {
+    seedLegacyBoard('legacy-space-board', 'my repo');
+    const todo = store.createTodo({ board: 'my repo', title: '레거시 보드 작업' }, 'tester');
+
+    const view = withRef(store, todo);
+    expect(view.ref).toBe(todo.id);
+
+    const resolved = store.getTodo(view.ref);
+    expect(resolved?.id).toBe(todo.id);
+  });
+
+  test('`#` 가 섞인 legacy board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다', () => {
+    seedLegacyBoard('legacy-hash-board', 'a#b');
+    const todo = store.createTodo({ board: 'a#b', title: '레거시 보드 작업' }, 'tester');
+
+    const view = withRef(store, todo);
+    expect(view.ref).toBe(todo.id);
+
+    const resolved = store.getTodo(view.ref);
+    expect(resolved?.id).toBe(todo.id);
+  });
+
+  test('정상 board 는 영향 없음 — ref === "rocky#1" 이고 왕복된다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '평범한 작업' }, 'tester');
+
+    const view = withRef(store, todo);
+    expect(view.ref).toBe('rocky#1');
+
+    const resolved = store.getTodo(view.ref);
+    expect(resolved?.id).toBe(todo.id);
+  });
+
+  test('글로벌 note 는 여전히 `#N` 을 받는다', () => {
+    const note = store.createNote({ title: '글로벌 메모' }, 'tester');
+
+    const view = withRef(store, note);
+    expect(view.ref).toBe(`#${note.number}`);
+
+    const resolved = store.getNote(view.ref);
+    expect(resolved?.id).toBe(note.id);
+  });
 });
