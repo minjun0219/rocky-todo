@@ -51,6 +51,9 @@ REF 는 `rocky#12`(보드 지정) / `#12` 또는 `12`(현재 보드의 번호) /
 
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. **삭제는 없다 — 아카이브만.**
 
+`#` 로 시작하는 REF 는 bash/zsh 에서 주석 시작 문자다 — 따옴표로 감싸서 넘긴다:
+`rocky-todo show '#12'` 또는 보드 접두사 없이 `rocky-todo show 12`.
+
 ## 설정 (`rocky.json`, user 레벨)
 
 데몬은 전역 단일 인스턴스라 user `~/.config/rocky/rocky.json` 의 `todo` 블록만 본다

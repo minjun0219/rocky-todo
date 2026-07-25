@@ -145,6 +145,9 @@ REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky#12`(�
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. actor 는 `--actor` >
 `ROCKY_TODO_ACTOR` > 호스트 자동 감지 (claude-code / opencode / codex).
 
+`#` 로 시작하는 REF 는 셸(bash/zsh)에서 주석 시작 문자로 해석되므로 반드시 따옴표로 감싼다:
+`rocky-todo show '#12'`. 번호만 쓰면(`rocky-todo show 12`) 따옴표가 필요 없다.
+
 ## 설정
 
 `rocky.json` (user 레벨 권장 — 데몬은 project rocky.json 을 보지 않는다). **`enabled` 필드는

@@ -1,7 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { formatTodoLine, noteRefPath, parseFlags, withBoard } from './cli';
+import { buildContext, type CliContext, request } from './client';
+import { buildTodoServer } from './server';
 import type { TodoView } from './server';
+import { TodoStore } from './store';
 
 describe('parseFlags', () => {
   test('separates positionals and flags', () => {
@@ -79,6 +84,75 @@ describe('noteRefPath', () => {
     // --global 없으면 보드 컨텍스트를 실어 보낸다
     const boardPath = noteRefPath('3', '', 'rocky', false);
     expect(boardPath).toContain('board=rocky');
+  });
+});
+
+describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
+  // withBoard/noteRefPath 문자열만 검증하는 단위 테스트로는 이 버그를 못 잡는다 — `#` 는
+  // 실제 URL 파싱(new URL / fetch) 단계에서만 fragment 로 잘려나간다. 여기서는 실제
+  // Bun.serve + buildTodoServer 핸들러에 진짜 fetch 로 요청을 보내 CLI 가 만든 경로가
+  // 살아서 도착하는지를 증명한다.
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-ref-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({ store });
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('bare "#N" ref (board 컨텍스트와 함께) 은 200 으로 해석된다', async () => {
+    store.createTodo({ board: 'rocky', title: '참조 확인' }, 'tester');
+
+    const detail = await request<{ todo: TodoView }>(
+      ctx,
+      'GET',
+      withBoard(`/api/todos/${encodeURIComponent('#1')}`, 'rocky'),
+    );
+    expect(detail.todo.title).toBe('참조 확인');
+  });
+
+  test('"board#N" 완전 참조는 200 으로 해석된다', async () => {
+    store.createTodo({ board: 'rocky', title: '보드 스코프 참조' }, 'tester');
+
+    const detail = await request<{ todo: TodoView }>(
+      ctx,
+      'GET',
+      withBoard(`/api/todos/${encodeURIComponent('rocky#1')}`, 'rocky'),
+    );
+    expect(detail.todo.title).toBe('보드 스코프 참조');
+  });
+
+  test('note 의 "#N" 참조도 noteRefPath 를 거치면 200 으로 해석된다', async () => {
+    store.createNote({ board: 'rocky', title: '메모 참조 확인' }, 'tester');
+
+    const detail = await request<{ note: { title: string } }>(
+      ctx,
+      'GET',
+      noteRefPath('#1', '', 'rocky', false),
+    );
+    expect(detail.note.title).toBe('메모 참조 확인');
+  });
+
+  test('인코딩 없이 raw "#" 를 실어 보내면(회귀 방지 대조군) 404 가 난다', async () => {
+    store.createTodo({ board: 'rocky', title: '대조군' }, 'tester');
+    // fetch 도 new Request 처럼 URL 스펙으로 파싱하므로, 인코딩 안 된 raw ref 는
+    // "#1" 이 fragment 로 잘려나가 서버는 `/api/todos/` 로 받는다 — 404.
+    const res = await fetch(`${ctx.baseUrl}${withBoard('/api/todos/#1', 'rocky')}`);
+    expect(res.status).toBe(404);
   });
 });
 

@@ -254,7 +254,9 @@ REF 는 #12 / 12 (현재 보드) 또는 rocky#12 (보드 지정) 또는 raw id �
 ROCKY_TODO_ACTOR > 호스트 자동 감지. 삭제는 없다 — 아카이브만 존재한다.
 note show/edit/append/archive 의 맨 번호(#12/12)는 기본적으로 todos 와 동일하게 현재 보드
 컨텍스트로 풀린다 — 전역 메모(웹 UI 의 #3 처럼 보드 접두어 없는 표기)를 번호로 가리키려면
---global 을 반드시 붙인다. 안 붙이면 같은 번호의 보드 메모가 대신 잡힐 수 있다(모호성 회피).`;
+--global 을 반드시 붙인다. 안 붙이면 같은 번호의 보드 메모가 대신 잡힐 수 있다(모호성 회피).
+주의: bash 에서 #12 는 주석 시작 문자다 — 따옴표로 감싸서 넘긴다:
+  rocky-todo show '#12'   또는  rocky-todo show 12`;
 
 /**
  * ref 로 단건 조회/수정하는 엔드포인트에 `?board=` 를 붙인다. 스토어의 참조 문법은
@@ -280,7 +282,10 @@ export function withBoard(path: string, board: string): string {
  * 플래그 하나 없이도 늘 예측 가능한 대상에 쓴다 (없는 게 위험한 암묵적 동작을 만들지 않는다).
  */
 export function noteRefPath(id: string, suffix: string, board: string, global: boolean): string {
-  const path = `/api/notes/${id}${suffix}`;
+  // ref 는 `#`(URL 조각 구분자) 를 담을 수 있어 encode 하지 않으면 브라우저/fetch 가
+  // ref 뒷부분과 뒤에 붙는 ?board= 쿼리를 통째로 잘라 버린다 — suffix(`/archive` 등)는
+  // 고정 리터럴이라 인코딩 대상이 아니다.
+  const path = `/api/notes/${encodeURIComponent(id)}${suffix}`;
   return global ? path : withBoard(path, board);
 }
 
@@ -365,7 +370,7 @@ export async function runCli(): Promise<void> {
       const detail = await request<{ todo: TodoView; history: HistoryEntry[] }>(
         ctx,
         'GET',
-        withBoard(`/api/todos/${id}`, board),
+        withBoard(`/api/todos/${encodeURIComponent(id)}`, board),
       );
       print(detail, () => {
         const t = detail.todo;
@@ -390,16 +395,21 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error('usage: rocky-todo update REF [플래그]');
       }
-      const todo = await request<TodoView>(ctx, 'PATCH', withBoard(`/api/todos/${id}`, board), {
-        title: str(flags.title),
-        description: str(flags.desc),
-        section: str(flags.section),
-        parentId: str(flags.parent),
-        priority: str(flags.priority),
-        due: str(flags.due),
-        labels: list(flags.label),
-        links: list(flags.link)?.map((url) => ({ url })),
-      });
+      const todo = await request<TodoView>(
+        ctx,
+        'PATCH',
+        withBoard(`/api/todos/${encodeURIComponent(id)}`, board),
+        {
+          title: str(flags.title),
+          description: str(flags.desc),
+          section: str(flags.section),
+          parentId: str(flags.parent),
+          priority: str(flags.priority),
+          due: str(flags.due),
+          labels: list(flags.label),
+          links: list(flags.link)?.map((url) => ({ url })),
+        },
+      );
       print(todo, () => `✓ ${todo.ref} 수정`);
       return;
     }
@@ -417,7 +427,7 @@ export async function runCli(): Promise<void> {
       const todo = await request<TodoView>(
         ctx,
         'POST',
-        withBoard(`/api/todos/${id}/status`, board),
+        withBoard(`/api/todos/${encodeURIComponent(id)}/status`, board),
         { action: command },
       );
       print(todo, () => `✓ ${todo.ref} ${command}`);
@@ -469,7 +479,7 @@ export async function runCli(): Promise<void> {
       const detail: { todo?: TodoView; note?: NoteView } = await request<{
         todo?: TodoView;
         note?: NoteView;
-      }>(ctx, 'GET', withBoard(`/api/todos/${id}`, board)).catch(() =>
+      }>(ctx, 'GET', withBoard(`/api/todos/${encodeURIComponent(id)}`, board)).catch(() =>
         request<{ todo?: TodoView; note?: NoteView }>(
           ctx,
           'GET',
