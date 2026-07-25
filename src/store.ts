@@ -161,9 +161,12 @@ export interface TodoStoreOptions {
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
+/** 랜덤 id 길이 — 참조 해석이 "번호냐 id 냐"를 가르는 기준이라 상수로 묶어 둔다. */
+export const ID_LENGTH = 8;
+
 /** 8자 base36 랜덤 id — 짧아서 CLI/대화에서 다루기 좋고 prefix 매칭을 허용한다. */
 function newId(): string {
-  const bytes = randomBytes(8);
+  const bytes = randomBytes(ID_LENGTH);
   let id = '';
   for (const b of bytes) {
     id += ID_ALPHABET[b % 36];
@@ -510,8 +513,13 @@ export class TodoStore {
     return todo;
   }
 
-  updateTodo(idOrPrefix: string, patch: UpdateTodoPatch, actor: string): Todo {
-    const current = this.mustGetTodo(idOrPrefix);
+  updateTodo(
+    idOrPrefix: string,
+    patch: UpdateTodoPatch,
+    actor: string,
+    currentBoardId?: string,
+  ): Todo {
+    const current = this.mustGetTodo(idOrPrefix, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | number | null)[] = [];
@@ -585,8 +593,13 @@ export class TodoStore {
     return this.mustGetTodo(current.id);
   }
 
-  setTodoStatus(idOrPrefix: string, action: StatusAction, actor: string): Todo {
-    const current = this.mustGetTodo(idOrPrefix);
+  setTodoStatus(
+    idOrPrefix: string,
+    action: StatusAction,
+    actor: string,
+    currentBoardId?: string,
+  ): Todo {
+    const current = this.mustGetTodo(idOrPrefix, currentBoardId);
     const now = nowIso();
     const changes: Record<string, [unknown, unknown]> = {};
 
@@ -670,15 +683,15 @@ export class TodoStore {
     return todos;
   }
 
-  getTodo(idOrPrefix: string): Todo | undefined {
-    const row = this.resolveByPrefix<TodoRow>('todos', idOrPrefix);
+  getTodo(ref: string, currentBoardId?: string): Todo | undefined {
+    const row = this.resolveRef<TodoRow>('todos', ref, currentBoardId);
     return row ? toTodo(row) : undefined;
   }
 
-  private mustGetTodo(idOrPrefix: string): Todo {
-    const todo = this.getTodo(idOrPrefix);
+  private mustGetTodo(ref: string, currentBoardId?: string): Todo {
+    const todo = this.getTodo(ref, currentBoardId);
     if (!todo) {
-      throw new Error(`todo not found: ${idOrPrefix}`);
+      throw new Error(`todo not found: ${ref}`);
     }
     return todo;
   }
@@ -719,8 +732,13 @@ export class TodoStore {
     return note;
   }
 
-  updateNote(idOrPrefix: string, patch: UpdateNotePatch, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  updateNote(
+    idOrPrefix: string,
+    patch: UpdateNotePatch,
+    actor: string,
+    currentBoardId?: string,
+  ): Note {
+    const current = this.mustGetNote(idOrPrefix, currentBoardId);
     const changes: Record<string, [unknown, unknown]> = {};
     const sets: string[] = [];
     const params: (string | null)[] = [];
@@ -755,8 +773,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  archiveNote(idOrPrefix: string, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  archiveNote(idOrPrefix: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(idOrPrefix, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = ?, updated_at = ? WHERE id = ?')
       .run(nowIso(), nowIso(), current.id);
@@ -764,8 +782,8 @@ export class TodoStore {
     return this.mustGetNote(current.id);
   }
 
-  unarchiveNote(idOrPrefix: string, actor: string): Note {
-    const current = this.mustGetNote(idOrPrefix);
+  unarchiveNote(idOrPrefix: string, actor: string, currentBoardId?: string): Note {
+    const current = this.mustGetNote(idOrPrefix, currentBoardId);
     this.db
       .query('UPDATE notes SET archived_at = NULL, updated_at = ? WHERE id = ?')
       .run(nowIso(), current.id);
@@ -796,15 +814,15 @@ export class TodoStore {
       .map(toNote);
   }
 
-  getNote(idOrPrefix: string): Note | undefined {
-    const row = this.resolveByPrefix<NoteRow>('notes', idOrPrefix);
+  getNote(ref: string, currentBoardId?: string): Note | undefined {
+    const row = this.resolveRef<NoteRow>('notes', ref, currentBoardId);
     return row ? toNote(row) : undefined;
   }
 
-  private mustGetNote(idOrPrefix: string): Note {
-    const note = this.getNote(idOrPrefix);
+  private mustGetNote(ref: string, currentBoardId?: string): Note {
+    const note = this.getNote(ref, currentBoardId);
     if (!note) {
-      throw new Error(`note not found: ${idOrPrefix}`);
+      throw new Error(`note not found: ${ref}`);
     }
     return note;
   }
@@ -886,19 +904,57 @@ export class TodoStore {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  /** 정확 일치 우선, 아니면 유일한 prefix 매칭. 다중 매칭이면 에러 (모호성 노출). */
-  private resolveByPrefix<Row>(table: 'todos' | 'notes', idOrPrefix: string): Row | undefined {
-    const exact = this.db
-      .query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`)
-      .get(idOrPrefix);
+  /**
+   * 참조 문자열을 행으로 해석한다. 순서대로:
+   *   `rocky#12` → 그 보드의 12번 · `#12`/`12` → currentBoardId 의 12번
+   *   `921gvwnr`(ID_LENGTH 자 base36) → id 정확 일치 · 그 외 → 유일한 id prefix
+   *
+   * 길이 기준으로 번호와 id 를 가르므로, id 길이를 바꾸면 ID_LENGTH 만 고치면 된다.
+   * @throws 다중 prefix 매칭이거나, 현재 보드 없이 번호만 온 경우 (모호성 노출)
+   */
+  private resolveRef<Row>(
+    table: 'todos' | 'notes',
+    ref: string,
+    currentBoardId?: string,
+  ): Row | undefined {
+    const trimmed = ref.trim();
+
+    const scoped = /^([a-z0-9][\w.-]*)#(\d+)$/i.exec(trimmed);
+    if (scoped?.[1] && scoped[2]) {
+      const board = this.db
+        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
+        .get(scoped[1]);
+      if (!board) {
+        return undefined;
+      }
+      return (
+        this.db
+          .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
+          .get(board.id, Number(scoped[2])) ?? undefined
+      );
+    }
+
+    const bare = /^#?(\d+)$/.exec(trimmed);
+    if (bare?.[1] && trimmed.length < ID_LENGTH) {
+      if (!currentBoardId) {
+        throw new Error(`board context required to resolve ${trimmed} — use board#number`);
+      }
+      return (
+        this.db
+          .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
+          .get(currentBoardId, Number(bare[1])) ?? undefined
+      );
+    }
+
+    const exact = this.db.query<Row, [string]>(`SELECT * FROM ${table} WHERE id = ?`).get(trimmed);
     if (exact) {
       return exact;
     }
     const matches = this.db
       .query<Row, [string]>(`SELECT * FROM ${table} WHERE id LIKE ? || '%' LIMIT 2`)
-      .all(idOrPrefix);
+      .all(trimmed);
     if (matches.length > 1) {
-      throw new Error(`ambiguous id prefix: ${idOrPrefix}`);
+      throw new Error(`ambiguous id prefix: ${trimmed}`);
     }
     return matches[0];
   }

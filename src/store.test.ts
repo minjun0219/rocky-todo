@@ -294,3 +294,37 @@ describe('number 발급', () => {
     expect(g.number).toBe(1);
   });
 });
+
+describe('참조 해석', () => {
+  test('rocky#12 형태로 보드를 지정해 찾는다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`alpha#${t.number}`)?.id).toBe(t.id);
+  });
+
+  test('#N 과 N 은 현재 보드에서 찾는다', () => {
+    const board = store.ensureBoard('alpha', { actor: 'tester' });
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(`#${t.number}`, board.id)?.id).toBe(t.id);
+    expect(store.getTodo(String(t.number), board.id)?.id).toBe(t.id);
+  });
+
+  test('8자 base36 입력은 번호가 아니라 id 로 해석한다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(t.id)?.id).toBe(t.id);
+  });
+
+  test('짧은 문자열은 기존처럼 id prefix 로 해석한다', () => {
+    const t = store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo(t.id.slice(0, 5))?.id).toBe(t.id);
+  });
+
+  test('현재 보드 없이 #N 만 오면 모호성을 에러로 노출한다', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(() => store.getTodo('#1')).toThrow(/board/i);
+  });
+
+  test('없는 번호는 undefined', () => {
+    store.createTodo({ board: 'alpha', title: '대상' }, 'tester');
+    expect(store.getTodo('alpha#999')).toBeUndefined();
+  });
+});
