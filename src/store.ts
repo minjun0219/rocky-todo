@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { runMigrations } from './migrations';
 
 /**
  * rocky-todo 의 저장 계층 — SQLite (bun:sqlite) 단일 파일.
@@ -298,6 +299,10 @@ export class TodoStore {
     this.db.run('PRAGMA journal_mode = WAL');
     this.db.run('PRAGMA foreign_keys = ON');
     this.db.run(SCHEMA);
+    runMigrations(this.db, {
+      dbPath: options.dbPath,
+      backupPath: `${options.dbPath}.bak-v0`,
+    });
   }
 
   close(): void {
