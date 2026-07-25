@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { NoteView } from '../../server';
-import { copyRef, formatElapsed } from '../lib';
+import { copyRefWithFeedback, formatElapsed } from '../lib';
 import { useUiStore } from '../store';
 
 /** 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영. */
@@ -57,17 +57,9 @@ function NoteCard({ note }: { note: NoteView }) {
     void saveNote(note.id, { title, content });
   };
 
-  // TodoItem 의 todo-ref 버튼과 동일한 복사 흐름. 글로벌 메모는 note.ref 가 `#3` 처럼
-  // 보드 접두사 없이 오는데, copyRef 는 그 문자열을 그대로 복사하므로 별도 분기가 없다.
-  const handleCopyRef = async () => {
-    const ok = await copyRef(note.ref);
-    if (ok) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-      return;
-    }
-    window.prompt('클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:', note.ref);
-  };
+  // 글로벌 메모는 note.ref 가 `#3` 처럼 보드 접두사 없이 오는데, copyRefWithFeedback 은
+  // 그 문자열을 그대로 복사하므로 별도 분기가 없다.
+  const handleCopyRef = () => copyRefWithFeedback(note.ref, setCopied);
 
   return (
     <div className={`note-card ${note.archivedAt ? 'is-archived' : ''}`}>

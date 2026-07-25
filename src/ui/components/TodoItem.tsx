@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { TodoView } from '../../server';
 import {
   actorTone,
-  copyRef,
+  copyRefWithFeedback,
   formatDue,
   formatElapsed,
   isOverdue,
@@ -26,17 +26,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
   const doing = todo.status === 'doing';
   const stale = doing && isStale(todo.doingSince);
 
-  // 보안 컨텍스트가 아니면 (LAN 평문 HTTP) navigator.clipboard 도 execCommand 도
-  // 없을 수 있다 — 그때는 조용히 넘어가지 않고 prompt 로 수동 복사 경로를 준다.
-  const handleCopyRef = async () => {
-    const ok = await copyRef(todo.ref);
-    if (ok) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-      return;
-    }
-    window.prompt('클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:', todo.ref);
-  };
+  const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
 
   return (
     <div

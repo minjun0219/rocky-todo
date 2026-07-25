@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { type CopyRefDocument, type CopyRefTextArea, copyRef } from './lib';
+import {
+  COPY_FEEDBACK_MS,
+  type CopyRefDocument,
+  type CopyRefTextArea,
+  copyRef,
+  copyRefWithFeedback,
+} from './lib';
 
 /** copyRef 의 execCommand 폴백 경로를 DOM 없이 검증하기 위한 fake document. */
 function makeFakeDocument(
@@ -109,5 +115,67 @@ describe('copyRef', () => {
     } finally {
       Object.defineProperty(globalThis, 'navigator', { value: original, configurable: true });
     }
+  });
+});
+
+describe('copyRefWithFeedback', () => {
+  test('복사 성공 시 copied 플래그를 세우고, COPY_FEEDBACK_MS 뒤 타이머로 지운다', async () => {
+    const copiedCalls: boolean[] = [];
+    const scheduled: Array<{ handler: () => void; ms: number }> = [];
+
+    await copyRefWithFeedback('rocky#12', (copied) => copiedCalls.push(copied), {
+      clipboard: {
+        writeText: async () => {},
+      },
+      setTimeout: (handler, ms) => {
+        scheduled.push({ handler, ms });
+        return 0;
+      },
+    });
+
+    expect(copiedCalls).toEqual([true]);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.ms).toBe(COPY_FEEDBACK_MS);
+
+    // 타이머를 직접 굴려 "그 뒤 지운다" 쪽도 확인 — 실제 1200ms 를 기다리지 않는다.
+    scheduled[0]?.handler();
+    expect(copiedCalls).toEqual([true, false]);
+  });
+
+  test('clipboard/document 둘 다 없어 복사에 실패하면 prompt 폴백을 띄우고 copied 는 세우지 않는다', async () => {
+    const copiedCalls: boolean[] = [];
+    const promptCalls: Array<{ message: string; defaultValue: string | undefined }> = [];
+
+    await copyRefWithFeedback('rocky#12', (copied) => copiedCalls.push(copied), {
+      prompt: (message, defaultValue) => {
+        promptCalls.push({ message, defaultValue });
+        return null;
+      },
+    });
+
+    expect(copiedCalls).toEqual([]);
+    expect(promptCalls).toEqual([
+      {
+        message: '클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:',
+        defaultValue: 'rocky#12',
+      },
+    ]);
+  });
+
+  test('execCommand 폴백도 실패하면(false 반환) prompt 로 내려간다', async () => {
+    const { document } = makeFakeDocument({ execCommandResult: false });
+    const copiedCalls: boolean[] = [];
+    const promptCalls: string[] = [];
+
+    await copyRefWithFeedback('rocky#12', (copied) => copiedCalls.push(copied), {
+      document,
+      prompt: (message) => {
+        promptCalls.push(message);
+        return null;
+      },
+    });
+
+    expect(copiedCalls).toEqual([]);
+    expect(promptCalls).toEqual(['클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:']);
   });
 });
