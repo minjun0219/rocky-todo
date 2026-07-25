@@ -38,6 +38,7 @@ rocky-todo/
 │   ├── server.ts                   # buildTodoServer — REST 라우트 + SSE 허브 (DI)
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
 │   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 아카이브 + history + change 이벤트
+│   ├── migrations.ts               # PRAGMA user_version 마이그레이션 러너 (적용 전 DB 백업)
 │   ├── cli.ts                      # CLI — 얇은 HTTP 클라이언트 + 컴팩트 출력 (runCli)
 │   ├── client.ts                   # REST 클라이언트 (buildContext/daemonHealth/health/ensureDaemon/stopDaemon/request)
 │   ├── actor.ts                    # actor 감지 + board key 유추(git remote > toplevel > cwd)
@@ -75,6 +76,13 @@ rocky-todo/
 - **첫 세션 순서 미보장**: SessionStart 데몬 기동 ↔ http MCP 초기화 순서는 보장 안 됨. 첫 세션
   MCP `failed` 는 `/mcp` retry / 다음 세션 / launchd 로 해소 — 감안 사항.
 - **전역 단일 인스턴스**: 포트가 락. project rocky.json 무시, user rocky.json 의 todo 블록만.
+- **번호 참조(ref)**: todo/note 는 랜덤 id(`921gvwnr`, PK 로 유지) 외에 보드별 순번을 갖는다.
+  id 를 받는 자리는 어디서든 `rocky#12`(보드 접두사) → `#12`/`12`(현재 보드 컨텍스트 안의
+  번호) → id 정확 일치 → id 유일 prefix 순으로 시도해 해석한다(`resolveRef` in `src/store.ts`).
+  notes 만 board 없이도 존재할 수 있어(글로벌 메모) 전역 번호 공간을 따로 갖고 `#3` 처럼
+  접두사 없이 렌더된다 — 글로벌에서 맨숫자 `#N` 은 이 전역 공간을 가리키지만, todos 는 항상
+  보드에 속하므로 보드 컨텍스트 없는 맨숫자는 에러다. 번호는 보드 안에서 `MAX(number)+1` 로
+  발급되어 아카이브해도 회수(재사용)되지 않는다.
 
 ## Coding rules
 

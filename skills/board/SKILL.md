@@ -59,19 +59,25 @@ claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies �
 
 ## 자주 쓰는 호출
 
+id 자리는 랜덤 id 대신 번호 참조(REF)를 받는다: `rocky#12`(보드 지정) 또는 `board` 인자와
+함께 쓰는 `#12`/`12`(현재 보드 안의 번호). id 전체나 앞부분도 여전히 통한다.
+
 ```
 todo_list  { board: "rocky" }                            # 보드 현황
-todo_list  { id: "a1b2c3" }                              # 상세 + 히스토리
+todo_list  { id: "rocky#12" }                             # 상세 + 히스토리
 todo_write { board: "rocky", title: "...", section: "설계",
              priority: "p2", links: [{ url: "https://github.com/..." }],
              actor: "claude-code" }
-todo_status { id: "a1b2c3", action: "start", actor: "claude-code" }
+todo_status { id: "rocky#12", action: "start", actor: "claude-code" }
 note_write { board: "rocky", title: "조사 메모", content: "...", actor: "claude-code" }
-note_write { id: "z9y8x7", content: "추가 발견", mode: "append", actor: "claude-code" }
+note_write { id: "rocky#7", content: "추가 발견", mode: "append", actor: "claude-code" }
 ```
 
 CLI 대응: `rocky-todo ls` / `add "제목" --section 설계 --priority p2 --link URL` /
-`start ID` / `done ID` / `note add "제목" --content "..."` / `history ID`.
+`start REF` / `done REF` / `note add "제목" --content "..."` / `history REF`.
+
+사용자와 대화할 때도 항목을 `#12` 로 부를 수 있다 — 웹 UI 에서 번호를 클릭하면 `rocky#12`
+가 클립보드에 복사되므로, 사용자가 그걸 붙여넣으면 그대로 REF 로 알아듣고 처리하면 된다.
 
 ## 우선순위 의미 (Todoist 와 동일 관례)
 
