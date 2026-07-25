@@ -158,14 +158,18 @@ function TodoDetail() {
           }}
         />
       ) : (
-        <button
-          type="button"
-          className="drawer-title"
-          onClick={() => setEditingTitle(true)}
-          title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
-        >
-          {todo.title}
-        </button>
+        // heading 시맨틱은 유지한다 — 노트 상세도 h2 라 같은 영역에서 구조가 갈리지 않게.
+        // 클릭 affordance 는 안쪽 버튼에만 건다.
+        <h2 className="drawer-title">
+          <button
+            type="button"
+            className="drawer-title-edit"
+            onClick={() => setEditingTitle(true)}
+            title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
+          >
+            {todo.title}
+          </button>
+        </h2>
       )}
       <div className="drawer-id">{todo.id}</div>
       <div className="drawer-chips">

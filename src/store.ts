@@ -332,6 +332,12 @@ export class TodoStore {
     }
   }
 
+  /**
+   * history 한 줄 기록 + change 이벤트 발행.
+   * @param emit false 면 이벤트를 내지 않는다 — 한 동작이 여러 행을 건드리는 배치에서
+   *   구독자에게 N개를 쏘지 않기 위해서다 (구독자는 payload 를 보지 않고 refetch 만 한다).
+   *   이 경우 배치 끝에서 대표 이벤트를 한 번 낸다.
+   */
   private recordHistory(
     entity: HistoryEntity,
     entityId: string,
@@ -339,13 +345,16 @@ export class TodoStore {
     action: string,
     changes?: Record<string, [unknown, unknown]>,
     boardId?: string,
+    emit = true,
   ): void {
     this.db
       .query(
         'INSERT INTO history (entity, entity_id, actor, action, changes, at) VALUES (?, ?, ?, ?, ?, ?)',
       )
       .run(entity, entityId, actor, action, changes ? JSON.stringify(changes) : null, nowIso());
-    this.emit({ entity, entityId, action, boardId });
+    if (emit) {
+      this.emit({ entity, entityId, action, boardId });
+    }
   }
 
   // ── boards ────────────────────────────────────────────────────────────────
@@ -467,8 +476,18 @@ export class TodoStore {
       .run(at, id);
     // 각 todo 에도 이력을 남긴다 — 이 파일의 원칙(모든 mutation 은 history 기록)이고,
     // 남기지 않으면 상세 타임라인에서 섹션이 왜 풀렸는지 설명할 방법이 없다.
+    // 이벤트는 내지 않는다 — 아래 section archive 이벤트 하나로 갈음한다. 섹션에 항목이
+    // 많으면 그 수만큼 SSE 가 나가는데, 구독자는 payload 를 보지 않고 refetch 만 한다.
     for (const todo of affected) {
-      this.recordHistory('todo', todo.id, actor, 'update', { section: [id, null] }, row.board_id);
+      this.recordHistory(
+        'todo',
+        todo.id,
+        actor,
+        'update',
+        { section: [id, null] },
+        row.board_id,
+        false,
+      );
     }
     this.db.query('UPDATE sections SET archived_at = ? WHERE id = ?').run(at, id);
     this.recordHistory('section', id, actor, 'archive', undefined, row.board_id);

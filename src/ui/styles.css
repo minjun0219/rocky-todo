@@ -829,11 +829,19 @@ textarea {
   line-height: 1.35;
 }
 
-button.drawer-title {
+.drawer-title-edit {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: text;
 }
 
-button.drawer-title:hover {
+.drawer-title-edit:hover {
   background: var(--surface);
   box-shadow: 0 0 0 4px var(--surface);
   border-radius: 3px;
