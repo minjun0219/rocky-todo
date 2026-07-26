@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import type { RunCommand } from './github';
 import { buildTodoMcpServer } from './mcp';
 import { TodoStore } from './store';
 
@@ -31,8 +32,8 @@ function idPrefix(id: string): string {
   return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
 }
 
-async function connect(): Promise<Client> {
-  const server = buildTodoMcpServer({ store });
+async function connect(options: { run?: RunCommand } = {}): Promise<Client> {
+  const server = buildTodoMcpServer({ store, run: options.run });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const c = new Client({ name: 'test-client', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), c.connect(clientTransport)]);
@@ -710,5 +711,52 @@ describe('note_write / note_list', () => {
       await client.callTool({ name: 'note_list', arguments: { board: 'rocky' } }),
     ) as { notes: unknown[] };
     expect(after.notes).toHaveLength(0);
+  });
+});
+
+describe('createIssue through MCP', () => {
+  test('todo_write with only createIssue does not create an update history row', async () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const created = resultJson(
+      await client.callTool({ name: 'todo_write', arguments: { board: 'rocky', title: '작업' } }),
+    ) as { id: string };
+
+    const issueClient = await connect({
+      run: () => ({ code: 0, stdout: 'https://github.com/o/n/issues/7\n', stderr: '' }),
+    });
+    const patched = resultJson(
+      await issueClient.callTool({
+        name: 'todo_write',
+        arguments: { id: created.id, createIssue: true, actor: 'claude-code' },
+      }),
+    ) as { links: { url: string }[] };
+
+    expect(patched.links.map((l) => l.url)).toEqual(['https://github.com/o/n/issues/7']);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { history: { action: string }[] };
+    // links 를 붙이는 updateTodo 는 정당한 update 다. 그 외의 빈 update 가 없어야 한다.
+    expect(detail.history.filter((h) => h.action === 'update')).toHaveLength(1);
+  });
+
+  test('createIssue on a board without a repo fails and changes nothing', async () => {
+    store.ensureBoard('norepo', { actor: 'tester' });
+    const created = resultJson(
+      await client.callTool({ name: 'todo_write', arguments: { board: 'norepo', title: '작업' } }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, createIssue: true },
+    });
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    expect(store.getTodo(created.id)?.links).toEqual([]);
+  });
+
+  test('the tool surface is still exactly five tools', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
   });
 });
