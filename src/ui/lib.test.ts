@@ -263,7 +263,7 @@ describe('mergeTimeline', () => {
     expect(items[1]?.kind).toBe('comment');
   });
 
-  test('drops comment-family history rows so nothing is shown twice', () => {
+  test('drops comment/comment-edit history rows (card-represented) but keeps comment-archive/comment-unarchive (card is gone)', () => {
     const items = mergeTimeline(
       [
         history({ id: 3, action: 'comment' }),
@@ -274,8 +274,11 @@ describe('mergeTimeline', () => {
       ],
       [],
     );
-    expect(items).toHaveLength(1);
-    expect(items[0]?.kind).toBe('history');
+    expect(items.map((i) => (i.kind === 'history' ? i.entry.action : i.kind))).toEqual([
+      'comment-archive',
+      'comment-unarchive',
+      'done',
+    ]);
   });
 });
 

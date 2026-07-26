@@ -368,7 +368,7 @@ describe('formatTodoShow', () => {
     expect(out).toContain('첫째 줄 둘째 줄 넷째 줄');
   });
 
-  test('comment 계열 히스토리 액션이 히스토리 섹션에서 걸러진다', () => {
+  test('comment/comment-edit 는 히스토리 섹션에서 걸러지지만 comment-archive/comment-unarchive 는 남는다', () => {
     const rows: HistoryEntry[] = [
       history({ action: 'create' }, 1),
       history({ action: 'comment' }, 2),
@@ -380,10 +380,33 @@ describe('formatTodoShow', () => {
     const out = formatTodoShow({ todo, history: rows, comments: [] });
     expect(out).toContain('create');
     expect(out).toContain('done');
-    expect(out).not.toContain('comment');
-    expect(out).not.toContain('comment-edit');
-    expect(out).not.toContain('comment-archive');
-    expect(out).not.toContain('comment-unarchive');
+    expect(out).toContain('comment-archive');
+    expect(out).toContain('comment-unarchive');
+    // comment 자체(작성/본문수정)만 걸러진다 — 정확히 한 줄만 있어야 하므로 등장 횟수로 확인한다.
+    const commentLines = out.split('\n').filter((line) => / comment$/.test(line.trim()));
+    const commentEditLines = out.split('\n').filter((line) => / comment-edit$/.test(line.trim()));
+    expect(commentLines).toHaveLength(0);
+    expect(commentEditLines).toHaveLength(0);
+  });
+
+  test('댓글이 8개보다 많으면 최근 8개만 보이고 위에 …외 N개 마커가 붙는다', () => {
+    // 두 자리로 패딩한다 — "댓글 1" 이 "댓글 10"/"댓글 11" 의 부분 문자열이 되어 포함
+    // 여부 단언이 오탐하지 않게.
+    const comments: Comment[] = Array.from({ length: 12 }, (_, i) =>
+      comment({
+        id: `c${i}`,
+        body: `댓글 ${String(i).padStart(2, '0')}`,
+        createdAt: `2026-07-24T09:${String(i).padStart(2, '0')}:00.000Z`,
+      }),
+    );
+    const out = formatTodoShow({ todo, history: [], comments });
+    expect(out).toContain('…외 4개');
+    for (let i = 4; i < 12; i++) {
+      expect(out).toContain(`댓글 ${String(i).padStart(2, '0')}`);
+    }
+    for (let i = 0; i < 4; i++) {
+      expect(out).not.toContain(`댓글 ${String(i).padStart(2, '0')}`);
+    }
   });
 
   test('히스토리가 8줄로 잘린다', () => {

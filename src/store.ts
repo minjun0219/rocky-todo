@@ -165,7 +165,25 @@ export interface ListHistoryFilter {
   entityId?: string;
   entity?: HistoryEntity;
   limit?: number;
+  /**
+   * 결과에서 뺄 action 목록 — 상세 화면 조회처럼 "다른 곳에 이미 표현된 사건"을
+   * `LIMIT` 이 적용되기 **전에** 걸러내고 싶을 때 쓴다(사후 필터는 limit 을 낭비한다).
+   */
+  excludeActions?: readonly string[];
 }
+
+/**
+ * 상세 화면(REST `GET /api/todos/:ref` · MCP `todo_list` 단건 조회)에서 제외하는
+ * history action. 댓글 mutation 은 부모 todo 의 history 에도 기록되는데(SSE·훅
+ * 주입 경로 재사용), 상세 화면은 댓글을 카드로 이미 보여주므로 그중 **카드가 여전히
+ * 대표하는** 두 액션(작성/본문 수정)만 뺀다.
+ *
+ * `comment-archive`/`comment-unarchive` 는 여기 포함하지 않는다 — 보관되면 카드
+ * 자체가 사라지므로(대표하는 화면 요소가 없어짐) history 에 흔적을 남겨야 한다.
+ * `listHistory` 를 부르는 두 호출부(`src/server.ts`, `src/mcp.ts`)가 이 상수 하나를
+ * 공유해 배열 리터럴이 두 곳에서 따로 놀지 않게 한다.
+ */
+export const DETAIL_HISTORY_EXCLUDED = ['comment', 'comment-edit'] as const;
 
 export interface TodoStoreOptions {
   dbPath: string;
@@ -1086,7 +1104,14 @@ export class TodoStore {
       wheres.push('entity = ?');
       params.push(filter.entity);
     }
+    if (filter.excludeActions && filter.excludeActions.length > 0) {
+      const placeholders = filter.excludeActions.map(() => '?').join(', ');
+      wheres.push(`action NOT IN (${placeholders})`);
+      params.push(...filter.excludeActions);
+    }
     const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
+    // limit 은 반드시 마지막에 바인딩한다 — SQL 의 `LIMIT ?` 가 where 절 뒤에 오므로
+    // 파라미터 순서도 그에 맞춰야 한다.
     params.push(filter.limit ?? 50);
     return this.db
       .query<HistoryRow, (string | number)[]>(

@@ -279,17 +279,15 @@ export type TimelineItem =
   | { kind: 'comment'; at: string; comment: Comment };
 
 /**
- * 댓글 계열 히스토리 액션 — 타임라인에서는 버린다.
+ * 댓글 계열 히스토리 액션 중 타임라인에서 버리는 것 — 댓글 카드가 여전히 그 사건을
+ * 대표하는 두 가지(작성/본문 수정)만 뺀다.
  *
  * 댓글 mutation 은 부모 todo 의 히스토리로도 기록된다(SSE·훅 주입 경로를 타기 위해서다).
- * 그대로 두면 같은 사건이 댓글 카드와 히스토리 한 줄로 두 번 보인다.
+ * `comment`/`comment-edit` 을 그대로 두면 같은 사건이 댓글 카드와 히스토리 한 줄로 두 번
+ * 보인다. `comment-archive`/`comment-unarchive` 는 빼지 않는다 — 보관되면 카드 자체가
+ * 사라지므로(대표하는 화면 요소가 없어짐) 타임라인에 흔적이 남아야 한다.
  */
-const COMMENT_HISTORY_ACTIONS: ReadonlySet<string> = new Set([
-  'comment',
-  'comment-edit',
-  'comment-archive',
-  'comment-unarchive',
-]);
+const COMMENT_HISTORY_ACTIONS: ReadonlySet<string> = new Set(['comment', 'comment-edit']);
 
 /**
  * 히스토리와 댓글을 시간순(**최신 우선**)으로 병합한다. 드로어의 기존 히스토리 렌더가

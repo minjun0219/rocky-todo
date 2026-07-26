@@ -590,6 +590,40 @@ describe('comments through MCP', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
   });
+
+  test('todo_list { id, includeArchived: true } surfaces archived comments; without it they stay hidden (finding 2)', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const comment = store.addComment(todo.id, '보관될 댓글', 'tester');
+    store.setCommentArchived(comment.id, true, 'tester');
+
+    const hidden = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: todo.id } }),
+    ) as { comments: { id: string }[] };
+    expect(hidden.comments).toHaveLength(0);
+
+    const shown = resultJson(
+      await client.callTool({
+        name: 'todo_list',
+        arguments: { id: todo.id, includeArchived: true },
+      }),
+    ) as { comments: { id: string }[] };
+    expect(shown.comments.map((c) => c.id)).toEqual([comment.id]);
+  });
+
+  test('todo_write with an empty comment rejects instead of silently no-op-ing (finding 3)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, comment: '' },
+    });
+    expect(result.isError).toBe(true);
+  });
 });
 
 describe('note_write / note_list', () => {

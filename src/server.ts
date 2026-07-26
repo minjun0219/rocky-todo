@@ -1,6 +1,11 @@
 import pkg from '../package.json' with { type: 'json' };
 import { refNeedsBoardContext, withRef } from './refs';
-import type { ListTodosFilter, StatusAction, TodoStore } from './store';
+import {
+  DETAIL_HISTORY_EXCLUDED,
+  type ListTodosFilter,
+  type StatusAction,
+  type TodoStore,
+} from './store';
 
 /**
  * rocky-todo REST + SSE 표면 — CLI / 웹 UI 가 공유한다.
@@ -220,10 +225,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           if (!todo) {
             return errorResponse(`todo not found: ${ref}`, 404);
           }
+          const includeArchived = url.searchParams.get('includeArchived') === 'true';
           return json({
             todo: withRef(store, todo),
-            history: store.listHistory({ entityId: todo.id }),
-            comments: store.listComments(todo.id),
+            history: store.listHistory({
+              entityId: todo.id,
+              excludeActions: DETAIL_HISTORY_EXCLUDED,
+            }),
+            comments: store.listComments(todo.id, includeArchived),
           });
         }
         if (method === 'PATCH') {

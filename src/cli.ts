@@ -135,14 +135,21 @@ export function formatTodoShow(detail: {
   lines.push('', `id: ${t.id}`);
   if (detail.comments.length > 0) {
     lines.push('', '댓글:');
-    for (const c of detail.comments) {
+    // 오래된 것부터 온 배열이라 최근 8개는 꼬리를 자른다 — 앞쪽(더 오래된)을 버린다.
+    const shown = detail.comments.slice(-8);
+    const omitted = detail.comments.length - shown.length;
+    if (omitted > 0) {
+      lines.push(`  …외 ${omitted}개`);
+    }
+    for (const c of shown) {
       const stamp = c.createdAt.slice(0, 16).replace('T', ' ');
       lines.push(`  ${stamp} ${c.actor}: ${c.body.replace(/\s+/g, ' ')}`);
     }
   }
   lines.push('', '히스토리:');
-  // 댓글은 위 섹션이 본문까지 보여준다 — 히스토리에서 같은 사건을 한 줄 더 찍지 않는다.
-  const rows = detail.history.filter((h) => !h.action.startsWith('comment'));
+  // comment/comment-edit 은 위 댓글 섹션이 본문까지 보여주니 같은 사건을 한 줄 더 찍지
+  // 않는다. comment-archive/comment-unarchive 는 카드가 사라진 뒤라 여기 남아야 한다.
+  const rows = detail.history.filter((h) => h.action !== 'comment' && h.action !== 'comment-edit');
   for (const h of rows.slice(0, 8)) {
     lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
   }

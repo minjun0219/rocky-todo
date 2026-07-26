@@ -61,6 +61,7 @@ interface UiState {
   addComment: (todoId: string, body: string) => Promise<void>;
   editComment: (id: string, body: string) => Promise<void>;
   archiveComment: (id: string) => Promise<void>;
+  unarchiveComment: (id: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -134,9 +135,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   openTodoDetail: async (id) => {
-    const { actor } = get();
+    const { actor, showArchived } = get();
+    // 전역 "보관 항목 보기" 토글을 댓글에도 그대로 연결한다 — 별도 스위치를 만들지
+    // 않고 이미 있는 컨트롤 하나로 todo/note/comment 아카이브 뷰를 통일한다.
+    const qs = showArchived ? '?includeArchived=true' : '';
     const body = await api<{ todo: TodoView; history: HistoryEntry[]; comments: Comment[] }>(
-      `/api/todos/${id}`,
+      `/api/todos/${id}${qs}`,
       actor,
     );
     set({
@@ -228,6 +232,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   archiveComment: async (id) => {
     const { actor } = get();
     await api(`/api/comments/${id}/archive`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  unarchiveComment: async (id) => {
+    const { actor } = get();
+    await api(`/api/comments/${id}/unarchive`, actor, { method: 'POST' });
     await get().refetch();
   },
 }));

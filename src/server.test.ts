@@ -566,6 +566,52 @@ describe('comments', () => {
     expect(shown.comments).toHaveLength(1);
   });
 
+  test('regression: 55 comments do not push create/start/done out of the detail history (finding 1)', async () => {
+    const todo = await makeTodo();
+    await req(`/api/todos/${todo.id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'start' }),
+    });
+    await req(`/api/todos/${todo.id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'done' }),
+    });
+    for (let i = 0; i < 55; i++) {
+      await req(`/api/todos/${todo.id}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ body: `댓글 ${i}` }),
+      });
+    }
+
+    const detail = (await (await req(`/api/todos/${todo.id}`)).json()) as {
+      history: { action: string }[];
+    };
+    const actions = detail.history.map((h) => h.action);
+    expect(actions).toContain('create');
+    expect(actions).toContain('start');
+    expect(actions).toContain('done');
+  });
+
+  test('GET /api/todos/:ref?includeArchived=true returns an archived comment; without it, it does not', async () => {
+    const todo = await makeTodo();
+    const created = await req(`/api/todos/${todo.id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '보관될 댓글' }),
+    });
+    const comment = (await created.json()) as { id: string };
+    await req(`/api/comments/${comment.id}/archive`, { method: 'POST' });
+
+    const withoutFlag = (await (await req(`/api/todos/${todo.id}`)).json()) as {
+      comments: unknown[];
+    };
+    expect(withoutFlag.comments).toHaveLength(0);
+
+    const withFlag = (await (await req(`/api/todos/${todo.id}?includeArchived=true`)).json()) as {
+      comments: { id: string }[];
+    };
+    expect(withFlag.comments.map((c) => c.id)).toEqual([comment.id]);
+  });
+
   test('blank body is a 400 and unknown comment id is a 404', async () => {
     const todo = await makeTodo();
     const blank = await req(`/api/todos/${todo.id}/comments`, {

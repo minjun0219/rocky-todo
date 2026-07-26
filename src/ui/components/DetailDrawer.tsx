@@ -380,6 +380,7 @@ function CommentComposer({ todoId }: { todoId: string }) {
 function CommentCard({ comment }: { comment: Comment }) {
   const editComment = useUiStore((s) => s.editComment);
   const archiveComment = useUiStore((s) => s.archiveComment);
+  const unarchiveComment = useUiStore((s) => s.unarchiveComment);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
 
@@ -390,14 +391,16 @@ function CommentCard({ comment }: { comment: Comment }) {
   }, [comment.body, editing]);
 
   const edited = comment.updatedAt !== comment.createdAt;
+  const archived = comment.archivedAt !== undefined;
 
   return (
-    <div className="comment-card">
+    <div className={`comment-card${archived ? ' is-archived' : ''}`}>
       <div className="comment-head">
         <span className={`history-dot tone-${actorTone(comment.actor)}`} />
         <span className={`comment-actor tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
         <span className="comment-at">{formatStamp(comment.createdAt)}</span>
         {edited && <span className="comment-edited">(수정됨)</span>}
+        {archived && <span className="comment-edited">(보관됨)</span>}
         <span className="comment-tools">
           <button type="button" className="comment-tool" onClick={() => setEditing(!editing)}>
             {editing ? '취소' : '편집'}
@@ -405,9 +408,11 @@ function CommentCard({ comment }: { comment: Comment }) {
           <button
             type="button"
             className="comment-tool"
-            onClick={() => void archiveComment(comment.id)}
+            onClick={() =>
+              void (archived ? unarchiveComment(comment.id) : archiveComment(comment.id))
+            }
           >
-            보관
+            {archived ? '보관 해제' : '보관'}
           </button>
         </span>
       </div>

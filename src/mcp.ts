@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { refNeedsBoardContext, withRef } from './refs';
-import type { StatusAction, TodoStore } from './store';
+import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './store';
 
 /**
  * rocky-todo 의 MCP 표면 — 데몬의 `/mcp` (streamable HTTP) 에만 존재한다.
@@ -101,8 +101,11 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         }
         return jsonResult({
           todo: withRef(store, todo),
-          history: store.listHistory({ entityId: todo.id }),
-          comments: store.listComments(todo.id),
+          history: store.listHistory({
+            entityId: todo.id,
+            excludeActions: DETAIL_HISTORY_EXCLUDED,
+          }),
+          comments: store.listComments(todo.id, includeArchived ?? false),
         });
       }
       return jsonResult({
@@ -162,7 +165,10 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
         }
-        if (comment) {
+        // undefined 로만 "댓글 없음"을 판단한다 — 빈 문자열/공백은 그대로 store 로
+        // 넘겨 store 의 trim-then-reject 검증에 걸리게 한다. `if (comment)` 였을 때는
+        // `comment: ""` 가 아무 것도 안 쓰고 성공해버려(REST 는 400) 표면마다 동작이 갈렸다.
+        if (comment !== undefined) {
           store.addComment(todo.id, comment, who);
         }
         return jsonResult(withRef(store, todo));
@@ -171,7 +177,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         throw new Error('board and title are required to create a todo');
       }
       const created = store.createTodo({ board, title, ...rest }, who);
-      if (comment) {
+      if (comment !== undefined) {
         store.addComment(created.id, comment, who);
       }
       return jsonResult(withRef(store, created));

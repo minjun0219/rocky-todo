@@ -377,6 +377,19 @@ describe('history', () => {
     expect(history.map((h) => h.action)).toEqual(['update', 'create']);
     expect(history[0]?.entity).toBe('note');
   });
+
+  test('excludeActions filters rows out at the query, not after — omitting it returns everything', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'claude-code');
+    store.setTodoStatus(todo.id, 'start', 'claude-code');
+    store.addComment(todo.id, '진행 중', 'claude-code');
+    store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+    const filtered = store.listHistory({ entityId: todo.id, excludeActions: ['comment'] });
+    expect(filtered.map((h) => h.action)).toEqual(['done', 'start', 'create']);
+
+    const unfiltered = store.listHistory({ entityId: todo.id });
+    expect(unfiltered.map((h) => h.action)).toEqual(['done', 'comment', 'start', 'create']);
+  });
 });
 
 describe('listChangesSince (변경 피드)', () => {
