@@ -56,6 +56,10 @@ rocky-todo daemon uninstall
 
 레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
 
+> **PATH 회귀 수정 (재설치 필요)**: 이전 버전으로 `daemon install` 을 이미 해뒀다면
+> `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
+> 재설치해야 launchd 데몬이 `claude` CLI(핸드오프 기능이 쓴다)를 PATH 에서 찾는다.
+
 ## 호스트별 MCP 등록
 
 Claude Code 에서는 플러그인 설치로 자동 등록되므로 수동 작업이 필요 없다. **opencode / Codex** 는

@@ -29,7 +29,22 @@ function daemonEntryPath(): string {
   return join(import.meta.dir, 'daemon.ts');
 }
 
-function plistContent(): string {
+/**
+ * launchd 유저 에이전트는 기본 PATH(`/usr/bin:/bin:/usr/sbin:/sbin`)만 물려받는다 —
+ * 로그인 셸의 PATH 를 상속하지 않는다. `process.execPath` 를 통짜 경로로 박아두는 것과
+ * 같은 이유의 함정: SessionStart 훅이 띄운 데몬은 셸 PATH 를 그대로 상속해 잘 도는데,
+ * `daemon install` 로 상주시킨 데몬은 `claude` 를 못 찾아 핸드오프 기능 전체가
+ * `available:false` 로 죽는다(`claude` 는 보통 `/opt/homebrew/bin`, `~/.local/bin`
+ * 등에 있다) — 같은 기능이 기동 경로에 따라 되고 안 되는 상태가 된다. 그래서 설치
+ * 시점의 `process.env.PATH` 를 그대로 plist 에 구워 넣는다: 지금 이 셸에서 `claude` 가
+ * 보이면(`command -v claude`) launchd 데몬도 보게 만드는 게 가장 정확하다.
+ */
+function pathForPlist(): string {
+  return process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin';
+}
+
+/** plist 본문 — install 시점에 캡처한 PATH 를 EnvironmentVariables 로 굽는다. 테스트 전용 export. */
+export function plistContent(): string {
   const logPath = join(DEFAULT_TODO_DIR, 'daemon.log');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -46,6 +61,10 @@ function plistContent(): string {
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${logPath}</string>
   <key>StandardErrorPath</key><string>${logPath}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${pathForPlist()}</string>
+  </dict>
 </dict>
 </plist>
 `;
