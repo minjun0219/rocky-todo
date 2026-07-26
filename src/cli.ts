@@ -352,6 +352,18 @@ export function boardRepoPath(key: string): string {
 }
 
 /**
+ * `issue` 명령이 보드 repo 를 cwd 에서 유추해 한 번 재시도해야 하는 실패인지.
+ *
+ * 서버가 상태 코드를 실어 보내지 않으므로(`src/client.ts` 의 `request` 는 메시지만 남긴다)
+ * 메시지로 판별한다. 그래서 **넓게 잡으면 안 된다** — 이슈 URL 에 `repo` 가 든 409 나
+ * `gh` 의 `repo` 스코프 인증 실패까지 걸려, 보드 repo 를 조용히 덮어쓰고 진짜 원인을 가린다.
+ * `src/github.ts` 가 던지는 문구(`board has no GitHub repo: ...`)의 접두어만 정확히 맞춘다.
+ */
+export function isMissingRepoError(message: string): boolean {
+  return message.startsWith('board has no GitHub repo');
+}
+
+/**
  * `history` 커맨드용 엔티티 조회 — REF 만으로 대상이 todo 인지 note 인지 모른다.
  * `--global` 이 서 있으면 대상은 무조건 전역 note(`board_id IS NULL`) 다 — global note 는
  * todo 일 수 없으므로 todo 조회를 아예 시도하지 않는다. todo 와 (보드 소속) note 와 전역
@@ -527,7 +539,7 @@ export async function runCli(): Promise<void> {
         // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 재시도한다. 미리 보드를 조회하지
         // 않는 이유: 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
         const message = error instanceof Error ? error.message : String(error);
-        const inferred = /repo/.test(message)
+        const inferred = isMissingRepoError(message)
           ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
           : undefined;
         if (!inferred) {

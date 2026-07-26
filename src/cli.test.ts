@@ -6,6 +6,7 @@ import {
   boardRepoPath,
   formatTodoLine,
   formatTodoShow,
+  isMissingRepoError,
   noteRefPath,
   parseFlags,
   resolveHistoryEntity,
@@ -538,5 +539,37 @@ describe('issue command paths', () => {
     await expect(request(ctx, 'POST', todoRefPath(todo.id, '/issue', 'rocky'))).rejects.toThrow(
       /repo/,
     );
+  });
+});
+
+describe('isMissingRepoError', () => {
+  // 각 케이스는 예전의 느슨한 `/repo/.test(message)` 판정이 오답을 내는 경우들이다 —
+  // 그래야 이 테스트가 실제로 판별력을 갖는다는 증거가 된다 (finding A/B).
+  test('matches the server message for an unset board repo', () => {
+    expect(
+      isMissingRepoError(
+        'board has no GitHub repo: rocky — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe(true);
+  });
+
+  test('does not match a 409 whose issue url contains "repo"', () => {
+    expect(
+      isMissingRepoError(
+        'todo already has a GitHub issue: https://github.com/org/my-repo/issues/12',
+      ),
+    ).toBe(false);
+  });
+
+  test('does not match a gh auth failure that names the repo scope', () => {
+    expect(isMissingRepoError("error: your token has not been granted the 'repo' scope")).toBe(
+      false,
+    );
+    expect(isMissingRepoError('gh auth refresh -s repo')).toBe(false);
+  });
+
+  test('does not match unrelated failures', () => {
+    expect(isMissingRepoError('todo not found: abc')).toBe(false);
+    expect(isMissingRepoError('')).toBe(false);
   });
 });
