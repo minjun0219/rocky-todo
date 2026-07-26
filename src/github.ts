@@ -162,6 +162,21 @@ export function createIssue(
   return { ok: true, url: urlMatch[0] };
 }
 
+/**
+ * todo 에 이미 이슈 링크가 있어서 거절됐다 — 호출자가 **상태 코드로 구분**해야 하는 실패다.
+ *
+ * 문구 매칭이 아니라 타입으로 구분하는 이유: REST 라우트는 `gh` 의 출력에서 온 실패를
+ * 전부 400 으로 내리는데(그 문구에 "not found" 가 섞여 404 로 새던 finding F 때문),
+ * 그 규칙에 예외를 두려면 "우리가 던진 것"임이 확실해야 한다. 메시지로 골라내면 `gh`
+ * 출력이 우연히 같은 말을 담을 때 잘못 분류된다.
+ */
+export class IssueAlreadyExistsError extends Error {
+  constructor(readonly url: string) {
+    super(`todo already has a GitHub issue: ${url}`);
+    this.name = 'IssueAlreadyExistsError';
+  }
+}
+
 /** repo 미설정 에러 문구 — 사전 검증(`assertBoardHasRepo`)과 오케스트레이터가 같은 말을 하도록. */
 function noRepoMessage(boardKey: string): string {
   return `board has no GitHub repo: ${boardKey} — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)`;
@@ -211,7 +226,7 @@ export function createIssueForTodo(
   }
   const existing = findIssueLink(todo.links);
   if (existing) {
-    throw new Error(`todo already has a GitHub issue: ${existing}`);
+    throw new IssueAlreadyExistsError(existing);
   }
   const board = store.boardById(todo.boardId);
   if (!board) {

@@ -851,6 +851,40 @@ describe('POST /api/todos/:ref/issue — 출처 게이트', () => {
     expect(patched.status).toBe(200);
   });
 
+  // 사전 검사와 orchestrator 의 재검사 사이에 `readOptionalBody` 의 await 이 있다. 겹친
+  // 두 요청이 둘 다 사전 검사를 통과하면 나중 쪽은 orchestrator 안에서 걸리는데, 그때도
+  // "이미 있음"은 409 여야 한다 — 같은 원인이 타이밍에 따라 400 이 되면 웹 UI 의 분기가
+  // 흔들린다. 본문 스트림이 소비되는 순간에 링크를 붙여 그 창을 결정론적으로 재현한다.
+  test('a link that appears during body read is still 409, not 400', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const raced = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        // 여기가 라우트의 409 사전 검사 **뒤** — 경쟁 요청이 방금 링크를 붙인 상황이다.
+        store.updateTodo(id, { links: [{ url: 'https://github.com/o/n/issues/3' }] }, 'other');
+        controller.enqueue(new TextEncoder().encode('{}'));
+        controller.close();
+      },
+    });
+    const res = await handle(
+      new Request(`${BASE}/api/todos/${id}/issue`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-rocky-actor': 'tester' },
+        body: raced,
+        // @ts-expect-error duplex 는 스트림 본문에 필요하지만 lib.dom 타입에 없다
+        duplex: 'half',
+      }),
+      '127.0.0.1',
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; url: string };
+    expect(body.url).toBe('https://github.com/o/n/issues/3');
+    // 두 번째 이슈가 만들어지지 않았어야 한다
+    expect(store.getTodo(id)?.links).toHaveLength(1);
+  });
+
   test('GET /api/health reports whether this origin may create issues', async () => {
     const local = (await (await req('/api/health')).json()) as { issueCreateAllowed: boolean };
     expect(local.issueCreateAllowed).toBe(true);

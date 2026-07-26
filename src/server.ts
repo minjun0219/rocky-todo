@@ -1,5 +1,11 @@
 import pkg from '../package.json' with { type: 'json' };
-import { createIssueForTodo, findIssueLink, isRepoSlug, type RunCommand } from './github';
+import {
+  createIssueForTodo,
+  findIssueLink,
+  IssueAlreadyExistsError,
+  isRepoSlug,
+  type RunCommand,
+} from './github';
 import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import {
@@ -54,6 +60,14 @@ function json(body: unknown, status = 200): Response {
 
 function errorResponse(message: string, status: number): Response {
   return json({ error: message }, status);
+}
+
+/**
+ * 이슈 중복 응답 — 사전 검사와 orchestrator 경유 두 경로가 **같은 본문**을 내도록 한 곳에 둔다.
+ * `url` 을 함께 싣는 건 웹 UI 가 "이미 있음"을 그 이슈로 보내는 데 쓰기 때문이다.
+ */
+function alreadyHasIssue(url: string): Response {
+  return json({ error: `todo already has a GitHub issue: ${url}`, url }, 409);
 }
 
 async function readBody(req: Request): Promise<Record<string, unknown>> {
@@ -326,10 +340,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         // "이미 있음"을 별도로 다뤄야 한다. 판별은 `findIssueLink` 하나를 공유한다.
         const existing = findIssueLink(todo.links);
         if (existing) {
-          return json(
-            { error: `todo already has a GitHub issue: ${existing}`, url: existing },
-            409,
-          );
+          return alreadyHasIssue(existing);
         }
         // repo 는 옵션 — 클라이언트가 어느 보드가 todo 를 소유하는지 추측해 PATCH 하던
         // 옛 경로(findings A/C)를 없앤 자리다. body 자체가 없을 수도 있어(CLI 기본 경로,
@@ -346,12 +357,17 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           const result = createIssueForTodo(store, ref, { actor, currentBoardId, run, repo });
           return json({ url: result.url, todo: withRef(store, result.todo) }, 201);
         } catch (error) {
-          // 이 라우트 자신의 실패(repo 미설정, `gh` 실패 등)는 항상 400 이다 —
-          // `toHttpError` 로 흘려보내면 `gh` 의 "HTTP 404: Not Found (api.github.com/...)"
-          // 같은 메시지가 `/not found/i` 에 걸려, 이 라우트에서 404 는 "todo not found"
-          // 라는 계약을 깬다(finding F). "todo not found"/"already has" 는 이미 위에서
-          // 각자의 상태 코드로 먼저 반환됐으므로 여기 도달하는 실패는 전부 orchestrator
-          // 자신의 것이다.
+          // 위 사전 검사와 orchestrator 의 재검사 사이에는 `readOptionalBody` 의 await 이
+          // 있다 — 같은 todo 로 두 요청이 겹치면 둘 다 사전 검사를 통과하고, 먼저 끝난
+          // 쪽이 링크를 붙인 뒤 나중 쪽이 orchestrator 안에서 걸린다. 같은 "이미 있음"이
+          // 타이밍에 따라 409/400 으로 갈리지 않게 여기서도 409 로 매핑한다.
+          if (error instanceof IssueAlreadyExistsError) {
+            return alreadyHasIssue(error.url);
+          }
+          // 그 밖의 실패(repo 미설정, `gh` 실패 등)는 항상 400 이다 — `toHttpError` 로
+          // 흘려보내면 `gh` 의 "HTTP 404: Not Found (api.github.com/...)" 같은 메시지가
+          // `/not found/i` 에 걸려, 이 라우트에서 404 는 "todo not found" 라는 계약을
+          // 깬다(finding F).
           const message = error instanceof Error ? error.message : String(error);
           return errorResponse(message, 400);
         }
