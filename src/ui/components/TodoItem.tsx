@@ -17,7 +17,7 @@ interface TodoItemProps {
   depth: number;
 }
 
-/** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + doing 뱃지. 클릭 시 상세 드로어. */
+/** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + 댓글 뱃지 + doing 뱃지. 클릭 시 상세 드로어. */
 export function TodoItem({ todo, depth }: TodoItemProps) {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const openTodoDetail = useUiStore((s) => s.openTodoDetail);
@@ -88,6 +88,11 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
           type="button"
           className={`comment-badge ${unread ? 'is-unread' : ''}`}
           title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
+          aria-label={
+            unread
+              ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
+              : `댓글 ${todo.commentCount}개 — 눌러서 열기`
+          }
           onClick={() => void openTodoDetail(todo.id)}
         >
           💬 {todo.commentCount}
