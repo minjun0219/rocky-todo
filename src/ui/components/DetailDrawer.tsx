@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { TodoView } from '../../server';
+import { findIssueLink } from '../../github';
 import type { Comment, HistoryEntry } from '../../store';
 import {
   actorTone,
@@ -271,6 +273,83 @@ function TodoDetail() {
           ? statusButton('보관 해제', 'unarchive')
           : statusButton('▣ 보관', 'archive')}
       </div>
+      <IssueAction todo={todo} />
+    </div>
+  );
+}
+
+/** GitHub 이슈 — 없으면 만들고, 있으면 링크로 보낸다. 보드 repo 가 없으면 1회 입력받는다. */
+function IssueAction({ todo }: { todo: TodoView }) {
+  const boards = useUiStore((s) => s.boards);
+  const createIssue = useUiStore((s) => s.createIssue);
+  const setBoardRepo = useUiStore((s) => s.setBoardRepo);
+  const [repo, setRepo] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const board = boards.find((b) => b.id === todo.boardId);
+  const issueUrl = findIssueLink(todo.links);
+
+  if (issueUrl) {
+    return (
+      <div className="drawer-actions">
+        <a className="drawer-btn" href={issueUrl} target="_blank" rel="noreferrer">
+          이슈 열기 ↗
+        </a>
+      </div>
+    );
+  }
+
+  const submit = async (): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    try {
+      if (asking) {
+        await setBoardRepo(board?.key ?? '', repo.trim());
+        setAsking(false);
+      }
+      await createIssue(todo.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="issue-action">
+      {asking && (
+        <input
+          className="issue-repo-input"
+          value={repo}
+          placeholder="OWNER/NAME"
+          aria-label="GitHub 레포 (OWNER/NAME)"
+          onChange={(e) => setRepo(e.target.value)}
+        />
+      )}
+      <div className="drawer-actions">
+        <button
+          type="button"
+          className="drawer-btn"
+          disabled={busy || (asking && repo.trim() === '')}
+          onClick={() => {
+            if (!board?.repo && !asking) {
+              setAsking(true);
+              return;
+            }
+            void submit();
+          }}
+        >
+          {busy ? '만드는 중…' : 'GitHub 이슈 만들기'}
+        </button>
+      </div>
+      {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
+      {error && (
+        <div className="issue-error" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

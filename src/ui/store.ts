@@ -84,6 +84,14 @@ interface UiState {
   editComment: (id: string, body: string) => Promise<void>;
   archiveComment: (id: string) => Promise<void>;
   unarchiveComment: (id: string) => Promise<void>;
+  /**
+   * todo 를 GitHub 이슈로 만든다.
+   * @throws 서버가 거절한 이유를 그대로 던진다 — 보드에 repo 가 없거나(400), 이미 이슈가
+   *   있거나(409), gh 가 실패한 경우다. 호출자가 사용자에게 보여줘야 한다.
+   */
+  createIssue: (todoId: string) => Promise<void>;
+  /** 보드의 GitHub 레포를 설정한다. @throws 모양이 틀리면 400 을 그대로 던진다. */
+  setBoardRepo: (key: string, repo: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -387,6 +395,21 @@ export const useUiStore = create<UiState>((set, get) => ({
   unarchiveComment: async (id) => {
     const { actor } = get();
     await api(`/api/comments/${id}/unarchive`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  createIssue: async (todoId) => {
+    const { actor } = get();
+    await api(`/api/todos/${todoId}/issue`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  setBoardRepo: async (key, repo) => {
+    const { actor } = get();
+    await api(`/api/boards/${encodeURIComponent(key)}`, actor, {
+      method: 'PATCH',
+      body: JSON.stringify({ repo }),
+    });
     await get().refetch();
   },
 }));
