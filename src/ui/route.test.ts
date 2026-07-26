@@ -51,10 +51,20 @@ describe('parseRoute', () => {
 
   test('segments are percent-decoded', () => {
     expect(parseRoute('/my%20board')).toEqual({ board: 'my board' });
+    // buildPath 는 맨숫자만 내보내지만, 손으로 친 인코딩 숫자도 같은 화면을 뜻한다.
+    expect(parseRoute('/rocky/%31%32')).toEqual({ board: 'rocky', todoNumber: 12 });
+  });
+
+  test('the number is checked after decoding, so an encoded slash is still not a number', () => {
+    expect(parseRoute('/rocky/%2F12')).toEqual({ board: 'rocky' });
   });
 
   test('a malformed percent escape falls back to the all view rather than throwing', () => {
     expect(parseRoute('/%E0%A4%A')).toEqual({ board: 'all' });
+  });
+
+  test('a malformed escape in the number segment falls back to the board, not the all view', () => {
+    expect(parseRoute('/rocky/%E0%A4%A')).toEqual({ board: 'rocky' });
   });
 });
 

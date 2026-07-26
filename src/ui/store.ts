@@ -261,7 +261,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   closeDetail: () => {
     const state = window.history.state as { rockyTodoDetail?: boolean } | null;
     if (state?.rockyTodoDetail) {
-      // 우리가 만든 항목이니 뒤로가기로 되돌린다 — popstate 가 detail 을 닫는다.
+      // 우리가 만든 항목이니 뒤로가기로 되돌린다. popstate 의 applyRoute 도 어차피 닫지만,
+      // 닫힘은 여기서 먼저 확정한다 — 사용자가 누른 것은 "닫기"이지 "뒤로"가 아니라서,
+      // popstate 가 늦거나(back() 은 비동기다) 어떤 이유로 처리되지 않아도 드로어가 열린 채
+      // 주소만 바뀌는 상태로 남으면 안 된다. 되돌아갈 항목은 늘 상세가 없는 보드 경로다
+      // (드로어가 열려 있는 동안에는 백드롭이 목록 클릭을 막아 상세→상세 전환이 없다).
+      set({ detail: null });
       window.history.back();
       return;
     }

@@ -56,7 +56,11 @@ export function isAddressableBoardKey(key: string): boolean {
  *
  * 둘째 세그먼트는 **양의 정수일 때만** 번호로 읽는다 — 번호는 `MAX(number)+1` 로 발급되어
  * 1부터 시작하므로 `0`/음수/`12abc` 는 번호가 아니다. 셋째 이후 세그먼트는 무시한다.
- * 퍼센트 디코딩이 실패하는 경로(`/%E0%A4%A`)는 전체 보기로 떨어뜨린다 — 주소창에 손으로
+ *
+ * 두 세그먼트 모두 퍼센트 디코딩한다. 숫자 쪽은 `buildPath` 가 그런 주소를 내보내지 않지만
+ * (`${number}` 는 늘 맨숫자다) 손으로 친 `/rocky/%31%32` 도 같은 화면을 뜻하는 게 맞고,
+ * 디코딩 후에 정수 검사를 하므로 `%2F` 같은 게 통과할 여지도 없다. 디코딩이 실패하면
+ * — 보드 쪽은 전체 보기로, 숫자 쪽은 보드 화면으로 — 한 칸씩 떨어진다. 주소창에 손으로
  * 친 문자열이 앱을 죽이면 안 된다.
  */
 export function parseRoute(pathname: string): Route {
@@ -72,10 +76,19 @@ export function parseRoute(pathname: string): Route {
     return { board: 'all' };
   }
   const rawNumber = segments[1];
-  if (rawNumber === undefined || !/^[1-9]\d*$/.test(rawNumber)) {
+  if (rawNumber === undefined) {
     return { board };
   }
-  return { board, todoNumber: Number(rawNumber) };
+  let number: string;
+  try {
+    number = decodeURIComponent(rawNumber);
+  } catch {
+    return { board };
+  }
+  if (!/^[1-9]\d*$/.test(number)) {
+    return { board };
+  }
+  return { board, todoNumber: Number(number) };
 }
 
 /**
