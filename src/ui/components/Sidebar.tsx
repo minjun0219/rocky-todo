@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { useUiStore } from '../store';
 
-/** 좌측 보드 목록 — 전체 뷰 + 보드별 뷰 전환, 보드 생성, 아카이브 토글. */
+/** 좌측 보드 목록 — 전체 뷰 + 보드별 뷰 전환, 보드 생성. */
 export function Sidebar() {
   const boards = useUiStore((s) => s.boards);
   const todos = useUiStore((s) => s.todos);
   const selected = useUiStore((s) => s.selected);
   const setSelected = useUiStore((s) => s.setSelected);
-  const showArchived = useUiStore((s) => s.showArchived);
-  const setShowArchived = useUiStore((s) => s.setShowArchived);
   const createBoard = useUiStore((s) => s.createBoard);
 
   const [adding, setAdding] = useState(false);
@@ -95,16 +93,6 @@ export function Sidebar() {
           + 새 보드
         </button>
       )}
-      <div className="sidebar-foot">
-        <label className="archived-toggle">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-          />
-          보관됨 표시
-        </label>
-      </div>
     </nav>
   );
 }

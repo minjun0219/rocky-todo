@@ -211,11 +211,6 @@ textarea {
   animation: pulse 2.4s ease-in-out infinite;
 }
 
-.sidebar-foot {
-  margin-top: auto;
-  padding: 12px 10px 0;
-}
-
 .archived-toggle {
   display: flex;
   align-items: center;
@@ -747,12 +742,6 @@ body.is-drawer-open {
   }
   .board-item {
     white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .sidebar-foot {
-    margin-top: 0;
-    margin-left: auto;
-    padding: 0 0 0 12px;
     flex-shrink: 0;
   }
   .archived-toggle {
