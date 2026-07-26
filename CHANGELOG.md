@@ -1,5 +1,26 @@
 # @minjun0219/rocky-todo
 
+## 0.4.0
+
+### Minor Changes
+
+- [#8](https://github.com/minjun0219/rocky-todo/pull/8) [`aca8ec2`](https://github.com/minjun0219/rocky-todo/commit/aca8ec2809dbd5e1b9bcd6a94213122bc887ba51) Thanks [@minjun0219](https://github.com/minjun0219)! - todo 댓글 — 에이전트와 사용자가 같은 타임라인에서 대화한다 (웹 UI · MCP todo_write.comment · CLI comment · 훅 주입)
+
+- [#10](https://github.com/minjun0219/rocky-todo/pull/10) [`9abf32e`](https://github.com/minjun0219/rocky-todo/commit/9abf32e155fd3cdb7756bf5f59783e5573c45c31) Thanks [@minjun0219](https://github.com/minjun0219)! - 웹 UI 퍼머링크 — `/rocky/12` 로 보드와 작업을 주소에 담는다 (새로고침 유지 · 링크 공유).
+
+  주소가 보고 있는 화면을 담는다: `/`(전체 보기) · `/{board}`(그 보드) · `/{board}/{number}`(그
+  todo 상세 열림 — 예: `/rocky/12` 는 참조 `rocky#12` 와 대응). 보드를 고르면 주소가 바뀌고
+  새로고침해도 유지되며, todo 상세를 연 주소를 그대로 건네면 상대가 같은 화면을 본다. 드로어를
+  닫으면 보드 경로로 돌아가고 브라우저 뒤로/앞으로가 드로어 열림·닫힘을 따라간다.
+
+  없는 보드는 전체 보기로, 없거나 보관된 번호는 그 보드 화면으로 조용히 떨어진다 — 에러 화면
+  없음. 꼬리가 붙은 주소(`/rocky/12/뭐든`)는 화면을 띄우면서 `/rocky/12` 로 정리된다.
+
+  board key `api`/`mcp`(데몬의 `/api/*`·`/mcp` 라우트와 충돌)와 `.`/`..`(브라우저 URL 파서가
+  `/` 로 정규화)는 URL 로 가리킬 수 없다 — 보드 자체는 그대로 만들어지고 동작하지만 주소는
+  `/` 로 남고, 되돌아갈 수 없는 히스토리 항목도 만들지 않는다(그래서 상세를 닫아도 보드 선택이
+  풀리지 않는다).
+
 ## 0.3.0
 
 ### Minor Changes
