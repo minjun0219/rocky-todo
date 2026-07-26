@@ -133,6 +133,25 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
   읽음 커서는 `localStorage` 에만 있다 — 단일 사용자 로컬 데몬이라 서버측 읽음 상태는 두지
   않았다(다른 기기/브라우저에서는 다시 안 읽은 것으로 보인다).
 
+## GitHub 이슈로 만들기
+
+todo 하나를 GitHub 이슈로 올릴 수 있다 — 웹 UI 상세 드로어의 `GitHub 이슈 만들기` 버튼,
+CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssue: true }`
+셋 다 같은 경로를 탄다(새 MCP 도구가 아니라 기존 `todo_write` 의 필드다 — 도구는 여전히
+5개). 만들어진 이슈 URL 은 그 todo 의 링크에 자동으로 붙고(제목은 `#<이슈번호>`), 기존
+`updateTodo` 를 거치므로 히스토리·SSE·훅 주입에 그대로 실린다.
+
+- **인증**: `gh` CLI 를 빌린다 — 토큰을 저장하지 않는다. `gh` 가 없거나 로그인 전이면 그
+  사유를 그대로 보여준다(웹 UI 는 `role="alert"` 로 즉시 읽힌다).
+- **보드마다 GitHub 레포(`owner/name`)를 알아야 한다** — 보드는 원래 key(=git remote
+  basename)만 알아서 owner 를 모른다. 채우는 경로 셋:
+  - `rocky-todo board repo [OWNER/NAME]` — 인자 없으면 cwd 의 git remote 에서 유추
+  - `rocky-todo issue REF` 는 보드에 repo 가 없으면 cwd 에서 유추해 저장하고 진행한다
+  - 웹 UI 는 버튼을 처음 누를 때 `OWNER/NAME` 을 1회 입력받아 저장한다
+- 이미 이슈 링크가 있는 todo 는 다시 만들지 않는다. **역방향 동기화는 없다** — 이슈를
+  닫아도 todo 는 자동으로 완료되지 않고, 이슈 본문/제목이 사후에 바뀌어도 todo 에는
+  반영되지 않는다.
+
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
 에이전트→웹 방향은 SSE 로 실시간이고, 반대 방향은 **훅**이 닫는다: 사용자가 프롬프트를
@@ -179,8 +198,9 @@ rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
+rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global|--note] · board ls|add · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```

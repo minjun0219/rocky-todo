@@ -18,7 +18,9 @@ AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo �
 (`hooks/notify-todo.ts`)이 보드의 사람 변경을 세션에 주입한다(fail-open, Claude Code 전용).
 계층(parentId)+섹션+보드(키=레포 이름), priority p1–p4/라벨/마감/링크(GitHub·Todoist URL),
 doing 표시(start→actor+since), 전 mutation 히스토리 자동 기록,
-댓글(todo 별 타임라인 — description 대신 진행 보고를 남기는 자리), **삭제 없음(아카이브만)**.
+댓글(todo 별 타임라인 — description 대신 진행 보고를 남기는 자리),
+GitHub 이슈 생성(웹 UI 버튼/CLI `issue`/MCP `todo_write.createIssue` — `gh` CLI 를 빌려 토큰
+미저장, 이슈 URL 을 links 에 자동 첨부, 보드마다 `owner/name` repo 필요), **삭제 없음(아카이브만)**.
 설정은 user `rocky.json` 의 `todo` 블록만 읽는다(`src/rocky-config.ts` 경량 로더 — rocky 본체의
 `../core` 에 의존하지 않는다). project rocky.json 은 무시(전역 단일 인스턴스). 노출은 opt-in
 (`todo.expose`: `lan` / `tailscale-serve`, 기본 루프백).
@@ -47,6 +49,7 @@ rocky-todo/
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
+│   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
 │   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
 │   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
 ├── hooks/
