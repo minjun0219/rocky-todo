@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildPath,
   findTodoIdByNumber,
+  isAddressableBoardKey,
   parseRoute,
   RESERVED_BOARD_KEYS,
   routeForTodo,
@@ -82,6 +83,21 @@ describe('buildPath', () => {
     }
   });
 
+  test('dot-segment keys collapse to the root rather than emitting /. or /..', () => {
+    // encodeURIComponent 는 점을 이스케이프하지 않는다 — `/.`/`/..` 를 그대로 내보내면
+    // 브라우저 URL 파서가 `/` 로 정규화해, 주소가 만들어진 순간 다른 화면을 가리킨다.
+    for (const key of ['.', '..']) {
+      expect(buildPath({ board: key })).toBe('/');
+      expect(buildPath({ board: key, todoNumber: 12 })).toBe('/');
+    }
+  });
+
+  test('a key that merely contains dots is still addressable', () => {
+    expect(buildPath({ board: '.github' })).toBe('/.github');
+    expect(buildPath({ board: 'a.b' })).toBe('/a.b');
+    expect(buildPath({ board: '...' })).toBe('/...');
+  });
+
   test('round-trips with parseRoute', () => {
     for (const route of [
       { board: 'all' as const },
@@ -91,6 +107,25 @@ describe('buildPath', () => {
     ]) {
       expect(parseRoute(buildPath(route))).toEqual(route);
     }
+  });
+});
+
+describe('isAddressableBoardKey', () => {
+  test('ordinary keys are addressable', () => {
+    expect(isAddressableBoardKey('rocky')).toBe(true);
+    expect(isAddressableBoardKey('my board')).toBe(true);
+    expect(isAddressableBoardKey('.github')).toBe(true);
+  });
+
+  test('reserved keys are not — the daemon routes eat those paths', () => {
+    for (const key of RESERVED_BOARD_KEYS) {
+      expect(isAddressableBoardKey(key)).toBe(false);
+    }
+  });
+
+  test('dot segments are not — the browser normalizes them away', () => {
+    expect(isAddressableBoardKey('.')).toBe(false);
+    expect(isAddressableBoardKey('..')).toBe(false);
   });
 });
 

@@ -31,6 +31,27 @@ export interface Route {
 export const RESERVED_BOARD_KEYS: readonly string[] = ['api', 'mcp'];
 
 /**
+ * 이 board key 를 주소 첫 세그먼트로 **되읽을 수 있게** 실어 보낼 수 있는가.
+ *
+ * 두 부류가 실패한다:
+ * - `RESERVED_BOARD_KEYS` — 데몬의 `/api/*`·`/mcp` 라우트가 먼저 먹는다.
+ * - 점 세그먼트(`.` / `..`) — `encodeURIComponent` 가 점을 이스케이프하지 않아 `/.`·`/..`
+ *   가 그대로 나가고, 브라우저 URL 파서가 이를 `/` 로 정규화해 버린다. 주소가 만들어진
+ *   순간 다른 화면을 가리키게 되므로 실을 수 없는 것으로 본다.
+ *
+ * `ensureBoard`(`src/store.ts`)는 이 키들을 거부하지 않는다 — board key 는 레포 이름에서
+ * 유추되는 값이라 웹 UI 사정으로 조용히 망글링하거나 생성을 막지 않는다는 것이 그쪽 원칙이다.
+ * 대신 주소만 전체 보기와 같은 `/` 로 접는다.
+ */
+export function isAddressableBoardKey(key: string): boolean {
+  if (RESERVED_BOARD_KEYS.includes(key)) {
+    return false;
+  }
+  const encoded = encodeURIComponent(key);
+  return encoded !== '.' && encoded !== '..';
+}
+
+/**
  * `/rocky/12` → `{ board: 'rocky', todoNumber: 12 }`.
  *
  * 둘째 세그먼트는 **양의 정수일 때만** 번호로 읽는다 — 번호는 `MAX(number)+1` 로 발급되어
@@ -60,12 +81,13 @@ export function parseRoute(pathname: string): Route {
 /**
  * `{ board: 'rocky', todoNumber: 12 }` → `/rocky/12`.
  *
- * 전체 보기와 예약어 board key 는 `/` 를 낸다. `api`/`mcp` 보드는 정상적으로 존재하고
- * 선택도 되지만, 되읽을 수 없는(REST 라우트와 충돌하는) 주소를 내보내느니 덜 정확한
- * `/` 를 택한다.
+ * 전체 보기와 `isAddressableBoardKey` 가 거부하는 board key 는 `/` 를 낸다. 그런 보드도
+ * 정상적으로 존재하고 선택도 되지만, 되읽을 수 없는 주소를 내보내느니 덜 정확한 `/` 를
+ * 택한다. 이 폴백에 기대는 쪽은 히스토리 항목도 만들지 않아야 한다 — `src/ui/store.ts` 의
+ * "주소가 그대로면 push 하지 않는다" 규칙이 그 짝이다.
  */
 export function buildPath(route: Route): string {
-  if (route.board === 'all' || RESERVED_BOARD_KEYS.includes(route.board)) {
+  if (route.board === 'all' || !isAddressableBoardKey(route.board)) {
     return '/';
   }
   const board = `/${encodeURIComponent(route.board)}`;
