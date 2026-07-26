@@ -298,6 +298,59 @@ describe('formatTodoLine', () => {
   });
 });
 
+describe('comment command paths', () => {
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-comment-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({ store });
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('todoRefPath builds the comments endpoint', () => {
+    expect(todoRefPath('rocky#3', '/comments', 'rocky')).toBe(
+      '/api/todos/rocky%233/comments?board=rocky',
+    );
+  });
+
+  test('posting through the comments path creates a comment', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const comment = await request<{ body: string; todoId: string }>(
+      ctx,
+      'POST',
+      todoRefPath(`rocky#${todo.number}`, '/comments', 'rocky'),
+      { body: '한 마디' },
+    );
+    expect(comment.todoId).toBe(todo.id);
+    expect(comment.body).toBe('한 마디');
+  });
+
+  test('show payload carries comments', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    store.addComment(todo.id, '미리 달아둔 댓글', 'logan');
+    const detail = await request<{ comments: { body: string }[] }>(
+      ctx,
+      'GET',
+      todoRefPath(`rocky#${todo.number}`, '', 'rocky'),
+    );
+    expect(detail.comments.map((c) => c.body)).toEqual(['미리 달아둔 댓글']);
+  });
+});
+
 describe('bin/rocky-todo entry', () => {
   // bin/ 은 확장자가 없어 tsc(include: src/hooks/scripts)·biome 어느 쪽도 검사하지
   // 않는다. 진입점이 실제로 로드되는지는 이 스모크만 보장한다 — `help` 는 데몬을

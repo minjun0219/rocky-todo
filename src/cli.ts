@@ -7,7 +7,7 @@ import { resolveTodoRuntimeConfig } from './config';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
-import type { Board, HistoryEntry, Section } from './store';
+import type { Board, Comment, HistoryEntry, Section } from './store';
 import { tailscaleServeOff, tailscaleServeOn, tailscaleServeStatus } from './tailscale';
 import { linkLabel } from './ui/lib';
 
@@ -237,6 +237,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo add "제목" [--board K] [--section S] [--parent REF] [--desc MD]
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
+  rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
@@ -416,11 +417,11 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error('usage: rocky-todo show REF');
       }
-      const detail = await request<{ todo: TodoView; history: HistoryEntry[] }>(
-        ctx,
-        'GET',
-        todoRefPath(id, '', board),
-      );
+      const detail = await request<{
+        todo: TodoView;
+        history: HistoryEntry[];
+        comments: Comment[];
+      }>(ctx, 'GET', todoRefPath(id, '', board));
       print(detail, () => {
         const t = detail.todo;
         const lines = [t.ref, formatTodoLine(t, 0)];
@@ -430,8 +431,18 @@ export async function runCli(): Promise<void> {
         if (t.links.length > 0) {
           lines.push('', ...t.links.map((l) => `↗ ${l.url}`));
         }
-        lines.push('', `id: ${t.id}`, '', '히스토리:');
-        for (const h of detail.history.slice(0, 8)) {
+        lines.push('', `id: ${t.id}`);
+        if (detail.comments.length > 0) {
+          lines.push('', '댓글:');
+          for (const c of detail.comments) {
+            const stamp = c.createdAt.slice(0, 16).replace('T', ' ');
+            lines.push(`  ${stamp} ${c.actor}: ${c.body.replace(/\s+/g, ' ')}`);
+          }
+        }
+        lines.push('', '히스토리:');
+        // 댓글은 위 섹션이 본문까지 보여준다 — 히스토리에서 같은 사건을 한 줄 더 찍지 않는다.
+        const rows = detail.history.filter((h) => !h.action.startsWith('comment'));
+        for (const h of rows.slice(0, 8)) {
           lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
         }
         return lines.join('\n');
@@ -455,6 +466,19 @@ export async function runCli(): Promise<void> {
         links: list(flags.link)?.map((url) => ({ url })),
       });
       print(todo, () => `✓ ${todo.ref} 수정`);
+      return;
+    }
+
+    case 'comment': {
+      const id = rest[0];
+      const body = rest[1];
+      if (!id || !body) {
+        throw new Error('usage: rocky-todo comment REF "본문"');
+      }
+      const comment = await request<Comment>(ctx, 'POST', todoRefPath(id, '/comments', board), {
+        body,
+      });
+      print(comment, () => `✓ ${id} 댓글 작성`);
       return;
     }
 
