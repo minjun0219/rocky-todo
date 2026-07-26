@@ -88,6 +88,18 @@ function TodoDetail() {
     }
   }, [todo?.title, editingTitle]);
 
+  // 드로어가 todo A → B 로 전환돼도(언마운트 없이 재사용) 핸드오프 패널의 로컬 상태가
+  // 새 todo 로 새어 들어가면 안 된다 — 열려 있던 패널·입력 중이던 메모가 그대로 남으면
+  // "보내기"를 눌렀을 때 A 에서 쓴 메모가 B 의 핸드오프로 조용히 전송된다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: todo?.id 는 본문에서 값으로 읽지 않는 리셋 트리거다 — todo 가 바뀌었다는 사실 자체가 신호다.
+  useEffect(() => {
+    setHandoffOpen(false);
+    setHandoffNote('');
+    setHandoffSession('');
+    setHandoffBusy(false);
+    setHandoffError(null);
+  }, [todo?.id]);
+
   if (!todo) {
     return null;
   }
