@@ -33,17 +33,42 @@ const defaultRun: RunCommand = (cmd, stdin) => {
 /** `owner/name` — GitHub 의 소유자·레포 이름이 허용하는 문자만. */
 const REPO_SLUG = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
+/** 스킴이 붙은 원격 URL(`https://`, `http://`, `ssh://`, `git://`)만 인식한다 — 그 외는 scp-like 로 취급. */
+const SCHEME_URL = /^(?:https?|ssh|git):\/\//i;
+
+/** scp-like 원격(`git@github.com:o/n.git`, `github.com:o/n`) — user@ 접두사는 최대 하나, 호스트는 앵커된 정확 일치. */
+const SCP_LIKE = /^(?:[^@/]+@)?github\.com:(.+)$/;
+
 /**
  * git remote URL → `owner/name`. GitHub 이 아니거나 해석할 수 없으면 undefined.
  * `git@github.com:o/n.git` · `https://github.com/o/n(.git)` · `ssh://git@github.com/o/n` 을 받는다.
+ *
+ * 호스트는 문자열 어딘가에 `github.com` 이 등장하는지가 아니라, 실제 파싱된 호스트가
+ * 정확히 `github.com` 인지로 판별한다(대소문자 무시) — `evil.com/github.com/...` 같은
+ * lookalike 가 통과하지 않게 하기 위해서다.
  */
 export function parseRepoFromRemote(url: string): string | undefined {
   const trimmed = url.trim().replace(/\/+$/, '');
   if (trimmed === '') {
     return undefined;
   }
-  const match = /(?:^|@|\/\/)github\.com[:/]+(.+)$/.exec(trimmed);
-  const tail = match?.[1];
+
+  if (SCHEME_URL.test(trimmed)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      return undefined;
+    }
+    if (parsed.hostname.toLowerCase() !== 'github.com') {
+      return undefined;
+    }
+    const slug = parsed.pathname.replace(/^\/+/, '').replace(/\.git$/, '');
+    return REPO_SLUG.test(slug) ? slug : undefined;
+  }
+
+  const scp = SCP_LIKE.exec(trimmed);
+  const tail = scp?.[1];
   if (!tail) {
     return undefined;
   }
@@ -61,8 +86,9 @@ export function isRepoSlug(value: string): boolean {
  * 여기 하나로 둔다. PR URL(`/pull/<n>`)은 이슈가 아니다.
  */
 export function findIssueLink(links: readonly { url: string }[]): string | undefined {
-  return links.find((link) => /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+/.test(link.url))
-    ?.url;
+  return links.find((link) =>
+    /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+(?:[/?#]|$)/.test(link.url),
+  )?.url;
 }
 
 /** 이슈 URL 끝의 번호. 링크 제목(`#12`)을 만드는 데 쓴다. */
@@ -106,14 +132,15 @@ export function createIssue(
   }
   const output = `${result.stdout}${result.stderr}`.trim();
   if (result.code !== 0) {
-    if (/auth|login|credential/i.test(output)) {
+    if (/\bauth\b|\blogin\b|\bcredential/i.test(output)) {
       return { ok: false, message: `${output}\n(먼저: gh auth login)` };
     }
     return { ok: false, message: output === '' ? 'gh issue create 실패' : output };
   }
-  const url = result.stdout.trim().split('\n').at(-1)?.trim() ?? '';
-  if (!/^https:\/\/github\.com\//.test(url)) {
+  // 위치(마지막 줄)를 가정하지 않는다 — 뒤따르는 경고가 있어도 stdout 어디서든 URL 을 찾는다.
+  const urlMatch = /https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+/.exec(result.stdout);
+  if (!urlMatch) {
     return { ok: false, message: `gh 가 이슈 URL 을 돌려주지 않았다: ${output || '(빈 출력)'}` };
   }
-  return { ok: true, url };
+  return { ok: true, url: urlMatch[0] };
 }

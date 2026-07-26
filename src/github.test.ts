@@ -55,6 +55,23 @@ describe('parseRepoFromRemote', () => {
     expect(parseRepoFromRemote('')).toBeUndefined();
     expect(parseRepoFromRemote('https://github.com/onlyowner')).toBeUndefined();
   });
+
+  test('a lookalike host is not GitHub', () => {
+    expect(parseRepoFromRemote('https://evil.com//github.com/owner/repo')).toBeUndefined();
+    expect(parseRepoFromRemote('git@evil.com@github.com:owner/repo.git')).toBeUndefined();
+    expect(parseRepoFromRemote('https://github.com.evil.com/owner/repo')).toBeUndefined();
+    expect(parseRepoFromRemote('https://notgithub.com/owner/repo')).toBeUndefined();
+  });
+
+  test('the scp-like form works with and without a user prefix', () => {
+    expect(parseRepoFromRemote('github.com:owner/repo.git')).toBe('owner/repo');
+    expect(parseRepoFromRemote('git@github.com:owner/repo')).toBe('owner/repo');
+  });
+
+  test('malformed input does not throw', () => {
+    expect(parseRepoFromRemote('https://')).toBeUndefined();
+    expect(parseRepoFromRemote('::::')).toBeUndefined();
+  });
 });
 
 describe('isRepoSlug', () => {
@@ -90,6 +107,16 @@ describe('findIssueLink', () => {
 
   test('no links means none', () => {
     expect(findIssueLink([])).toBeUndefined();
+  });
+
+  test('the issue number must end at a boundary', () => {
+    expect(findIssueLink([{ url: 'https://github.com/o/n/issues/12abc' }])).toBeUndefined();
+    expect(findIssueLink([{ url: 'https://github.com/o/n/issues/12/' }])).toBe(
+      'https://github.com/o/n/issues/12/',
+    );
+    expect(findIssueLink([{ url: 'https://github.com/o/n/issues/12#comment' }])).toBe(
+      'https://github.com/o/n/issues/12#comment',
+    );
   });
 });
 
@@ -153,6 +180,13 @@ describe('createIssue', () => {
     expect(result.ok === false && result.message).toContain('gh auth login');
   });
 
+  test('does not mistake "Author" for an auth failure', () => {
+    const run = fakeRun({ code: 1, stdout: '', stderr: 'Author field required' });
+    const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.message).not.toContain('gh auth login');
+  });
+
   test('surfaces any other failure verbatim', () => {
     const run = fakeRun({ code: 1, stdout: '', stderr: 'could not resolve to a Repository' });
     const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
@@ -164,5 +198,16 @@ describe('createIssue', () => {
     const run = fakeRun({ code: 0, stdout: '\n', stderr: '' });
     const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
     expect(result.ok).toBe(false);
+    expect(result.ok === false && result.message).toContain('URL');
+  });
+
+  test('finds the issue url even with a trailing warning after it', () => {
+    const run = fakeRun({
+      code: 0,
+      stdout: 'https://github.com/o/n/issues/9\nwarning: something noisy\n',
+      stderr: '',
+    });
+    const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
+    expect(result).toEqual({ ok: true, url: 'https://github.com/o/n/issues/9' });
   });
 });
