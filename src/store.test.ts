@@ -658,4 +658,20 @@ describe('comments', () => {
   test('unknown comment id throws not found', () => {
     expect(() => store.updateComment('nosuchid', '본문', 'logan')).toThrow(/comment not found/);
   });
+
+  test('commentStatsOf counts only unarchived comments', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    expect(store.commentStatsOf(todo.id)).toEqual({ count: 0, lastAt: undefined });
+
+    const first = store.addComment(todo.id, '첫째', 'logan');
+    const second = store.addComment(todo.id, '둘째', 'logan');
+    const stats = store.commentStatsOf(todo.id);
+    expect(stats.count).toBe(2);
+    expect(stats.lastAt).toBe(second.createdAt);
+
+    store.setCommentArchived(second.id, true, 'logan');
+    const after = store.commentStatsOf(todo.id);
+    expect(after.count).toBe(1);
+    expect(after.lastAt).toBe(first.createdAt);
+  });
 });

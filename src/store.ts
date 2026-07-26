@@ -1035,6 +1035,22 @@ export class TodoStore {
     return { ...current, archivedAt: at ?? undefined };
   }
 
+  /**
+   * 목록 배지용 집계 — 보관되지 않은 댓글 수와 마지막 작성 시각.
+   *
+   * `withRef` 가 todo 하나마다 한 번 호출한다(N+1). 데몬 안 in-process SQLite 이고
+   * `idx_comments_todo` 가 커버하는 질의라 보드 규모(수십~수백 건)에서 비용이 무시할
+   * 수준이다 — 대신 모든 호출부(REST 목록·MCP·CLI)가 코드 변경 없이 집계를 얻는다.
+   */
+  commentStatsOf(todoId: string): { count: number; lastAt?: string } {
+    const row = this.db
+      .query<{ n: number; last: string | null }, [string]>(
+        'SELECT COUNT(*) AS n, MAX(created_at) AS last FROM comments WHERE todo_id = ? AND archived_at IS NULL',
+      )
+      .get(todoId);
+    return { count: row?.n ?? 0, lastAt: row?.last ?? undefined };
+  }
+
   private mustGetComment(id: string): Comment {
     const row = this.db.query<CommentRow, [string]>('SELECT * FROM comments WHERE id = ?').get(id);
     if (!row) {

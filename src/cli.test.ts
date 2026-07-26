@@ -233,6 +233,7 @@ describe('formatTodoLine', () => {
     position: 1,
     createdAt: '2026-07-23T00:00:00.000Z',
     updatedAt: '2026-07-23T00:00:00.000Z',
+    commentCount: 0,
   };
 
   test('todo status glyph and number prefix', () => {
@@ -258,6 +259,7 @@ describe('formatTodoLine', () => {
         position: 1,
         createdAt: '2026-07-25T00:00:00.000Z',
         updatedAt: '2026-07-25T00:00:00.000Z',
+        commentCount: 0,
       } as TodoView,
       0,
     );
