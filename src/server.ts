@@ -35,15 +35,6 @@ export interface TodoServerOptions {
    * (테스트가 호출 횟수에 의존할 수 있고, 주입의 목적 자체가 결정론이다).
    */
   sessions?: () => SessionsResult;
-  /**
-   * 이 요청이 루프백(127.0.0.1/::1)에서 왔는가. 기본은 항상 true(루프백으로 간주) —
-   * `Request` 객체만으로는 원격 주소를 알 수 없어(정보는 `Bun.serve` 가 반환하는
-   * `server.requestIP(req)` 에만 있다) 데몬 조립 지점(`daemon.ts`)이 실제 판별해
-   * 주입한다. 기본값을 true 로 둬야 이 옵션을 안 넘기는 기존 테스트/DI 가 그대로 돈다.
-   * `POST /api/handoffs/claim` 전용 가드 — 훅은 항상 127.0.0.1 로 붙으므로 이 판정에
-   * 기능 손실이 없다.
-   */
-  isLoopback?: (req: Request) => boolean;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -135,7 +126,6 @@ function toHttpError(error: unknown): Response {
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store, run } = options;
   const sessionsOf = options.sessions ?? createCachedListSessions();
-  const isLoopbackOf = options.isLoopback ?? (() => true);
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -569,18 +559,15 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         // catch-all(`not found: METHOD path`)과 구분이 안 가게 해, 있는 걸 알고 두드리는
         // 시나리오를 403(있는데 막혔다)보다 덜 흥미롭게 만든다.
         //
-        // ⚠️ 이 가드는 `lan` 채널에서만 실제로 막는다. `lan` 은 데몬이 `0.0.0.0` 에
-        // 직접 바인딩해(`src/config.ts` 의 host 유도) 원격 요청의 소스 주소가 진짜
-        // LAN IP 로 찍히므로 `isLoopbackOf`(`server.requestIP()` 기반)가 정확히
-        // 걸러낸다. `tailscale-serve` 는 다르다 — 데몬은 계속 127.0.0.1 에만
-        // 바인딩하고(`src/tailscale.ts` 상단 주석 참고) tailscaled 의 로컬 프록시가
-        // 테일넷 요청을 다시 `127.0.0.1:<port>` 로 다이얼해 전달한다. 그래서 어느
-        // 테일넷 기기에서 왔든 여기서 보는 소스 주소는 항상 127.0.0.1 이고, 이 가드는
-        // 통과된다 — `tailscale-serve` 로 열면 테일넷에 접근할 수 있는 기기는 claim 도
-        // 부를 수 있다는 뜻이다. 코드로 더 좁히려면 tailscale serve 가 주입하는
-        // `Tailscale-User-*` 헤더로 발신자를 구분하는 방법이 있지만, 이 헤더가 실제로
-        // 덮어써지는지(스푸핑 불가한지) 이 환경에서 실측하지 못해 아직 넣지 않았다.
-        if (!isLoopbackOf(req)) {
+        // 판별은 이슈 라우트와 같은 `isLocalRequest` 를 쓴다 — 주소만 보면 부족하다.
+        // `lan` 은 데몬이 `0.0.0.0` 에 직접 바인딩해 원격 소스 주소가 진짜 LAN IP 로
+        // 찍히지만, `tailscale-serve` 는 데몬을 127.0.0.1 에 두고 tailscaled 가 테일넷
+        // 요청을 루프백으로 재다이얼하므로(`src/tailscale.ts` 상단 주석) 주소만으로는
+        // 원격과 로컬이 구분되지 않는다. `isLocalRequest` 는 루프백 **그리고** 중계
+        // 헤더(`Tailscale-User-*` / `X-Forwarded-*`) 부재를 함께 보므로 두 채널 모두
+        // 막는다. 헤더는 위조로 "있게" 만들 수는 있어도 "없게" 만들 수는 없어, 위조는
+        // 요청을 덜 신뢰하는 방향으로만 작용한다.
+        if (!local) {
           return errorResponse(`not found: ${method} ${path}`, 404);
         }
         const body = await readBody(req);

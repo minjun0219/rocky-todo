@@ -27,36 +27,6 @@ import { ensureTailscaleServe } from './tailscale';
  * 보지 않는다 (어디서 기동돼도 같은 데몬이어야 하므로).
  */
 
-/**
- * 주소 하나가 루프백인가 — `server.requestIP(req).address` 판정의 순수 부분만 뺐다
- * (테스트가 시임 없이 이 로직 자체를 검증할 수 있게).
- *
- * `null`(판별 불가 — 이론상 unix socket 등)은 **fail-open(루프백으로 간주)** 한다.
- * 현재 배선에서는 이 분기가 실제로 안 밟힌다: `resolveTodoRuntimeConfig` 가 host 를
- * 항상 `127.0.0.1` 또는 `0.0.0.0` 로만 유도하고(unix socket 바인딩 경로 없음), 이
- * 가드를 쓰는 건 `POST /api/handoffs/claim` 하나뿐인데 그 호출자(Stop/UserPromptSubmit
- * 훅)는 전부 `http://127.0.0.1:<port>` 로만 접속한다. 그래도 fail-open 을 고른 이유:
- * fail-closed 로 두면 훅이 (있지도 않은 unix-socket 경로에서) 이 가드를 잘못 타 claim
- * 이 막히는 쪽의 리스크가, lan/tailscale-serve 로 열었을 때 이 분기가 실제로 밟혀
- * claim 이 새는 쪽의 리스크보다 훨씬 크다고 판단했다 — 후자는 현재 배선상 도달
- * 불가능하지만 전자(훅 차단)는 배선이 바뀌면 바로 사용자 체감 장애가 된다.
- */
-export function isLoopbackAddress(address: string | null): boolean {
-  if (!address) {
-    return true;
-  }
-  if (address === '::1') {
-    return true;
-  }
-  // IPv4-mapped IPv6(`::ffff:127.0.0.1`) — 현재 config 상 도달 불가하지만 순수 함수로
-  // 뺀 김에 처리해 둔다.
-  const mapped = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i.exec(address);
-  const ipv4 = mapped?.[1] ?? address;
-  // 127.0.0.0/8 전체가 루프백이다(127.0.0.1 만이 아니다) — 마찬가지로 현재 config 로는
-  // 127.0.0.1 외의 127.x 가 나올 일이 없지만 순수 함수 계약으로는 맞게 처리한다.
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ipv4);
-}
-
 async function isAlreadyRunning(port: number): Promise<boolean> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
@@ -84,16 +54,8 @@ export async function startDaemon(): Promise<void> {
 
   mkdirSync(runtime.dir, { recursive: true });
   const store = new TodoStore({ dbPath: join(runtime.dir, 'todo.db') });
-  // `server` 는 아래 Bun.serve 호출이 끝나야 채워지지만, 이 클로저가 실제로 불리는
-  // 시점(요청 처리)은 반드시 그 이후다 — Bun.serve 가 반환하기 전에는 소켓이 열리지
-  // 않는다. `POST /api/handoffs/claim` 의 루프백 판정에 필요한 원격 주소는 Request
-  // 객체엔 없고 `server.requestIP(req)` 로만 얻을 수 있어(server.ts 의 `isLoopback`
-  // 주석 참고) 여기서 DI 로 넘긴다.
   let server: ReturnType<typeof Bun.serve> | undefined;
-  const api = buildTodoServer({
-    store,
-    isLoopback: (req) => isLoopbackAddress(server?.requestIP(req)?.address ?? null),
-  });
+  const api = buildTodoServer({ store });
   const mcp = createMcpFetchHandler({ store });
 
   // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.

@@ -902,16 +902,16 @@ describe('handoff routes', () => {
   const handleWith = (sessions: () => SessionsResult) => buildTodoServer({ store, sessions }).fetch;
 
   const reqTo = (
-    h: (request: Request) => Promise<Response>,
+    h: (request: Request, peerAddress?: string) => Promise<Response>,
     path: string,
-    init?: RequestInit & { actor?: string },
+    init?: RequestInit & { actor?: string; peer?: string },
   ): Promise<Response> => {
     const headers = new Headers(init?.headers);
     if (init?.body !== undefined) {
       headers.set('content-type', 'application/json');
     }
     headers.set('x-rocky-actor', init?.actor ?? 'tester');
-    return h(new Request(`${BASE}${path}`, { ...init, headers }));
+    return h(new Request(`${BASE}${path}`, { ...init, headers }), init?.peer ?? '127.0.0.1');
   };
 
   const SESSIONS = {
@@ -1118,27 +1118,57 @@ describe('handoff routes', () => {
     expect(calls).toBe(1);
   });
 
-  test('claim 은 루프백 요청만 받는다 — 아니면 404', async () => {
+  test('claim 은 LAN 에서 직접 온 요청을 404 로 막는다', async () => {
     const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
     store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
-    const remote = buildTodoServer({
-      store,
-      sessions: () => SESSIONS,
-      isLoopback: () => false,
-    }).fetch;
 
-    const res = await reqTo(remote, '/api/handoffs/claim', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
-    });
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        peer: '192.168.1.20',
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
     expect(res.status).toBe(404);
+    // 큐가 소진되지 않았어야 한다 — 막는 목적이 바로 이것이다.
+    expect(store.pendingHandoffOf(todo.id)).toBeDefined();
+  });
 
-    // 루프백(기본값)이면 그대로 동작한다 — 회귀 확인.
-    const local = handleWith(() => SESSIONS);
-    const localRes = await reqTo(local, '/api/handoffs/claim', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
-    });
-    expect(localRes.status).toBe(200);
+  // `tailscale-serve` 는 데몬을 127.0.0.1 에 두고 tailscaled 가 테일넷 요청을 루프백으로
+  // 재다이얼한다 — 주소만 보는 가드는 이 경로를 통과시킨다. 중계 헤더까지 봐야 막힌다.
+  test('claim 은 tailscale 프록시를 거친 요청도 404 로 막는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        peer: '127.0.0.1',
+        headers: { 'tailscale-user-login': 'someone@example.com' },
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
+    expect(res.status).toBe(404);
+    expect(store.pendingHandoffOf(todo.id)).toBeDefined();
+  });
+
+  test('claim 은 로컬 훅의 요청은 그대로 받는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
   });
 });
