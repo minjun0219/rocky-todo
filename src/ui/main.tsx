@@ -31,6 +31,15 @@ function App() {
     };
     window.addEventListener('popstate', onPopState);
 
+    // 모바일 브라우저는 탭이 백그라운드로 가면 EventSource 와 타이머를 얼린다. 돌아와도
+    // 끊겨 있던 동안의 변경은 오지 않으므로, SSE 재연결을 기다리지 않고 즉시 다시 읽는다.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refetch();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     const source = new EventSource('/api/events');
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
@@ -43,6 +52,7 @@ function App() {
     const tick = setInterval(() => void refetch(), 60_000);
     return () => {
       window.removeEventListener('popstate', onPopState);
+      document.removeEventListener('visibilitychange', onVisible);
       source.close();
       clearTimeout(debounce.current);
       clearInterval(tick);
