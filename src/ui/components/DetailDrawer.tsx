@@ -341,14 +341,29 @@ function Markdown({ text }: { text: string }) {
 function CommentComposer({ todoId }: { todoId: string }) {
   const addComment = useUiStore((s) => s.addComment);
   const [body, setBody] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
-  const submit = () => {
+  /**
+   * 등록에 성공했을 때만 입력을 비운다 — 데몬이 내려갔거나 요청이 실패하면 방금 쓴
+   * 본문이 화면에서 그대로 사라진다(되돌릴 방법 없음). 실패하면 초안을 남기고 이유를
+   * 보여준다 — 보드 추가(`Sidebar`)와 같은 방침.
+   */
+  const submit = async () => {
     const next = body.trim();
-    if (next === '') {
+    if (next === '' || sending) {
       return;
     }
-    setBody('');
-    void addComment(todoId, next);
+    setSending(true);
+    try {
+      await addComment(todoId, next);
+      setBody('');
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -363,13 +378,23 @@ function CommentComposer({ todoId }: { todoId: string }) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            submit();
+            void submit();
           }
         }}
       />
+      {error && (
+        <div className="comment-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="drawer-actions">
-        <button type="button" className="drawer-btn" onClick={submit} disabled={body.trim() === ''}>
-          등록
+        <button
+          type="button"
+          className="drawer-btn"
+          onClick={() => void submit()}
+          disabled={body.trim() === '' || sending}
+        >
+          {sending ? '등록 중…' : '등록'}
         </button>
       </div>
     </div>

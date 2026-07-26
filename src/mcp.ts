@@ -174,9 +174,9 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (!todo) {
           throw new Error(`todo not found: ${id}`);
         }
-        // undefined 로만 "댓글 없음"을 판단한다 — 빈 문자열/공백은 그대로 store 로
-        // 넘겨 store 의 trim-then-reject 검증에 걸리게 한다. `if (comment)` 였을 때는
-        // `comment: ""` 가 아무 것도 안 쓰고 성공해버려(REST 는 400) 표면마다 동작이 갈렸다.
+        // undefined 로만 "댓글 없음"을 판단한다 — 빈 문자열/공백은 위 사전 검증에서
+        // 이미 에러로 끊긴다. `if (comment)` 였을 때는 `comment: ""` 가 아무 것도 안 쓰고
+        // 성공해버려(REST 는 400) 표면마다 동작이 갈렸다.
         if (comment !== undefined) {
           store.addComment(todo.id, comment, who);
         }

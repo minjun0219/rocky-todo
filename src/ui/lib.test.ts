@@ -336,4 +336,30 @@ describe('seen cursor', () => {
     const broken = fakeStorage({ 'rocky-todo-seen-comments': '{not json' });
     expect(readSeen(broken)).toEqual({});
   });
+
+  test('readSeen drops non-string cursors and they read as unread', () => {
+    const storage = fakeStorage({
+      'rocky-todo-seen-comments': JSON.stringify({
+        good: '2026-07-26T02:00:00.000Z',
+        num: 1753490000000,
+        obj: { at: '2026-07-26T02:00:00.000Z' },
+        nul: null,
+      }),
+    });
+    expect(readSeen(storage)).toEqual({ good: '2026-07-26T02:00:00.000Z' });
+
+    // 걸러진 커서는 "본 적 없음" — 미확인으로 떨어져야 배지가 켜진다.
+    const seen = readSeen(storage);
+    expect(hasUnreadComments({ id: 'num', lastCommentAt: '2026-07-26T02:00:00.000Z' }, seen)).toBe(
+      true,
+    );
+    expect(hasUnreadComments({ id: 'good', lastCommentAt: '2026-07-26T01:00:00.000Z' }, seen)).toBe(
+      false,
+    );
+  });
+
+  test('readSeen ignores a non-object payload', () => {
+    expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': '["a"]' }))).toEqual({});
+    expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': 'null' }))).toEqual({});
+  });
 });

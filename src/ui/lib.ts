@@ -336,14 +336,26 @@ export interface SeenStorage {
 
 const SEEN_KEY = 'rocky-todo-seen-comments';
 
-/** todo id → 마지막으로 확인한 댓글 시각(ISO). 깨진 값은 빈 커서로 취급한다. */
+/**
+ * todo id → 마지막으로 확인한 댓글 시각(ISO). 깨진 값은 빈 커서로 취급한다.
+ *
+ * 값까지 문자열인지 검사해 걸러낸다 — localStorage 는 다른 탭·구버전·수동 편집이
+ * 무엇이든 써 넣을 수 있고, 숫자/객체가 섞이면 `hasUnreadComments` 의 문자열 비교가
+ * 커서를 엉뚱하게 판정한다. 걸러진 항목은 "본 적 없음"(= 미확인)으로 떨어진다.
+ */
 export function readSeen(storage: SeenStorage): Record<string, string> {
   try {
     const parsed = JSON.parse(storage.getItem(SEEN_KEY) ?? '{}') as unknown;
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
     }
-    return parsed as Record<string, string>;
+    const seen: Record<string, string> = {};
+    for (const [id, at] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof at === 'string') {
+        seen[id] = at;
+      }
+    }
+    return seen;
   } catch {
     return {};
   }
