@@ -1,5 +1,11 @@
 # @minjun0219/rocky-todo
 
+## 0.4.0
+
+### Minor Changes
+
+- [#8](https://github.com/minjun0219/rocky-todo/pull/8) [`aca8ec2`](https://github.com/minjun0219/rocky-todo/commit/aca8ec2809dbd5e1b9bcd6a94213122bc887ba51) Thanks [@minjun0219](https://github.com/minjun0219)! - todo 댓글 — 에이전트와 사용자가 같은 타임라인에서 대화한다 (웹 UI · MCP todo_write.comment · CLI comment · 훅 주입)
+
 ## 0.3.0
 
 ### Minor Changes
