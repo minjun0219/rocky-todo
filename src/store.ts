@@ -603,6 +603,9 @@ export class TodoStore {
    * 다듬어 넘기지만, 스토어를 통과한 값은 그대로 `gh -R` 인자가 되므로 공백이 섞인 채
    * 저장되면 이후 모든 이슈 생성이 조용히 실패한다. 마지막 관문에서 막는 편이 싸다.
    *
+   * trim 한 값이 기존 값과 같으면 write 도 히스토리도 남기지 않는다(no-op) — 같은 값의
+   * 반복 설정이 흔한 경로라서다.
+   *
    * @throws 없는 보드면 — 여기서 보드를 만들지 않는다. 오타난 key 로 빈 보드가 생기는
    *   편이 조용한 사고가 된다(`ensureSection` 과 같은 판단).
    */
@@ -614,6 +617,13 @@ export class TodoStore {
       throw new Error(`board not found: ${key}`);
     }
     const normalized = repo.trim();
+    // 같은 값이면 아무것도 하지 않는다 — `createIssueForTodo` 는 `options.repo` 가 오면
+    // 매번 이걸 부르고, `issue REF --repo o/n` 이나 웹 UI 재시도는 같은 슬러그를 반복해
+    // 넘긴다. 그때마다 `update` 히스토리와 SSE 가 쌓이면 "안 바뀐 변경"이 타임라인을
+    // 어지럽힌다(MCP `todo_write` 가 빈 patch 를 건너뛰는 것과 같은 판단).
+    if (existing.repo === normalized) {
+      return toBoard(existing);
+    }
     this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(normalized, existing.id);
     this.recordHistory(
       'board',
