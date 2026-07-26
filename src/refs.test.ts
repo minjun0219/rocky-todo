@@ -269,3 +269,36 @@ describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)',
     expect(resolved?.id).toBe(note.id);
   });
 });
+
+describe('withRef comment stats', () => {
+  let dir: string;
+  let store: TodoStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-refs-comments-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('todo view carries comment count and last comment time', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    expect(withRef(store, todo).commentCount).toBe(0);
+    expect(withRef(store, todo).lastCommentAt).toBeUndefined();
+
+    const comment = store.addComment(todo.id, '한 마디', 'logan');
+    const view = withRef(store, todo);
+    expect(view.commentCount).toBe(1);
+    expect(view.lastCommentAt).toBe(comment.createdAt);
+  });
+
+  test('note view is unaffected', () => {
+    const note = store.createNote({ board: 'rocky', title: '메모' }, 'logan');
+    const view = withRef(store, note);
+    expect(view.ref).toBe(`rocky#${note.number}`);
+    expect('commentCount' in view).toBe(false);
+  });
+});

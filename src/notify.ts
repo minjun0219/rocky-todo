@@ -27,10 +27,38 @@ const ACTION_LABELS: Record<string, string> = {
   reopen: '다시 열기',
   archive: '보관',
   unarchive: '보관 해제',
+  'comment-archive': '댓글 보관',
+  'comment-unarchive': '댓글 보관 해제',
 };
+
+/**
+ * 본문을 실어 보여주는 액션 — 나머지는 기존 `field: old → new` 렌더를 탄다.
+ *
+ * `src/store.ts` 의 `DETAIL_HISTORY_EXCLUDED` 와 값이 우연히 같지만(둘 다
+ * `['comment', 'comment-edit']`) 여기는 별개의 결정("본문을 한 줄로 인라인 렌더할까")
+ * 을 인코딩한다 — 저쪽은 "상세 화면에서 뺄까"다. 커플링하지 않는다: 셋째 댓글 액션이
+ * 생겨도 이 파일의 렌더 여부는 독립적으로 정해질 수 있다.
+ */
+const COMMENT_ACTIONS: ReadonlySet<string> = new Set(['comment', 'comment-edit']);
+
+/** 주입 컨텍스트가 길어지지 않게 본문 길이를 제한한다. */
+const COMMENT_MAX_CHARS = 200;
+
+/** 댓글 본문을 한 줄로 접고 길면 자른다. */
+function condenseBody(body: string): string {
+  const oneLine = body.replace(/\s+/g, ' ').trim();
+  return oneLine.length > COMMENT_MAX_CHARS ? `${oneLine.slice(0, COMMENT_MAX_CHARS)}…` : oneLine;
+}
 
 function formatLine(entry: ChangeFeedEntry): string {
   const board = entry.boardKey ? `[${entry.boardKey}] ` : '';
+  if (COMMENT_ACTIONS.has(entry.action)) {
+    // 댓글은 문장이라 `field: old → new` 렌더가 맞지 않는다 — 본문을 그대로 보여준다.
+    const raw = entry.changes?.comment?.[1];
+    const body = typeof raw === 'string' ? condenseBody(raw) : '';
+    const label = entry.action === 'comment' ? '댓글' : '댓글 수정';
+    return `- ${entry.actor}: ${board}"${entry.title}" ${label} · "${body}" · ${entry.entityId.slice(0, 6)}`;
+  }
   const kind =
     entry.entity === 'note' ? '메모 ' : entry.entity === 'todo' ? '' : `${entry.entity} `;
   const action = ACTION_LABELS[entry.action] ?? entry.action;

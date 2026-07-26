@@ -395,6 +395,19 @@ describe('history', () => {
     expect(history.map((h) => h.action)).toEqual(['update', 'create']);
     expect(history[0]?.entity).toBe('note');
   });
+
+  test('excludeActions filters rows out at the query, not after — omitting it returns everything', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'claude-code');
+    store.setTodoStatus(todo.id, 'start', 'claude-code');
+    store.addComment(todo.id, '진행 중', 'claude-code');
+    store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+    const filtered = store.listHistory({ entityId: todo.id, excludeActions: ['comment'] });
+    expect(filtered.map((h) => h.action)).toEqual(['done', 'start', 'create']);
+
+    const unfiltered = store.listHistory({ entityId: todo.id });
+    expect(unfiltered.map((h) => h.action)).toEqual(['done', 'comment', 'start', 'create']);
+  });
 });
 
 describe('listChangesSince (변경 피드)', () => {
@@ -604,5 +617,111 @@ describe('참조 해석', () => {
     // 참조를 제품이 못 먹는 정도가 아니라 크래시까지 났다).
     expect(() => store.getTodo('_private#1')).not.toThrow();
     expect(store.getTodo('_private#1')?.id).toBe(t.id);
+  });
+});
+
+describe('comments', () => {
+  test('addComment stores a comment and records history on the parent todo', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const comment = store.addComment(todo.id, '  진행 중입니다  ', 'claude-code');
+
+    expect(comment.todoId).toBe(todo.id);
+    expect(comment.actor).toBe('claude-code');
+    expect(comment.body).toBe('진행 중입니다');
+    expect(comment.archivedAt).toBeUndefined();
+
+    const history = store.listHistory({ entityId: todo.id });
+    const entry = history.find((h) => h.action === 'comment');
+    expect(entry).toBeDefined();
+    expect(entry?.entity).toBe('todo');
+    expect(entry?.actor).toBe('claude-code');
+    expect(entry?.changes?.comment).toEqual([null, '진행 중입니다']);
+  });
+
+  test('addComment accepts a board-scoped ref', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const comment = store.addComment(`rocky#${todo.number}`, '참조로 달기', 'logan');
+    expect(comment.todoId).toBe(todo.id);
+  });
+
+  test('addComment rejects a blank body', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    expect(() => store.addComment(todo.id, '   \n  ', 'logan')).toThrow(/body is required/);
+  });
+
+  test('listComments returns oldest first and hides archived by default', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const first = store.addComment(todo.id, '첫째', 'logan');
+    const second = store.addComment(todo.id, '둘째', 'claude-code');
+
+    expect(store.listComments(todo.id).map((c) => c.body)).toEqual(['첫째', '둘째']);
+
+    store.setCommentArchived(first.id, true, 'logan');
+    expect(store.listComments(todo.id).map((c) => c.id)).toEqual([second.id]);
+    expect(store.listComments(todo.id, true).map((c) => c.id)).toEqual([first.id, second.id]);
+  });
+
+  // finding: 정렬 타이브레이크가 랜덤 id 였을 때 같은 밀리초의 두 댓글 순서가 비결정적이었다.
+  // id 의 사전순을 삽입 순서와 **반대로** 심어, rowid 타이브레이크가 아니면 반드시 실패하게 한다.
+  test('same-millisecond comments come back in insertion order, not id order', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const at = '2026-07-26T01:00:00.000Z';
+    const raw = new Database(join(dir, 'todo.db'));
+    const insert = raw.query(
+      'INSERT INTO comments (id, todo_id, actor, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    insert.run('zzzzzzzz', todo.id, 'logan', '먼저 쓴 댓글', at, at);
+    insert.run('aaaaaaaa', todo.id, 'logan', '나중에 쓴 댓글', at, at);
+    raw.close();
+
+    expect(store.listComments(todo.id).map((c) => c.body)).toEqual([
+      '먼저 쓴 댓글',
+      '나중에 쓴 댓글',
+    ]);
+  });
+
+  test('updateComment rewrites the body and records comment-edit', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const comment = store.addComment(todo.id, '오타 있음', 'logan');
+    const updated = store.updateComment(comment.id, '오타 고침', 'logan');
+
+    expect(updated.body).toBe('오타 고침');
+    const entry = store.listHistory({ entityId: todo.id }).find((h) => h.action === 'comment-edit');
+    expect(entry?.changes?.comment).toEqual(['오타 있음', '오타 고침']);
+  });
+
+  test('setCommentArchived toggles archivedAt and records history', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const comment = store.addComment(todo.id, '잘못 달았다', 'logan');
+
+    const archived = store.setCommentArchived(comment.id, true, 'logan');
+    expect(archived.archivedAt).toBeDefined();
+
+    const restored = store.setCommentArchived(comment.id, false, 'logan');
+    expect(restored.archivedAt).toBeUndefined();
+
+    const actions = store.listHistory({ entityId: todo.id }).map((h) => h.action);
+    expect(actions).toContain('comment-archive');
+    expect(actions).toContain('comment-unarchive');
+  });
+
+  test('unknown comment id throws not found', () => {
+    expect(() => store.updateComment('nosuchid', '본문', 'logan')).toThrow(/comment not found/);
+  });
+
+  test('commentStatsOf counts only unarchived comments', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    expect(store.commentStatsOf(todo.id)).toEqual({ count: 0, lastAt: undefined });
+
+    const first = store.addComment(todo.id, '첫째', 'logan');
+    const second = store.addComment(todo.id, '둘째', 'logan');
+    const stats = store.commentStatsOf(todo.id);
+    expect(stats.count).toBe(2);
+    expect(stats.lastAt).toBe(second.createdAt);
+
+    store.setCommentArchived(second.id, true, 'logan');
+    const after = store.commentStatsOf(todo.id);
+    expect(after.count).toBe(1);
+    expect(after.lastAt).toBe(first.createdAt);
   });
 });

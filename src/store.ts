@@ -76,6 +76,17 @@ export interface Note {
   archivedAt?: string;
 }
 
+/** todo 한 건에 달리는 댓글 — 에이전트의 진행 보고와 사용자의 답이 같은 타임라인에 쌓인다. */
+export interface Comment {
+  id: string;
+  todoId: string;
+  actor: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string;
+}
+
 export interface HistoryEntry {
   id: number;
   entity: HistoryEntity;
@@ -154,7 +165,30 @@ export interface ListHistoryFilter {
   entityId?: string;
   entity?: HistoryEntity;
   limit?: number;
+  /**
+   * 결과에서 뺄 action 목록 — 상세 화면 조회처럼 "다른 곳에 이미 표현된 사건"을
+   * `LIMIT` 이 적용되기 **전에** 걸러내고 싶을 때 쓴다(사후 필터는 limit 을 낭비한다).
+   */
+  excludeActions?: readonly string[];
 }
+
+/**
+ * 상세 화면(REST `GET /api/todos/:ref` · MCP `todo_list` 단건 조회)에서 제외하는
+ * history action. 댓글 mutation 은 부모 todo 의 history 에도 기록되는데(SSE·훅
+ * 주입 경로 재사용), 상세 화면은 댓글을 카드로 이미 보여주므로 그중 **카드가 여전히
+ * 대표하는** 두 액션(작성/본문 수정)만 뺀다.
+ *
+ * `comment-archive`/`comment-unarchive` 는 여기 포함하지 않는다 — 보관되면 카드
+ * 자체가 사라지므로(대표하는 화면 요소가 없어짐) history 에 흔적을 남겨야 한다.
+ * `listHistory` 를 부르는 두 호출부(`src/server.ts`, `src/mcp.ts`)가 이 상수 하나를
+ * 공유해 배열 리터럴이 두 곳에서 따로 놀지 않게 한다.
+ *
+ * `src/ui/lib.ts` 가 같은 값 쌍을 별도로 export 한다(`DETAIL_HISTORY_EXCLUDED`, 같은
+ * 이름) — 브라우저 번들 코드라 이 파일을 런타임으로 import 할 수 없어서다(`bun:sqlite`
+ * 가 딸려 온다). `src/ui/lib.test.ts` 가 두 목록이 같은 값을 갖는지 회귀 테스트로
+ * 고정하니, 여기 값을 바꾸면 그쪽도 함께 고쳐야 한다.
+ */
+export const DETAIL_HISTORY_EXCLUDED = ['comment', 'comment-edit'] as const;
 
 export interface TodoStoreOptions {
   dbPath: string;
@@ -229,6 +263,16 @@ interface SectionRow {
   archived_at: string | null;
 }
 
+interface CommentRow {
+  id: string;
+  todo_id: string;
+  actor: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
 interface HistoryRow {
   id: number;
   entity: HistoryEntity;
@@ -293,9 +337,19 @@ CREATE TABLE IF NOT EXISTS history (
   changes TEXT,
   at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  todo_id TEXT NOT NULL REFERENCES todos(id),
+  actor TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived_at TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_todos_board ON todos(board_id);
 CREATE INDEX IF NOT EXISTS idx_notes_board ON notes(board_id);
 CREATE INDEX IF NOT EXISTS idx_history_entity ON history(entity_id);
+CREATE INDEX IF NOT EXISTS idx_comments_todo ON comments(todo_id, created_at);
 `;
 
 /** rocky-todo 스토어 — 데몬 프로세스 안에서 단일 인스턴스로 쓰인다. */
@@ -900,6 +954,148 @@ export class TodoStore {
     return note;
   }
 
+  // ── comments ──────────────────────────────────────────────────────────────
+
+  /**
+   * todo 에 댓글을 단다. `ref` 는 todo 참조 문법(`#12` / `rocky#12` / id / id prefix).
+   *
+   * 히스토리는 **부모 todo 의 것으로**(`entity='todo'`) 기록한다 — `history` 의
+   * `CHECK (entity IN (...))` 를 건드리지 않으면서 상세 조회(`listHistory({entityId})`),
+   * SSE change 이벤트, `/api/changes` 훅 주입 경로에 그대로 올라탄다.
+   * @throws 본문이 공백뿐이거나 todo 를 못 찾으면.
+   */
+  addComment(ref: string, body: string, actor: string, currentBoardId?: string): Comment {
+    const trimmed = body.trim();
+    if (trimmed === '') {
+      throw new Error('comment body is required');
+    }
+    const todo = this.mustGetTodo(ref, currentBoardId);
+    const now = nowIso();
+    const comment: Comment = {
+      id: newId(),
+      todoId: todo.id,
+      actor,
+      body: trimmed,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db
+      .query(
+        'INSERT INTO comments (id, todo_id, actor, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        comment.id,
+        comment.todoId,
+        comment.actor,
+        comment.body,
+        comment.createdAt,
+        comment.updatedAt,
+      );
+    this.recordHistory(
+      'todo',
+      todo.id,
+      actor,
+      'comment',
+      { comment: [null, trimmed] },
+      todo.boardId,
+    );
+    return comment;
+  }
+
+  /**
+   * 한 todo 의 댓글 — 오래된 것부터(대화 순). 기본은 보관된 댓글 제외.
+   * (같은 밀리초에 들어온 댓글의 순서를 랜덤 id 가 아니라 삽입 순서로 가른다 — `rowid` 를 tiebreak 로 쓴다.)
+   */
+  listComments(todoId: string, includeArchived = false): Comment[] {
+    const archivedFilter = includeArchived ? '' : ' AND archived_at IS NULL';
+    return this.db
+      .query<CommentRow, [string]>(
+        `SELECT * FROM comments WHERE todo_id = ?${archivedFilter} ORDER BY created_at ASC, rowid ASC`,
+      )
+      .all(todoId)
+      .map(toComment);
+  }
+
+  /**
+   * 댓글 본문 수정. 대상은 **댓글 id 로만** 지정한다 — 댓글은 보드별 번호(`#N`)를 갖지
+   * 않는다(번호 공간이 하나 더 늘면 `resolveRef` 의 모호성만 커진다).
+   * @throws 본문이 공백뿐이거나 댓글을 못 찾으면.
+   */
+  updateComment(id: string, body: string, actor: string): Comment {
+    const trimmed = body.trim();
+    if (trimmed === '') {
+      throw new Error('comment body is required');
+    }
+    const current = this.mustGetComment(id);
+    if (trimmed === current.body) {
+      return current;
+    }
+    const now = nowIso();
+    this.db
+      .query('UPDATE comments SET body = ?, updated_at = ? WHERE id = ?')
+      .run(trimmed, now, id);
+    this.recordHistory(
+      'todo',
+      current.todoId,
+      actor,
+      'comment-edit',
+      { comment: [current.body, trimmed] },
+      this.boardIdOfTodo(current.todoId),
+    );
+    return { ...current, body: trimmed, updatedAt: now };
+  }
+
+  /** 댓글 보관/복원 — 삭제는 없다(레포 전체 원칙). */
+  setCommentArchived(id: string, archived: boolean, actor: string): Comment {
+    const current = this.mustGetComment(id);
+    const at = archived ? nowIso() : null;
+    this.db.query('UPDATE comments SET archived_at = ? WHERE id = ?').run(at, id);
+    this.recordHistory(
+      'todo',
+      current.todoId,
+      actor,
+      archived ? 'comment-archive' : 'comment-unarchive',
+      undefined,
+      this.boardIdOfTodo(current.todoId),
+    );
+    return { ...current, archivedAt: at ?? undefined };
+  }
+
+  /**
+   * 목록 배지용 집계 — 보관되지 않은 댓글 수와 마지막 작성 시각.
+   *
+   * `withRef` 가 todo 하나마다 한 번 호출한다(N+1). 데몬 안 in-process SQLite 이고
+   * `idx_comments_todo` 가 커버하는 질의라 보드 규모(수십~수백 건)에서 비용이 무시할
+   * 수준이다 — 대신 모든 호출부(REST 목록·MCP·CLI)가 코드 변경 없이 집계를 얻는다.
+   */
+  commentStatsOf(todoId: string): { count: number; lastAt?: string } {
+    const row = this.db
+      .query<{ n: number; last: string | null }, [string]>(
+        'SELECT COUNT(*) AS n, MAX(created_at) AS last FROM comments WHERE todo_id = ? AND archived_at IS NULL',
+      )
+      .get(todoId);
+    return { count: row?.n ?? 0, lastAt: row?.last ?? undefined };
+  }
+
+  private mustGetComment(id: string): Comment {
+    const row = this.db.query<CommentRow, [string]>('SELECT * FROM comments WHERE id = ?').get(id);
+    if (!row) {
+      throw new Error(`comment not found: ${id}`);
+    }
+    return toComment(row);
+  }
+
+  /**
+   * 댓글이 속한 todo 의 boardId — change 이벤트의 boardId 필드용.
+   * `getTodo` 를 쓰지 않는 이유: 저장된 raw id 는 참조 해석을 거칠 필요가 없고,
+   * 여기서 `resolveRef` 의 prefix/번호 분기를 타게 하면 의미만 흐려진다.
+   */
+  private boardIdOfTodo(todoId: string): string | undefined {
+    return this.db
+      .query<{ board_id: string }, [string]>('SELECT board_id FROM todos WHERE id = ?')
+      .get(todoId)?.board_id;
+  }
+
   // ── history ───────────────────────────────────────────────────────────────
 
   listHistory(filter: ListHistoryFilter): HistoryEntry[] {
@@ -913,7 +1109,14 @@ export class TodoStore {
       wheres.push('entity = ?');
       params.push(filter.entity);
     }
+    if (filter.excludeActions && filter.excludeActions.length > 0) {
+      const placeholders = filter.excludeActions.map(() => '?').join(', ');
+      wheres.push(`action NOT IN (${placeholders})`);
+      params.push(...filter.excludeActions);
+    }
     const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
+    // limit 은 반드시 마지막에 바인딩한다 — SQL 의 `LIMIT ?` 가 where 절 뒤에 오므로
+    // 파라미터 순서도 그에 맞춰야 한다.
     params.push(filter.limit ?? 50);
     return this.db
       .query<HistoryRow, (string | number)[]>(
@@ -1142,5 +1345,17 @@ function toHistory(row: HistoryRow): HistoryEntry {
       ? (JSON.parse(row.changes) as Record<string, [unknown, unknown]>)
       : undefined,
     at: row.at,
+  };
+}
+
+function toComment(row: CommentRow): Comment {
+  return {
+    id: row.id,
+    todoId: row.todo_id,
+    actor: row.actor,
+    body: row.body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at ?? undefined,
   };
 }

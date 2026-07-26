@@ -17,7 +17,8 @@ AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo �
 없다. SessionStart 훅(`hooks/ensure-daemon.ts`)이 데몬을 기동하고, UserPromptSubmit 훅
 (`hooks/notify-todo.ts`)이 보드의 사람 변경을 세션에 주입한다(fail-open, Claude Code 전용).
 계층(parentId)+섹션+보드(키=레포 이름), priority p1–p4/라벨/마감/링크(GitHub·Todoist URL),
-doing 표시(start→actor+since), 전 mutation 히스토리 자동 기록, **삭제 없음(아카이브만)**.
+doing 표시(start→actor+since), 전 mutation 히스토리 자동 기록,
+댓글(todo 별 타임라인 — description 대신 진행 보고를 남기는 자리), **삭제 없음(아카이브만)**.
 설정은 user `rocky.json` 의 `todo` 블록만 읽는다(`src/rocky-config.ts` 경량 로더 — rocky 본체의
 `../core` 에 의존하지 않는다). project rocky.json 은 무시(전역 단일 인스턴스). 노출은 opt-in
 (`todo.expose`: `lan` / `tailscale-serve`, 기본 루프백).
@@ -37,7 +38,7 @@ rocky-todo/
 │   ├── daemon.ts                   # Bun fullstack 진입 — 단일 인스턴스 가드 + / + /api/* + /mcp + '/*' fallback(퍼머링크)
 │   ├── server.ts                   # buildTodoServer — REST 라우트 + SSE 허브 (DI)
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
-│   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 아카이브 + history + change 이벤트
+│   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 댓글 + 아카이브 + history + change 이벤트
 │   ├── migrations.ts               # PRAGMA user_version 마이그레이션 러너 (적용 전 DB 백업)
 │   ├── cli.ts                      # CLI — 얇은 HTTP 클라이언트 + 컴팩트 출력 (runCli)
 │   ├── client.ts                   # REST 클라이언트 (buildContext/daemonHealth/health/ensureDaemon/stopDaemon/request)
@@ -82,7 +83,10 @@ rocky-todo/
   notes 만 board 없이도 존재할 수 있어(글로벌 메모) 전역 번호 공간을 따로 갖고 `#3` 처럼
   접두사 없이 렌더된다 — 글로벌에서 맨숫자 `#N` 은 이 전역 공간을 가리키지만, todos 는 항상
   보드에 속하므로 보드 컨텍스트 없는 맨숫자는 에러다. 번호는 보드 안에서 `MAX(number)+1` 로
-  발급되어 아카이브해도 회수(재사용)되지 않는다.
+  발급되어 아카이브해도 회수(재사용)되지 않는다. **댓글은 이 번호 체계 밖이다** — 보드별
+  순번 없이 댓글 id 로만 지정한다(`PATCH /api/comments/:id` 등). mutation 은 부모 todo 의
+  히스토리(`entity: 'todo'`, action `comment`/`comment-edit`/`comment-archive`/
+  `comment-unarchive`)로 기록되어 SSE·훅 주입 경로를 그대로 탄다.
 
 ## Coding rules
 

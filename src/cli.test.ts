@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   formatTodoLine,
+  formatTodoShow,
   noteRefPath,
   parseFlags,
   resolveHistoryEntity,
@@ -13,6 +14,7 @@ import {
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
+import type { Comment, HistoryEntry } from './store';
 import { TodoStore } from './store';
 
 describe('parseFlags', () => {
@@ -233,6 +235,7 @@ describe('formatTodoLine', () => {
     position: 1,
     createdAt: '2026-07-23T00:00:00.000Z',
     updatedAt: '2026-07-23T00:00:00.000Z',
+    commentCount: 0,
   };
 
   test('todo status glyph and number prefix', () => {
@@ -258,6 +261,7 @@ describe('formatTodoLine', () => {
         position: 1,
         createdAt: '2026-07-25T00:00:00.000Z',
         updatedAt: '2026-07-25T00:00:00.000Z',
+        commentCount: 0,
       } as TodoView,
       0,
     );
@@ -293,6 +297,182 @@ describe('formatTodoLine', () => {
     expect(line).toContain('~2026-08-01');
     expect(line).toContain('↗r#3');
     expect(line.startsWith('    ')).toBe(true);
+  });
+});
+
+describe('formatTodoShow', () => {
+  const todo: TodoView = {
+    id: 'a1b2c3d4',
+    number: 1,
+    ref: 'rocky#1',
+    boardId: 'b',
+    title: '작업 제목',
+    description: '',
+    status: 'todo',
+    priority: 'p4',
+    labels: [],
+    links: [],
+    position: 1,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    updatedAt: '2026-07-23T00:00:00.000Z',
+    commentCount: 0,
+  };
+
+  function comment(overrides: Partial<Comment> = {}): Comment {
+    return {
+      id: 'c1',
+      todoId: todo.id,
+      actor: 'claude-code',
+      body: '본문',
+      createdAt: '2026-07-24T09:05:12.000Z',
+      updatedAt: '2026-07-24T09:05:12.000Z',
+      ...overrides,
+    };
+  }
+
+  function history(overrides: Partial<HistoryEntry> = {}, id = 1): HistoryEntry {
+    return {
+      id,
+      entity: 'todo',
+      entityId: todo.id,
+      actor: 'claude-code',
+      action: 'create',
+      at: '2026-07-23T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  test('댓글이 없으면 댓글: 섹션이 아예 나오지 않는다', () => {
+    const out = formatTodoShow({ todo, history: [], comments: [] });
+    expect(out).not.toContain('댓글:');
+  });
+
+  test('댓글이 있으면 각 줄에 작성시각 actor: 본문 이 나온다 (T 가 공백으로 바뀐다)', () => {
+    const out = formatTodoShow({
+      todo,
+      history: [],
+      comments: [comment({ createdAt: '2026-07-24T09:05:12.000Z', actor: 'minjun', body: '메모' })],
+    });
+    expect(out).toContain('댓글:');
+    expect(out).toContain('2026-07-24 09:05 minjun: 메모');
+    expect(out).not.toContain('2026-07-24T09:05');
+  });
+
+  test('여러 줄 본문이 한 줄로 접힌다', () => {
+    const out = formatTodoShow({
+      todo,
+      history: [],
+      comments: [comment({ body: '첫째 줄\n둘째 줄\n\n넷째 줄' })],
+    });
+    expect(out).not.toContain('\n둘째');
+    expect(out).toContain('첫째 줄 둘째 줄 넷째 줄');
+  });
+
+  test('comment/comment-edit 는 히스토리 섹션에서 걸러지지만 comment-archive/comment-unarchive 는 남는다', () => {
+    const rows: HistoryEntry[] = [
+      history({ action: 'create' }, 1),
+      history({ action: 'comment' }, 2),
+      history({ action: 'comment-edit' }, 3),
+      history({ action: 'comment-archive' }, 4),
+      history({ action: 'comment-unarchive' }, 5),
+      history({ action: 'done' }, 6),
+    ];
+    const out = formatTodoShow({ todo, history: rows, comments: [] });
+    expect(out).toContain('create');
+    expect(out).toContain('done');
+    expect(out).toContain('comment-archive');
+    expect(out).toContain('comment-unarchive');
+    // comment 자체(작성/본문수정)만 걸러진다 — 정확히 한 줄만 있어야 하므로 등장 횟수로 확인한다.
+    const commentLines = out.split('\n').filter((line) => / comment$/.test(line.trim()));
+    const commentEditLines = out.split('\n').filter((line) => / comment-edit$/.test(line.trim()));
+    expect(commentLines).toHaveLength(0);
+    expect(commentEditLines).toHaveLength(0);
+  });
+
+  test('댓글이 8개보다 많으면 최근 8개만 보이고 위에 …외 N개 마커가 붙는다', () => {
+    // 두 자리로 패딩한다 — "댓글 1" 이 "댓글 10"/"댓글 11" 의 부분 문자열이 되어 포함
+    // 여부 단언이 오탐하지 않게.
+    const comments: Comment[] = Array.from({ length: 12 }, (_, i) =>
+      comment({
+        id: `c${i}`,
+        body: `댓글 ${String(i).padStart(2, '0')}`,
+        createdAt: `2026-07-24T09:${String(i).padStart(2, '0')}:00.000Z`,
+      }),
+    );
+    const out = formatTodoShow({ todo, history: [], comments });
+    expect(out).toContain('…외 4개');
+    for (let i = 4; i < 12; i++) {
+      expect(out).toContain(`댓글 ${String(i).padStart(2, '0')}`);
+    }
+    for (let i = 0; i < 4; i++) {
+      expect(out).not.toContain(`댓글 ${String(i).padStart(2, '0')}`);
+    }
+  });
+
+  test('히스토리가 8줄로 잘린다', () => {
+    const rows: HistoryEntry[] = Array.from({ length: 12 }, (_, i) =>
+      history({ action: `action-${i}` }, i + 1),
+    );
+    const out = formatTodoShow({ todo, history: rows, comments: [] });
+    for (let i = 0; i < 8; i++) {
+      expect(out).toContain(`action-${i}`);
+    }
+    for (let i = 8; i < 12; i++) {
+      expect(out).not.toContain(`action-${i}`);
+    }
+  });
+});
+
+describe('comment command paths', () => {
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-comment-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({ store });
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('todoRefPath builds the comments endpoint', () => {
+    expect(todoRefPath('rocky#3', '/comments', 'rocky')).toBe(
+      '/api/todos/rocky%233/comments?board=rocky',
+    );
+  });
+
+  test('posting through the comments path creates a comment', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const comment = await request<{ body: string; todoId: string }>(
+      ctx,
+      'POST',
+      todoRefPath(`rocky#${todo.number}`, '/comments', 'rocky'),
+      { body: '한 마디' },
+    );
+    expect(comment.todoId).toBe(todo.id);
+    expect(comment.body).toBe('한 마디');
+  });
+
+  test('show payload carries comments', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    store.addComment(todo.id, '미리 달아둔 댓글', 'logan');
+    const detail = await request<{ comments: { body: string }[] }>(
+      ctx,
+      'GET',
+      todoRefPath(`rocky#${todo.number}`, '', 'rocky'),
+    );
+    expect(detail.comments.map((c) => c.body)).toEqual(['미리 달아둔 댓글']);
   });
 });
 
