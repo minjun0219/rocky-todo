@@ -52,6 +52,48 @@ describe('buildNotifyContext', () => {
   });
 });
 
+describe('comment lines', () => {
+  test('renders a comment with its body instead of a field diff', () => {
+    const context = buildNotifyContext([
+      entry({
+        action: 'comment',
+        changes: { comment: [null, '이거 SSE 로도 흘러가나?'] },
+        title: '댓글 기능 추가',
+      }),
+    ]);
+    expect(context).toContain('"댓글 기능 추가" 댓글 · "이거 SSE 로도 흘러가나?"');
+    expect(context).not.toContain('comment:');
+  });
+
+  test('renders an edited comment with the new body', () => {
+    const context = buildNotifyContext([
+      entry({ action: 'comment-edit', changes: { comment: ['오타', '고침'] } }),
+    ]);
+    expect(context).toContain('댓글 수정 · "고침"');
+  });
+
+  test('folds newlines and truncates a long body', () => {
+    const body = `${'가'.repeat(250)}\n둘째 줄`;
+    const context = buildNotifyContext([
+      entry({ action: 'comment', changes: { comment: [null, body] } }),
+    ]);
+    expect(context).toContain('…');
+    expect(context).not.toContain('\n둘째 줄');
+    const line = (context ?? '').split('\n').find((l) => l.includes('댓글')) ?? '';
+    expect(line.length).toBeLessThan(300);
+  });
+
+  test('agent comments are filtered out before formatting', () => {
+    const entries = [
+      entry({ id: 1, actor: 'claude-code', action: 'comment', changes: { comment: [null, '봇'] } }),
+      entry({ id: 2, actor: 'logan', action: 'comment', changes: { comment: [null, '사람'] } }),
+    ];
+    const context = buildNotifyContext(filterHumanChanges(entries));
+    expect(context).toContain('"사람"');
+    expect(context).not.toContain('"봇"');
+  });
+});
+
 describe('cursor store', () => {
   test('read missing → undefined; write then read round-trips', () => {
     const dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cursor-'));
