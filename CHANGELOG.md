@@ -1,5 +1,25 @@
 # @minjun0219/rocky-todo
 
+## 0.6.0
+
+### Minor Changes
+
+- [#15](https://github.com/minjun0219/rocky-todo/pull/15) [`0e64c67`](https://github.com/minjun0219/rocky-todo/commit/0e64c670a0022302e50fc696a3d08b8e63870129) Thanks [@minjun0219](https://github.com/minjun0219)! - 보드에서 실행 중인 Claude Code 세션으로 todo 를 넘기는 핸드오프. 웹 UI 버튼 / `rocky-todo handoff` CLI 로 보내면 대상 세션이 턴을 끝내는 순간 자동으로 착수한다. 세션 목록은 `claude agents --json` 에서 얻고, 보드 key 와 세션 cwd 가 애매하면 사용자가 고른다. MCP 도구는 5개 그대로.
+
+### Patch Changes
+
+- [#16](https://github.com/minjun0219/rocky-todo/pull/16) [`4687c61`](https://github.com/minjun0219/rocky-todo/commit/4687c61d6d9416a4bc06650b0c35b253b6c37d3a) Thanks [@minjun0219](https://github.com/minjun0219)! - 웹 UI 의 조용한 실패 셋을 드러낸다.
+
+  연결 배지는 SSE 링크 상태만 반영한다 — REST 재조회 한 번의 실패로 배지를 내리면 열린
+  `EventSource` 가 `onopen` 을 다시 쏘지 않아 배지가 영영 내려간 채 굳기 때문이다. 그 대가로,
+  데몬이 살아 SSE 는 흐르는데 REST 만 실패하는 경우 배지는 초록인데 보드만 낡고 화면에는
+  아무 신호도 남지 않았다. 이제 그 실패가 콘솔 경고로 남는다.
+
+  주소 해석의 실패는 따로 적는다. 퍼머링크가 가리키는 항목을 열지 못한 것까지 "보드 재조회
+  실패" 로 적으면 로그가 엉뚱한 곳을 가리킨다.
+
+  뒤로가기로 죽은 퍼머링크에 돌아갔을 때 남던 처리되지 않은 rejection 을 없앴다.
+
 ## 0.5.1
 
 ### Patch Changes
