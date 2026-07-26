@@ -57,6 +57,12 @@ claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies �
 5. **삭제는 없다** — 잘못 만든 항목도 `archive` 만 한다. 메모도 동일 (`note_write` 의
    `mode: "archive"`).
 
+## 진행 보고는 댓글로
+
+작업 중 알게 된 것, 막힌 지점, 사용자에게 묻고 싶은 것은 `todo_write` 의 `comment` 로 남긴다.
+`description` 을 덮어쓰지 않는다 — 거기는 "이 할 일이 무엇인가"의 자리이고, 덮어쓰면 원래
+요구가 사라진다. 사용자가 웹 UI 에서 단 답글은 다음 세션 시작 시 자동으로 주입된다.
+
 ## 자주 쓰는 호출
 
 id 자리는 랜덤 id 대신 번호 참조(REF)를 받는다: `rocky#12`(보드 지정) 또는 `board` 인자와
@@ -69,12 +75,14 @@ todo_write { board: "rocky", title: "...", section: "설계",
              priority: "p2", links: [{ url: "https://github.com/..." }],
              actor: "claude-code" }
 todo_status { id: "rocky#12", action: "start", actor: "claude-code" }
+todo_write { id: "rocky#12", comment: "막힌 지점: ...", actor: "claude-code" }
 note_write { board: "rocky", title: "조사 메모", content: "...", actor: "claude-code" }
 note_write { id: "rocky#7", content: "추가 발견", mode: "append", actor: "claude-code" }
 ```
 
 CLI 대응: `rocky-todo ls` / `add "제목" --section 설계 --priority p2 --link URL` /
-`start REF` / `done REF` / `note add "제목" --content "..."` / `history REF`.
+`start REF` / `done REF` / `comment REF "본문"` / `note add "제목" --content "..."` /
+`history REF`.
 
 사용자와 대화할 때도 항목을 `#12` 로 부를 수 있다 — 웹 UI 에서 번호를 클릭하면 `rocky#12`
 가 클립보드에 복사되므로, 사용자가 그걸 붙여넣으면 그대로 REF 로 알아듣고 처리하면 된다.
