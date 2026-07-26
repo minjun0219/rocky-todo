@@ -1,6 +1,6 @@
 import pkg from '../package.json' with { type: 'json' };
 import { refNeedsBoardContext, withRef } from './refs';
-import { listSessions as defaultListSessions, matchBoard, type SessionsResult } from './sessions';
+import { createCachedListSessions, matchBoard, type SessionsResult } from './sessions';
 import {
   DETAIL_HISTORY_EXCLUDED,
   type HandoffStatus,
@@ -19,8 +19,21 @@ import {
 
 export interface TodoServerOptions {
   store: TodoStore;
-  /** 활성 세션 조회 — 테스트에서 주입한다. 기본은 `claude agents --json`. */
+  /**
+   * 활성 세션 조회 — 테스트에서 주입한다. 기본은 `claude agents --json` 을 TTL 3초로
+   * 메모이즈한 버전(`createCachedListSessions`) — 주입된 함수는 캐시를 거치지 않는다
+   * (테스트가 호출 횟수에 의존할 수 있고, 주입의 목적 자체가 결정론이다).
+   */
   sessions?: () => SessionsResult;
+  /**
+   * 이 요청이 루프백(127.0.0.1/::1)에서 왔는가. 기본은 항상 true(루프백으로 간주) —
+   * `Request` 객체만으로는 원격 주소를 알 수 없어(정보는 `Bun.serve` 가 반환하는
+   * `server.requestIP(req)` 에만 있다) 데몬 조립 지점(`daemon.ts`)이 실제 판별해
+   * 주입한다. 기본값을 true 로 둬야 이 옵션을 안 넘기는 기존 테스트/DI 가 그대로 돈다.
+   * `POST /api/handoffs/claim` 전용 가드 — 훅은 항상 127.0.0.1 로 붙으므로 이 판정에
+   * 기능 손실이 없다.
+   */
+  isLoopback?: (req: Request) => boolean;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -74,7 +87,8 @@ function toHttpError(error: unknown): Response {
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
-  const sessionsOf = options.sessions ?? (() => defaultListSessions());
+  const sessionsOf = options.sessions ?? createCachedListSessions();
+  const isLoopbackOf = options.isLoopback ?? (() => true);
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -429,6 +443,16 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
 
       // ── handoffs ──
       if (method === 'POST' && path === '/api/handoffs/claim') {
+        // 훅(Stop/UserPromptSubmit)만 이 라우트를 부르고, 훅은 항상 127.0.0.1 로 붙는다
+        // — 루프백 제한에 기능 손실이 0 이다. `todo.expose` 로 lan/tailscale-serve 를
+        // 열어도 "보내기"·세션 목록은 그대로 원격에서 되지만, claim 을 열어두면 남의
+        // 큐를 조용히 소진(delivered 처리)해 배달을 무력화하는 경로가 된다. 404 로 막는
+        // 이유: 이 라우트의 존재 자체를 원격 관찰자에게 드러내지 않기 위해서다 — 아래
+        // catch-all(`not found: METHOD path`)과 구분이 안 가게 해, 있는 걸 알고 두드리는
+        // 시나리오를 403(있는데 막혔다)보다 덜 흥미롭게 만든다.
+        if (!isLoopbackOf(req)) {
+          return errorResponse(`not found: ${method} ${path}`, 404);
+        }
         const body = await readBody(req);
         const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
         const via = body.via === 'prompt' ? 'prompt' : 'stop';
@@ -449,7 +473,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         });
         // 대상 세션이 사라진 pending 은 stale 로 표시만 한다 — 자동 만료는 "보냈는데
         // 조용히 사라졌다"를 만들고, 그게 이 기능에서 가장 나쁜 실패다.
-        const live = new Set(sessionsOf().sessions.map((s) => s.sessionId));
+        // stale 판정은 pending 건에만 의미가 있다 — pending 이 하나도 없으면 세션 조회
+        // (기본 구현은 `claude agents --json` spawn, 실측 ~220ms, 최악 timeout 5s) 를
+        // 아예 건너뛴다. 이 라우트는 웹 UI `refetch` 가 SSE 이벤트·60초 tick·모든
+        // mutation 뒤에 부르므로, pending 이 없는 대다수 호출에서 그 비용을 없앤다.
+        const hasPending = handoffs.some((handoff) => handoff.status === 'pending');
+        const live = hasPending
+          ? new Set(sessionsOf().sessions.map((s) => s.sessionId))
+          : new Set<string>();
         return json(
           handoffs.map((handoff) => ({
             ...handoff,

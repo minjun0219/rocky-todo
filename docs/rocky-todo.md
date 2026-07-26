@@ -188,6 +188,10 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 | `"lan"` | 같은 내부망의 모든 기기 (`http://<이 머신 IP>:8636`) | 0.0.0.0 | 무인증 — 집 등 신뢰망 전용. `rocky-todo open` 이 내부망 주소를 함께 출력 |
 | `"tailscale-serve"` | 테일넷에 연결된 내 기기들 (HTTPS) | 127.0.0.1 유지 | tailscaled 프록시가 중계, 기동 시 `tailscale serve` 자동 보장. 테일넷 Serve 기능 첫 사용 시 관리 콘솔 1회 승인 필요 |
 
+- 핸드오프 "보내기"(`POST /api/todos/:ref/handoff`)와 세션 목록(`GET /api/sessions`)은
+  노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기). 다만
+  `claim`(`POST /api/handoffs/claim`)은 훅 전용이라 루프백(127.0.0.1/::1) 요청만 받는다 —
+  원격에서 두드리면 404. 훅은 항상 로컬에서 붙으니 기능 손실은 없다.
 - env `ROCKY_TODO_EXPOSE`(콤마 구분)가 설정되면 config 를 통째로 덮어쓴다 — `off` 로 강제 차단.
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.

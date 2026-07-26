@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { type AgentSession, listSessions, matchBoard, type RunCommand } from './sessions';
+import {
+  type AgentSession,
+  createCachedListSessions,
+  listSessions,
+  matchBoard,
+  type RunCommand,
+} from './sessions';
 
 const SAMPLE = JSON.stringify([
   {
@@ -81,5 +87,37 @@ describe('matchBoard', () => {
 
   test('부분 문자열은 일치로 치지 않는다', () => {
     expect(matchBoard(sessions, 'rocky')).toEqual([]);
+  });
+});
+
+describe('createCachedListSessions', () => {
+  test('TTL 창 안의 반복 호출은 실제 spawn(run) 을 한 번만 부른다', () => {
+    let calls = 0;
+    const run: RunCommand = () => {
+      calls += 1;
+      return { ok: true, stdout: '[]', stderr: '' };
+    };
+    const cached = createCachedListSessions(3_000, run);
+
+    cached();
+    cached();
+    cached();
+
+    expect(calls).toBe(1);
+  });
+
+  test('TTL 이 지나면 다시 spawn 한다', async () => {
+    let calls = 0;
+    const run: RunCommand = () => {
+      calls += 1;
+      return { ok: true, stdout: '[]', stderr: '' };
+    };
+    const cached = createCachedListSessions(10, run);
+
+    cached();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    cached();
+
+    expect(calls).toBe(2);
   });
 });

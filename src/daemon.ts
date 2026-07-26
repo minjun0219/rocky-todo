@@ -51,14 +51,31 @@ export async function startDaemon(): Promise<void> {
 
   mkdirSync(runtime.dir, { recursive: true });
   const store = new TodoStore({ dbPath: join(runtime.dir, 'todo.db') });
-  const api = buildTodoServer({ store });
+  // `server` 는 아래 Bun.serve 호출이 끝나야 채워지지만, 이 클로저가 실제로 불리는
+  // 시점(요청 처리)은 반드시 그 이후다 — Bun.serve 가 반환하기 전에는 소켓이 열리지
+  // 않는다. `POST /api/handoffs/claim` 의 루프백 판정에 필요한 원격 주소는 Request
+  // 객체엔 없고 `server.requestIP(req)` 로만 얻을 수 있어(server.ts 의 `isLoopback`
+  // 주석 참고) 여기서 DI 로 넘긴다.
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  const api = buildTodoServer({
+    store,
+    isLoopback: (req) => {
+      const addr = server?.requestIP(req);
+      // 판별 불가(유닉스 소켓, 이미 닫힌 연결 등)는 루프백으로 간주한다 — 기능을
+      // 죽이는 쪽보다 안전한 기본값.
+      if (!addr) {
+        return true;
+      }
+      return addr.address === '127.0.0.1' || addr.address === '::1';
+    },
+  });
   const mcp = createMcpFetchHandler({ store });
 
   // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.
   // CLI/브릿지가 호출자 cwd 를 상속시켜 spawn 하면 /../../<cwd> 로 깨지므로 ui 디렉터리로 고정한다.
   process.chdir(join(import.meta.dir, 'ui'));
 
-  const server = Bun.serve({
+  server = Bun.serve({
     port: runtime.port,
     // 기본 루프백 전용. `todo.host: "0.0.0.0"` opt-in 시 내부망 개방 (인증 없음 — 신뢰망 전제).
     // 0.0.0.0 은 루프백을 포함하므로 단일 인스턴스 가드/CLI 의 127.0.0.1 경로는 그대로 동작한다.
@@ -80,7 +97,7 @@ export async function startDaemon(): Promise<void> {
   writeFileSync(pidPath, String(process.pid));
 
   const shutdown = () => {
-    void server.stop(true);
+    void server?.stop(true);
     store.close();
     if (existsSync(pidPath)) {
       rmSync(pidPath, { force: true });

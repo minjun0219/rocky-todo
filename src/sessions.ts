@@ -82,6 +82,11 @@ function toSession(value: unknown): AgentSession | null {
 
 /**
  * 활성 세션(interactive + background)을 나열한다.
+ *
+ * 실측 ~220ms — `Bun.spawnSync` 로 `claude agents --json` 을 띄우는 게 본질적으로
+ * 동기 블로킹이라(최악은 timeout 5s), 요청마다 부르면 그 시간만큼 데몬 전체(MCP·SSE·
+ * CLI·다른 세션 훅)가 멎는다. 호출 빈도가 높은 경로는 `createCachedListSessions` 를 쓴다.
+ *
  * @param run 테스트 주입용. 기본은 `claude agents --json` 을 실제로 실행한다.
  */
 export function listSessions(run: RunCommand = defaultRun): SessionsResult {
@@ -122,4 +127,35 @@ export function matchBoard(sessions: AgentSession[], boardKey: string): AgentSes
     return [];
   }
   return sessions.filter((session) => session.cwd.split('/').includes(boardKey));
+}
+
+/**
+ * `listSessions` 를 TTL 동안 메모이즈하는 클로저를 만든다.
+ *
+ * TTL 기본 3초 — 세션이 열리고 닫히는 빈도(사람이 터미널 탭을 여닫는 정도)에 비해
+ * 훨씬 짧아 신선도 손실은 미미한 반면, `GET /api/handoffs`(SSE 이벤트마다 150ms 디바운스
+ * + 60초 tick 로 웹 UI 가 반복 호출)와 `/api/sessions`, handoff 생성 경로가 겹쳐 부르는
+ * 창을 대부분 흡수한다 — 실제 `claude agents --json` spawn 은 창당 최대 한 번으로 준다.
+ *
+ * 반환된 클로저는 호출자가 쥔 상태로만 유효하다(프로세스 전역이 아니다) — `daemon.ts` 가
+ * 딱 한 번 만들어 `buildTodoServer` 에 넘기면 그게 곧 "데몬 프로세스 수명 동안" 이 된다.
+ * 재기동하면 새 클로저가 생겨 자연히 비워진다.
+ *
+ * 테스트가 주입하는 `sessions` 옵션에는 이 래퍼를 쓰지 않는다 — `buildTodoServer` 는
+ * `options.sessions` 를 그대로 호출자에게 노출하므로, 이 함수를 쓰지 않는 한 캐시가
+ * 끼어들 일이 없다. 호출 횟수에 의존하는 테스트가 있고, 주입의 목적 자체가 결정론이라
+ * 캐시로 흐리면 안 된다.
+ */
+export function createCachedListSessions(ttlMs = 3_000, run?: RunCommand): () => SessionsResult {
+  let cached: SessionsResult | null = null;
+  let expiresAt = 0;
+  return () => {
+    const now = Date.now();
+    if (cached && now < expiresAt) {
+      return cached;
+    }
+    cached = listSessions(run);
+    expiresAt = now + ttlMs;
+    return cached;
+  };
 }

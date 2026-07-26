@@ -825,4 +825,52 @@ describe('handoff routes', () => {
       400,
     );
   });
+
+  test('GET /api/handoffs 는 pending 이 없으면 세션 조회를 하지 않는다', async () => {
+    let calls = 0;
+    const h = handleWith(() => {
+      calls += 1;
+      return SESSIONS;
+    });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const cancelled = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    store.cancelHandoff(cancelled.id, 'logan');
+
+    // status=pending 필터라 취소된 건은 목록에 안 잡힌다 — hasPending 이 false 여야 한다.
+    const res = await reqTo(h, '/api/handoffs?status=pending');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+    expect(calls).toBe(0);
+
+    // pending 이 하나라도 있으면(필터 없는 조회라 취소된 건 + 새 pending 건이 함께 온다)
+    // stale 판정을 위해 여전히 세션을 조회한다.
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const all = await reqTo(h, '/api/handoffs');
+    expect(all.status).toBe(200);
+    expect(calls).toBe(1);
+  });
+
+  test('claim 은 루프백 요청만 받는다 — 아니면 404', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const remote = buildTodoServer({
+      store,
+      sessions: () => SESSIONS,
+      isLoopback: () => false,
+    }).fetch;
+
+    const res = await reqTo(remote, '/api/handoffs/claim', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+    });
+    expect(res.status).toBe(404);
+
+    // 루프백(기본값)이면 그대로 동작한다 — 회귀 확인.
+    const local = handleWith(() => SESSIONS);
+    const localRes = await reqTo(local, '/api/handoffs/claim', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+    });
+    expect(localRes.status).toBe(200);
+  });
 });
