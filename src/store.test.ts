@@ -630,6 +630,25 @@ describe('comments', () => {
     expect(store.listComments(todo.id, true).map((c) => c.id)).toEqual([first.id, second.id]);
   });
 
+  // finding: 정렬 타이브레이크가 랜덤 id 였을 때 같은 밀리초의 두 댓글 순서가 비결정적이었다.
+  // id 의 사전순을 삽입 순서와 **반대로** 심어, rowid 타이브레이크가 아니면 반드시 실패하게 한다.
+  test('same-millisecond comments come back in insertion order, not id order', () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
+    const at = '2026-07-26T01:00:00.000Z';
+    const raw = new Database(join(dir, 'todo.db'));
+    const insert = raw.query(
+      'INSERT INTO comments (id, todo_id, actor, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    insert.run('zzzzzzzz', todo.id, 'logan', '먼저 쓴 댓글', at, at);
+    insert.run('aaaaaaaa', todo.id, 'logan', '나중에 쓴 댓글', at, at);
+    raw.close();
+
+    expect(store.listComments(todo.id).map((c) => c.body)).toEqual([
+      '먼저 쓴 댓글',
+      '나중에 쓴 댓글',
+    ]);
+  });
+
   test('updateComment rewrites the body and records comment-edit', () => {
     const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'logan');
     const comment = store.addComment(todo.id, '오타 있음', 'logan');
