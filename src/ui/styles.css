@@ -228,6 +228,15 @@ textarea {
   min-width: 0;
 }
 
+/* 목록을 스크롤해도 새 작업 입력이 따라온다. `.todo-pane` 은 배경색이 없어 body 의
+   `--bg` 위에 있으므로 같은 색을 깔아 아래 항목이 비쳐 보이지 않게 한다. */
+.quick-add {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
 .quick-add-input {
   width: 100%;
   background: var(--surface);
