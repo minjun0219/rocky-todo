@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { boardKeyFrom, detectActor } from './actor';
 import { buildContext, type CliContext, ensureDaemon, health, request } from './client';
 import { resolveTodoRuntimeConfig } from './config';
+import { isRepoSlug, parseRepoFromRemote } from './github';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
@@ -33,6 +34,7 @@ const VALUE_FLAGS = new Set([
   'title',
   'content',
   'limit',
+  'repo',
 ]);
 const LIST_FLAGS = new Set(['label', 'link']);
 
@@ -278,13 +280,14 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
   rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
+  rocky-todo issue REF [--repo OWNER/NAME]      todo 를 GitHub 이슈로 (gh CLI 필요)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] [--global|--note] · board ls · board add KEY [제목]
+  rocky-todo history REF [--limit N] [--global|--note] · board ls|add|repo · section ls
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -341,6 +344,11 @@ export function noteRefPath(id: string, suffix: string, board: string, global: b
   // 고정 리터럴이라 인코딩 대상이 아니다.
   const path = `/api/notes/${encodeURIComponent(id)}${suffix}`;
   return global ? path : withBoard(path, board);
+}
+
+/** 보드 단건 엔드포인트 — repo 설정에 쓴다. board key 는 `.` 등을 담을 수 있어 인코딩한다. */
+export function boardRepoPath(key: string): string {
+  return `/api/boards/${encodeURIComponent(key)}`;
 }
 
 /**
@@ -498,6 +506,40 @@ export async function runCli(): Promise<void> {
       return;
     }
 
+    case 'issue': {
+      const id = rest[0];
+      if (!id) {
+        throw new Error('usage: rocky-todo issue REF [--repo OWNER/NAME]');
+      }
+      const explicitRepo = str(flags.repo);
+      if (explicitRepo) {
+        if (!isRepoSlug(explicitRepo)) {
+          throw new Error(`--repo 는 OWNER/NAME 모양이어야 한다: ${explicitRepo}`);
+        }
+        await request(ctx, 'PATCH', boardRepoPath(board), { repo: explicitRepo });
+      }
+      const path = todoRefPath(id, '/issue', board);
+      try {
+        const result = await request<{ url: string }>(ctx, 'POST', path);
+        print(result, () => `✓ ${result.url}`);
+        return;
+      } catch (error) {
+        // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 재시도한다. 미리 보드를 조회하지
+        // 않는 이유: 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
+        const message = error instanceof Error ? error.message : String(error);
+        const inferred = /repo/.test(message)
+          ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
+          : undefined;
+        if (!inferred) {
+          throw error;
+        }
+        await request(ctx, 'PATCH', boardRepoPath(board), { repo: inferred });
+        const result = await request<{ url: string }>(ctx, 'POST', path);
+        print(result, () => `✓ ${result.url} (보드 repo 를 ${inferred} 로 설정했다)`);
+        return;
+      }
+    }
+
     case 'start':
     case 'stop':
     case 'done':
@@ -604,7 +646,22 @@ export async function runCli(): Promise<void> {
         print(created, () => `✓ 보드 ${created.key}`);
         return;
       }
-      throw new Error('usage: rocky-todo board ls | board add KEY [제목]');
+      if (sub === 'repo') {
+        // 인자를 주면 그 값, 없으면 cwd 의 git remote 에서 유추한다.
+        const explicit = rest[1];
+        const repo = explicit ?? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '');
+        if (!repo || !isRepoSlug(repo)) {
+          throw new Error(
+            'GitHub 레포를 알 수 없다 — OWNER/NAME 을 직접 준다: rocky-todo board repo OWNER/NAME',
+          );
+        }
+        const updated = await request<Board>(ctx, 'PATCH', boardRepoPath(board), { repo });
+        print(updated, () => `✓ ${updated.key} → ${updated.repo}`);
+        return;
+      }
+      throw new Error(
+        'usage: rocky-todo board ls | board add KEY [제목] | board repo [OWNER/NAME]',
+      );
     }
 
     case 'open': {

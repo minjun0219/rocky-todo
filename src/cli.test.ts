@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  boardRepoPath,
   formatTodoLine,
   formatTodoShow,
   noteRefPath,
@@ -487,5 +488,55 @@ describe('bin/rocky-todo entry', () => {
     expect(stderr).toBe('');
     expect(proc.exitCode).toBe(0);
     expect(proc.stdout.toString()).toContain('rocky-todo');
+  });
+});
+
+describe('issue command paths', () => {
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-issue-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({ store });
+    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('todoRefPath builds the issue endpoint', () => {
+    expect(todoRefPath('rocky#3', '/issue', 'rocky')).toBe(
+      '/api/todos/rocky%233/issue?board=rocky',
+    );
+  });
+
+  test('boardRepoPath encodes the board key', () => {
+    expect(boardRepoPath('my.board')).toBe('/api/boards/my.board');
+  });
+
+  test('setting a board repo through the CLI path round-trips', async () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const board = await request<{ repo: string }>(ctx, 'PATCH', boardRepoPath('rocky'), {
+      repo: 'o/n',
+    });
+    expect(board.repo).toBe('o/n');
+  });
+
+  test('the issue endpoint answers 400 when the board has no repo', async () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    await expect(request(ctx, 'POST', todoRefPath(todo.id, '/issue', 'rocky'))).rejects.toThrow(
+      /repo/,
+    );
   });
 });
