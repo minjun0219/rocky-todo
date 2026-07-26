@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { runMigrations } from './migrations';
+import { refOf } from './refs';
 
 /**
  * rocky-todo 의 저장 계층 — SQLite (bun:sqlite) 단일 파일.
@@ -85,6 +86,47 @@ export interface Comment {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string;
+}
+
+export type HandoffStatus = 'pending' | 'delivered' | 'cancelled';
+/** 어느 훅이 집어갔는지 — `Stop`(자동 착수) 인지 `UserPromptSubmit`(사용자가 말을 걸 때) 인지. */
+export type HandoffVia = 'stop' | 'prompt';
+
+/** 보드에서 실행 중인 Claude Code 세션으로 넘긴 작업 요청 한 건. */
+export interface Handoff {
+  id: string;
+  todoId: string;
+  sessionId: string;
+  /** 표시용 스냅샷 — 세션이 사라지면 sessionId 만으로는 어디로 보냈는지 읽을 수 없다. */
+  sessionName?: string;
+  sessionCwd?: string;
+  note: string;
+  actor: string;
+  status: HandoffStatus;
+  createdAt: string;
+  deliveredAt?: string;
+  deliveredVia?: HandoffVia;
+}
+
+export interface CreateHandoffInput {
+  /** todo 참조 문법 (`#12` / `rocky#12` / id / id prefix). */
+  ref: string;
+  sessionId: string;
+  sessionName?: string;
+  sessionCwd?: string;
+  note?: string;
+  actor: string;
+  currentBoardId?: string;
+}
+
+/** claim 결과 — 훅이 주입문을 만드는 데 필요한 것을 한 번에 준다. */
+export interface ClaimedHandoff {
+  handoff: Handoff;
+  /** `rocky-todo#11` 형태의 사람이 읽는 참조. */
+  todoRef: string;
+  todoTitle: string;
+  /** 이 세션 앞에 아직 남은 pending 건수. */
+  remaining: number;
 }
 
 export interface HistoryEntry {
@@ -273,6 +315,20 @@ interface CommentRow {
   archived_at: string | null;
 }
 
+interface HandoffRow {
+  id: string;
+  todo_id: string;
+  session_id: string;
+  session_name: string | null;
+  session_cwd: string | null;
+  note: string;
+  actor: string;
+  status: HandoffStatus;
+  created_at: string;
+  delivered_at: string | null;
+  delivered_via: string | null;
+}
+
 interface HistoryRow {
   id: number;
   entity: HistoryEntity;
@@ -346,10 +402,25 @@ CREATE TABLE IF NOT EXISTS comments (
   updated_at TEXT NOT NULL,
   archived_at TEXT
 );
+CREATE TABLE IF NOT EXISTS handoffs (
+  id            TEXT PRIMARY KEY,
+  todo_id       TEXT NOT NULL REFERENCES todos(id),
+  session_id    TEXT NOT NULL,
+  session_name  TEXT,
+  session_cwd   TEXT,
+  note          TEXT NOT NULL DEFAULT '',
+  actor         TEXT NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('pending','delivered','cancelled')),
+  created_at    TEXT NOT NULL,
+  delivered_at  TEXT,
+  delivered_via TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_todos_board ON todos(board_id);
 CREATE INDEX IF NOT EXISTS idx_notes_board ON notes(board_id);
 CREATE INDEX IF NOT EXISTS idx_history_entity ON history(entity_id);
 CREATE INDEX IF NOT EXISTS idx_comments_todo ON comments(todo_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_handoffs_todo ON handoffs(todo_id, status);
 `;
 
 /** rocky-todo 스토어 — 데몬 프로세스 안에서 단일 인스턴스로 쓰인다. */
@@ -1096,6 +1167,173 @@ export class TodoStore {
       .get(todoId)?.board_id;
   }
 
+  // ── handoffs ──────────────────────────────────────────────────────────────
+
+  /**
+   * todo 를 실행 중인 세션 앞으로 넘긴다.
+   *
+   * 히스토리는 댓글과 같은 방식으로 **부모 todo 의 것으로**(`entity='todo'`) 기록해
+   * 상세 타임라인과 SSE 를 그대로 탄다. 다만 `/api/changes` 피드에서는 빠진다 —
+   * `listChangesSince` 참고.
+   * @throws todo 를 못 찾거나, 아카이브됐거나, 이미 pending 이 있으면.
+   */
+  createHandoff(input: CreateHandoffInput): Handoff {
+    const todo = this.mustGetTodo(input.ref, input.currentBoardId);
+    if (todo.archivedAt) {
+      throw new Error(`todo is archived: ${todo.id}`);
+    }
+    if (this.pendingHandoffOf(todo.id)) {
+      throw new Error(`handoff already pending for todo: ${todo.id}`);
+    }
+    const handoff: Handoff = {
+      id: newId(),
+      todoId: todo.id,
+      sessionId: input.sessionId,
+      sessionName: input.sessionName,
+      sessionCwd: input.sessionCwd,
+      note: (input.note ?? '').trim(),
+      actor: input.actor,
+      status: 'pending',
+      createdAt: nowIso(),
+    };
+    this.db
+      .query(
+        `INSERT INTO handoffs
+           (id, todo_id, session_id, session_name, session_cwd, note, actor, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        handoff.id,
+        handoff.todoId,
+        handoff.sessionId,
+        handoff.sessionName ?? null,
+        handoff.sessionCwd ?? null,
+        handoff.note,
+        handoff.actor,
+        handoff.status,
+        handoff.createdAt,
+      );
+    this.recordHistory(
+      'todo',
+      todo.id,
+      input.actor,
+      'handoff',
+      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
+      todo.boardId,
+    );
+    return handoff;
+  }
+
+  /** 이 todo 앞으로 아직 배달되지 않은 요청. 없으면 undefined. */
+  pendingHandoffOf(todoId: string): Handoff | undefined {
+    const row = this.db
+      .query<HandoffRow, [string]>(
+        "SELECT * FROM handoffs WHERE todo_id = ? AND status = 'pending' ORDER BY created_at ASC, rowid ASC LIMIT 1",
+      )
+      .get(todoId);
+    return row ? toHandoff(row) : undefined;
+  }
+
+  /** 큐 조회 — 최신순. boardId 로 거르면 그 보드 todo 의 요청만 나온다. */
+  listHandoffs(
+    filter: { boardId?: string; todoId?: string; status?: HandoffStatus } = {},
+  ): Handoff[] {
+    const clauses: string[] = [];
+    const params: string[] = [];
+    if (filter.boardId) {
+      clauses.push('h.todo_id IN (SELECT id FROM todos WHERE board_id = ?)');
+      params.push(filter.boardId);
+    }
+    if (filter.todoId) {
+      clauses.push('h.todo_id = ?');
+      params.push(filter.todoId);
+    }
+    if (filter.status) {
+      clauses.push('h.status = ?');
+      params.push(filter.status);
+    }
+    const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+    return this.db
+      .query<HandoffRow, string[]>(
+        `SELECT h.* FROM handoffs h${where} ORDER BY h.created_at DESC, h.rowid DESC`,
+      )
+      .all(...params)
+      .map(toHandoff);
+  }
+
+  /**
+   * 이 세션 앞의 pending 중 **가장 오래된 한 건만** 배달 처리하고 돌려준다.
+   *
+   * 한 번에 하나인 이유: 여러 건을 한꺼번에 주면 에이전트가 섞어서 착수하거나 병렬로
+   * 벌린다 — 보드의 start→done 에티켓과 어긋난다. 하나를 끝내면 `Stop` 훅이 다시
+   * 발동해 다음 것을 집으므로 큐는 저절로 직렬로 소화된다.
+   * @returns 대기 중인 것이 없으면 null.
+   */
+  claimHandoff(sessionId: string, via: HandoffVia): ClaimedHandoff | null {
+    const claim = this.db.transaction((): ClaimedHandoff | null => {
+      const row = this.db
+        .query<HandoffRow, [string]>(
+          "SELECT * FROM handoffs WHERE session_id = ? AND status = 'pending' ORDER BY created_at ASC, rowid ASC LIMIT 1",
+        )
+        .get(sessionId);
+      if (!row) {
+        return null;
+      }
+      const at = nowIso();
+      this.db
+        .query(
+          "UPDATE handoffs SET status = 'delivered', delivered_at = ?, delivered_via = ? WHERE id = ? AND status = 'pending'",
+        )
+        .run(at, via, row.id);
+      const todo = this.getTodo(row.todo_id);
+      if (!todo) {
+        // todo 가 사라진 요청은 배달할 수 없다 — delivered 로 닫고 넘어간다.
+        return null;
+      }
+      const remaining =
+        this.db
+          .query<{ n: number }, [string]>(
+            "SELECT COUNT(*) AS n FROM handoffs WHERE session_id = ? AND status = 'pending'",
+          )
+          .get(sessionId)?.n ?? 0;
+      return {
+        handoff: { ...toHandoff(row), status: 'delivered', deliveredAt: at, deliveredVia: via },
+        todoRef: refOf(this, todo.boardId, todo.number, todo.id),
+        todoTitle: todo.title,
+        remaining,
+      };
+    });
+    const claimed = claim();
+    if (claimed) {
+      this.recordHistory(
+        'todo',
+        claimed.handoff.todoId,
+        claimed.handoff.sessionName ?? claimed.handoff.sessionId,
+        'handoff-delivered',
+        undefined,
+        undefined,
+      );
+    }
+    return claimed;
+  }
+
+  /**
+   * 대기 중인 요청을 취소한다.
+   * @throws 없거나 이미 배달/취소된 건이면.
+   */
+  cancelHandoff(id: string, actor: string): Handoff {
+    const row = this.db.query<HandoffRow, [string]>('SELECT * FROM handoffs WHERE id = ?').get(id);
+    if (!row) {
+      throw new Error(`handoff not found: ${id}`);
+    }
+    if (row.status !== 'pending') {
+      throw new Error(`handoff is not pending: ${id}`);
+    }
+    this.db.query("UPDATE handoffs SET status = 'cancelled' WHERE id = ?").run(id);
+    this.recordHistory('todo', row.todo_id, actor, 'handoff-cancel', undefined, undefined);
+    return { ...toHandoff(row), status: 'cancelled' };
+  }
+
   // ── history ───────────────────────────────────────────────────────────────
 
   listHistory(filter: ListHistoryFilter): HistoryEntry[] {
@@ -1132,9 +1370,14 @@ export class TodoStore {
    * 오래된 것부터 (서사 순). lastId 는 전체 히스토리의 최신 id (비어도 sinceId 유지).
    */
   listChangesSince(sinceId: number, limit = 50): { lastId: number; entries: ChangeFeedEntry[] } {
+    // handoff 계열은 뺀다 — A 세션 앞으로 보낸 요청이 B·C 세션의 프롬프트 주입에까지
+    // "logan 이 handoff 했다"로 실리면 노이즈다. 배달에는 전용 경로(claimHandoff)가 있다.
     const rows = this.db
       .query<HistoryRow, [number, number]>(
-        'SELECT * FROM history WHERE id > ? ORDER BY id ASC LIMIT ?',
+        `SELECT * FROM history
+          WHERE id > ?
+            AND action NOT IN ('handoff', 'handoff-delivered', 'handoff-cancel')
+          ORDER BY id ASC LIMIT ?`,
       )
       .all(sinceId, limit);
     const maxRow = this.db
@@ -1357,5 +1600,21 @@ function toComment(row: CommentRow): Comment {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at ?? undefined,
+  };
+}
+
+function toHandoff(row: HandoffRow): Handoff {
+  return {
+    id: row.id,
+    todoId: row.todo_id,
+    sessionId: row.session_id,
+    sessionName: row.session_name ?? undefined,
+    sessionCwd: row.session_cwd ?? undefined,
+    note: row.note,
+    actor: row.actor,
+    status: row.status,
+    createdAt: row.created_at,
+    deliveredAt: row.delivered_at ?? undefined,
+    deliveredVia: (row.delivered_via as HandoffVia | null) ?? undefined,
   };
 }

@@ -37,8 +37,46 @@ const addNumbers: Migration = (db) => {
   db.run('CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS NULL');
 };
 
+/**
+ * 마이그레이션 2: 핸드오프 큐 테이블.
+ *
+ * 신규 DB 는 `SCHEMA` 로 이 테이블을 갖고 태어나므로 `IF NOT EXISTS` 가드가 필요하다 —
+ * 마이그레이션은 신규/기존 DB 양쪽에서 실행된다.
+ */
+const addHandoffs: Migration = (db) => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS handoffs (
+      id            TEXT PRIMARY KEY,
+      todo_id       TEXT NOT NULL REFERENCES todos(id),
+      session_id    TEXT NOT NULL,
+      session_name  TEXT,
+      session_cwd   TEXT,
+      note          TEXT NOT NULL DEFAULT '',
+      actor         TEXT NOT NULL,
+      status        TEXT NOT NULL CHECK (status IN ('pending','delivered','cancelled')),
+      created_at    TEXT NOT NULL,
+      delivered_at  TEXT,
+      delivered_via TEXT
+    )
+  `);
+  const columns = new Set(
+    db
+      .query<{ name: string }, []>('PRAGMA table_info(handoffs)')
+      .all()
+      .map((row) => row.name),
+  );
+  if (columns.has('session_id') && columns.has('status') && columns.has('created_at')) {
+    db.run(
+      'CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id, status, created_at)',
+    );
+  }
+  if (columns.has('todo_id') && columns.has('status')) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_handoffs_todo ON handoffs(todo_id, status)');
+  }
+};
+
 /** 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다. */
-export const MIGRATIONS: Migration[] = [addNumbers];
+export const MIGRATIONS: Migration[] = [addNumbers, addHandoffs];
 
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */
