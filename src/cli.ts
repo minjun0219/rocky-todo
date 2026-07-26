@@ -523,21 +523,30 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error('usage: rocky-todo issue REF [--repo OWNER/NAME]');
       }
+      const path = todoRefPath(id, '/issue', board);
+      // repo 를 이제 CLI 가 미리 PATCH 하지 않는다 — 서버가 ref 로 todo 의 진짜 보드를
+      // 알아서 그 위에 저장한다(finding A). `--board` 로 유추한 board 는 cwd 기준이라
+      // `rocky#12` 처럼 ref 자체가 다른 보드를 가리키면 이전에는 엉뚱한 보드가 조용히
+      // 바뀌었다 — 이제 그 값은 참조 해석에만 쓰이고 repo 갱신 대상 선정에는 안 쓰인다.
       const explicitRepo = str(flags.repo);
       if (explicitRepo) {
         if (!isRepoSlug(explicitRepo)) {
           throw new Error(`--repo 는 OWNER/NAME 모양이어야 한다: ${explicitRepo}`);
         }
-        await request(ctx, 'PATCH', boardRepoPath(board), { repo: explicitRepo });
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path, {
+          repo: explicitRepo,
+        });
+        print(result, () => `✓ ${result.url}`);
+        return;
       }
-      const path = todoRefPath(id, '/issue', board);
       try {
-        const result = await request<{ url: string }>(ctx, 'POST', path);
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path);
         print(result, () => `✓ ${result.url}`);
         return;
       } catch (error) {
-        // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 재시도한다. 미리 보드를 조회하지
-        // 않는 이유: 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
+        // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 더 POST 한다(PATCH 는 하지
+        // 않는다 — 서버가 todo 의 보드에 저장한다). 미리 보드를 조회하지 않는 이유:
+        // 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
         const message = error instanceof Error ? error.message : String(error);
         const inferred = isMissingRepoError(message)
           ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
@@ -545,8 +554,9 @@ export async function runCli(): Promise<void> {
         if (!inferred) {
           throw error;
         }
-        await request(ctx, 'PATCH', boardRepoPath(board), { repo: inferred });
-        const result = await request<{ url: string }>(ctx, 'POST', path);
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path, {
+          repo: inferred,
+        });
         print(result, () => `✓ ${result.url} (보드 repo 를 ${inferred} 로 설정했다)`);
         return;
       }

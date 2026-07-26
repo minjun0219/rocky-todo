@@ -278,11 +278,19 @@ function TodoDetail() {
   );
 }
 
-/** GitHub 이슈 — 없으면 만들고, 있으면 링크로 보낸다. 보드 repo 가 없으면 1회 입력받는다. */
+/**
+ * GitHub 이슈 — 없으면 만들고, 있으면 링크로 보낸다. 보드 repo 가 없으면 1회 입력받는다.
+ *
+ * repo 는 서버가 `gh` 성공 후에만 보드에 저장한다(`createIssueForTodo` — finding C).
+ * 그래서 여기서는 미리 `setBoardRepo` 를 부르지 않는다 — 실패한 슬러그를 먼저 저장해두면
+ * `asking` 이 이미 false 로 내려가 입력이 다시 열리지 않는 막다른 길이 됐던 게 원래
+ * 버그였다. 실패하면 무조건 `asking` 을 다시 연다: 방금 실패한 값을 그대로 보여주거나
+ * (사용자가 직접 입력한 경우), 처음 실패라 아직 아무 값도 안 보였다면 board.repo 를
+ * 프리필한다(있다면) — 어느 쪽이든 사용자가 고쳐서 재시도할 길을 남긴다.
+ */
 function IssueAction({ todo }: { todo: TodoView }) {
   const boards = useUiStore((s) => s.boards);
   const createIssue = useUiStore((s) => s.createIssue);
-  const setBoardRepo = useUiStore((s) => s.setBoardRepo);
   const [repo, setRepo] = useState('');
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -301,17 +309,17 @@ function IssueAction({ todo }: { todo: TodoView }) {
     );
   }
 
-  const submit = async (): Promise<void> => {
+  const submit = async (repoOverride: string | undefined): Promise<void> => {
     setError(null);
     setBusy(true);
     try {
-      if (asking) {
-        await setBoardRepo(board?.key ?? '', repo.trim());
-        setAsking(false);
-      }
-      await createIssue(todo.id);
+      await createIssue(todo.id, repoOverride);
+      setAsking(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // 실패는 절대 조용히 막다른 길이 되면 안 된다 — 입력을 (다시) 열어 고칠 값을 보여준다.
+      setAsking(true);
+      setRepo(repoOverride ?? board?.repo ?? '');
     } finally {
       setBusy(false);
     }
@@ -336,9 +344,10 @@ function IssueAction({ todo }: { todo: TodoView }) {
           onClick={() => {
             if (!board?.repo && !asking) {
               setAsking(true);
+              setRepo(board?.repo ?? '');
               return;
             }
-            void submit();
+            void submit(asking ? repo.trim() : undefined);
           }}
         >
           {busy ? '만드는 중…' : 'GitHub 이슈 만들기'}

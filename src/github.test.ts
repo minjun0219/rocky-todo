@@ -284,4 +284,57 @@ describe('createIssueForTodo', () => {
   test('an unknown todo throws not found', () => {
     expect(() => createIssueForTodo(store, 'nosuchid', { actor: 'tester' })).toThrow(/not found/);
   });
+
+  // finding A/C: 서버가 client 대신 어느 보드에 repo 를 저장할지 정한다 — `options.repo`
+  // 가 그 경로다. 세 시나리오가 회귀를 지킨다: 보드에 repo 가 없을 때 채워짐, `gh` 실패
+  // 시 절대 채워지지 않음(finding C 의 근본 원인), 이미 다른 repo 가 있어도 이번 호출은
+  // 넘긴 값으로 실행되고 성공하면 그 값이 남는다.
+  test('options.repo fills in a repo-less board on success', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/o/n/issues/7\n', stderr: '' });
+
+    const result = createIssueForTodo(store, todo.id, { actor: 'tester', run, repo: 'o/n' });
+
+    expect(result.url).toBe('https://github.com/o/n/issues/7');
+    expect(store.boardById(todo.boardId)?.repo).toBe('o/n');
+  });
+
+  test('options.repo is never persisted when gh fails (root cause of finding C)', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 1, stdout: '', stderr: 'could not resolve to a Repository' });
+
+    expect(() =>
+      createIssueForTodo(store, todo.id, { actor: 'tester', run, repo: 'wrong/slug' }),
+    ).toThrow(/could not resolve/);
+    expect(store.boardById(todo.boardId)?.repo).toBeUndefined();
+  });
+
+  test('options.repo overrides an already-set board repo for this call and persists on success', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'old/repo', 'tester');
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/new/repo/issues/1\n', stderr: '' });
+
+    const result = createIssueForTodo(store, todo.id, {
+      actor: 'tester',
+      run,
+      repo: 'new/repo',
+    });
+
+    expect(result.url).toBe('https://github.com/new/repo/issues/1');
+    expect(run.calls[0]?.cmd).toEqual([
+      'gh',
+      'issue',
+      'create',
+      '-R',
+      'new/repo',
+      '-t',
+      '작업',
+      '-F',
+      '-',
+    ]);
+    expect(store.boardById(todo.boardId)?.repo).toBe('new/repo');
+  });
 });

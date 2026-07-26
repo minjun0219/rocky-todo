@@ -85,13 +85,14 @@ interface UiState {
   archiveComment: (id: string) => Promise<void>;
   unarchiveComment: (id: string) => Promise<void>;
   /**
-   * todo 를 GitHub 이슈로 만든다.
-   * @throws 서버가 거절한 이유를 그대로 던진다 — 보드에 repo 가 없거나(400), 이미 이슈가
+   * todo 를 GitHub 이슈로 만든다. `repo` 를 주면 서버가 그 값으로 시도하고, `gh` 가
+   * 성공했을 때만 todo 의 보드에 영구 저장한다 — 실패한 슬러그가 보드에 눌어붙지
+   * 않는다(finding C: 예전에는 `gh` 호출 전에 먼저 저장해, 오타 슬러그가 성공 여부와
+   * 무관하게 남아 입력창이 다시 열리지 않는 막다른 길이었다).
+   * @throws 서버가 거절한 이유를 그대로 던진다 — repo 를 모르거나(400), 이미 이슈가
    *   있거나(409), gh 가 실패한 경우다. 호출자가 사용자에게 보여줘야 한다.
    */
-  createIssue: (todoId: string) => Promise<void>;
-  /** 보드의 GitHub 레포를 설정한다. @throws 모양이 틀리면 400 을 그대로 던진다. */
-  setBoardRepo: (key: string, repo: string) => Promise<void>;
+  createIssue: (todoId: string, repo?: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -398,17 +399,11 @@ export const useUiStore = create<UiState>((set, get) => ({
     await get().refetch();
   },
 
-  createIssue: async (todoId) => {
+  createIssue: async (todoId, repo) => {
     const { actor } = get();
-    await api(`/api/todos/${todoId}/issue`, actor, { method: 'POST' });
-    await get().refetch();
-  },
-
-  setBoardRepo: async (key, repo) => {
-    const { actor } = get();
-    await api(`/api/boards/${encodeURIComponent(key)}`, actor, {
-      method: 'PATCH',
-      body: JSON.stringify({ repo }),
+    await api(`/api/todos/${todoId}/issue`, actor, {
+      method: 'POST',
+      ...(repo !== undefined ? { body: JSON.stringify({ repo }) } : {}),
     });
     await get().refetch();
   },

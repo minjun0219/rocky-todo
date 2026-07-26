@@ -683,4 +683,82 @@ describe('github issue', () => {
     const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
     expect(res.status).toBe(409);
   });
+
+  // finding A/C: 클라이언트가 어느 보드가 todo 를 소유하는지 추측해 PATCH 하던 옛 경로를
+  // 없앴다 — 대신 이 라우트가 body 의 `repo` 를 받아 서버 안에서(= todo 의 실제 보드
+  // 위에서) 처리한다. `run` 을 주입해 실제 `gh` 는 절대 부르지 않는다.
+  test("POST /api/todos/:ref/issue accepts a body repo and sets it on the todo's own board", async () => {
+    handle = buildTodoServer({
+      store,
+      run: () => ({ code: 0, stdout: 'https://github.com/o/n/issues/9\n', stderr: '' }),
+    }).fetch;
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string; boardId: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toBe('https://github.com/o/n/issues/9');
+
+    // /api/boards/:key 는 GET 이 없으므로 목록으로 확인한다
+    const boards = (await (await req('/api/boards')).json()) as { key: string; repo?: string }[];
+    expect(boards.find((b) => b.key === 'rocky')?.repo).toBe('o/n');
+  });
+
+  test('POST /api/todos/:ref/issue with a malformed body repo is 400', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'not-a-slug' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('POST /api/todos/:ref/issue with no body at all still 400s when the board has no repo', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  // finding F: `gh` 실패 메시지에 "not found" 가 들어가면(GitHub API 의 404 응답을 그대로
+  // 옮긴 경우 흔함) `toHttpError` 의 일반 규칙(`/not found/i` → 404)을 타면 이 라우트의
+  // 404("todo not found")와 뜻이 겹쳐버린다. orchestrator 자신의 실패는 문구와 무관하게
+  // 항상 400 이어야 한다.
+  test('a gh failure whose message contains "not found" is still a 400, not a 404', async () => {
+    handle = buildTodoServer({
+      store,
+      run: () => ({
+        code: 1,
+        stdout: '',
+        stderr: 'HTTP 404: Not Found (https://api.github.com/repos/o/n)',
+      }),
+    }).fetch;
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(400);
+  });
 });

@@ -155,7 +155,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
           .boolean()
           .optional()
           .describe(
-            'true → also open a GitHub issue for this todo and attach its URL to links. Requires the board to have a repo set (rocky-todo board repo OWNER/NAME)',
+            'true → also open a GitHub issue for this todo and attach its URL to links. Requires the board to have a repo set (rocky-todo board repo OWNER/NAME). This is an irreversible external publication, not a local board write: the issue is created immediately with no undo, the target repository may be public, and the todo title and description are published verbatim as the issue title/body. Ask the user for confirmation before setting this to true.',
           ),
         actor: actorSchema,
       },

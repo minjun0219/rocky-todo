@@ -62,6 +62,30 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * 몸통이 아예 없어도 되는 라우트용 — CLI/웹 UI 가 `{ repo }` 없이 POST 하는 경우가
+ * 흔하다(`src/cli.ts` 의 `issue` 명령 기본 경로, `src/ui/store.ts` 의 `createIssue`).
+ * `readBody` 는 빈 본문에서 JSON 파싱이 던지는 걸 그대로 "invalid JSON body" 로
+ * 바꿔버려 이 경우를 구분 못 한다 — 빈 문자열이면 undefined 를 돌려주고, 있으면
+ * `readBody` 와 같은 파싱/모양 검증을 적용한다.
+ */
+async function readOptionalBody(req: Request): Promise<Record<string, unknown> | undefined> {
+  const text = await req.text();
+  if (text.trim() === '') {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('invalid JSON body');
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('body must be a JSON object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 /** not found 류 스토어 에러를 HTTP status 로 번역한다. */
 function toHttpError(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error);
@@ -286,8 +310,30 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             409,
           );
         }
-        const result = createIssueForTodo(store, ref, { actor, currentBoardId, run });
-        return json({ url: result.url, todo: withRef(store, result.todo) }, 201);
+        // repo 는 옵션 — 클라이언트가 어느 보드가 todo 를 소유하는지 추측해 PATCH 하던
+        // 옛 경로(findings A/C)를 없앤 자리다. body 자체가 없을 수도 있어(CLI 기본 경로,
+        // 웹 UI 의 board.repo 이미 설정된 경로) `readOptionalBody` 로 받는다.
+        const body = await readOptionalBody(req);
+        let repo: string | undefined;
+        if (body && 'repo' in body) {
+          if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
+            return errorResponse('repo must look like OWNER/NAME', 400);
+          }
+          repo = body.repo.trim();
+        }
+        try {
+          const result = createIssueForTodo(store, ref, { actor, currentBoardId, run, repo });
+          return json({ url: result.url, todo: withRef(store, result.todo) }, 201);
+        } catch (error) {
+          // 이 라우트 자신의 실패(repo 미설정, `gh` 실패 등)는 항상 400 이다 —
+          // `toHttpError` 로 흘려보내면 `gh` 의 "HTTP 404: Not Found (api.github.com/...)"
+          // 같은 메시지가 `/not found/i` 에 걸려, 이 라우트에서 404 는 "todo not found"
+          // 라는 계약을 깬다(finding F). "todo not found"/"already has" 는 이미 위에서
+          // 각자의 상태 코드로 먼저 반환됐으므로 여기 도달하는 실패는 전부 orchestrator
+          // 자신의 것이다.
+          const message = error instanceof Error ? error.message : String(error);
+          return errorResponse(message, 400);
+        }
       }
 
       // ── comments ──

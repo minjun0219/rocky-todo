@@ -153,13 +153,19 @@ export function createIssue(
  * 링크 저장은 기존 `updateTodo` 를 거친다 — 새 저장 경로를 만들지 않으므로 히스토리·SSE·
  * `/api/changes` 훅 주입에 자동으로 실린다.
  *
- * @throws todo/보드를 못 찾거나, 보드에 repo 가 없거나, 이미 이슈 링크가 있거나,
- *   `gh` 가 실패하면. 메시지는 그대로 사용자에게 보여줄 수 있게 쓴다.
+ * `options.repo` 를 주면 보드에 이미 설정된 repo 보다 그 값을 우선한다 — REST 라우트가
+ * 요청 본문의 `repo` 를 그대로 넘기는 경로다. **`gh` 가 성공한 뒤에만** 그 값을
+ * `store.setBoardRepo` 로 보드에 영구 반영한다: 틀린 슬러그를 먼저 저장해두면(구
+ * finding — 웹 UI 가 `gh` 응답 전에 `setBoardRepo` 를 불러 실패해도 되돌릴 수 없었다)
+ * 실패해도 보드에 잘못된 repo 가 눌어붙는다. 실패하면 보드는 호출 전 상태 그대로다.
+ *
+ * @throws todo/보드를 못 찾거나, repo 를 알 수 없거나(옵션도 보드도 없음), 이미 이슈
+ *   링크가 있거나, `gh` 가 실패하면. 메시지는 그대로 사용자에게 보여줄 수 있게 쓴다.
  */
 export function createIssueForTodo(
   store: TodoStore,
   ref: string,
-  options: { actor: string; currentBoardId?: string; run?: RunCommand },
+  options: { actor: string; currentBoardId?: string; run?: RunCommand; repo?: string },
 ): { url: string; todo: Todo } {
   const todo = store.getTodo(ref, options.currentBoardId);
   if (!todo) {
@@ -173,18 +179,22 @@ export function createIssueForTodo(
   if (!board) {
     throw new Error(`board not found for todo: ${ref}`);
   }
-  if (!board.repo) {
+  const repo = options.repo ?? board.repo;
+  if (!repo) {
     throw new Error(
       `board has no GitHub repo: ${board.key} — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)`,
     );
   }
   const boardRef = `${board.key}#${todo.number}`;
   const result = createIssue(
-    { repo: board.repo, title: todo.title, body: issueBody(todo.description, boardRef) },
+    { repo, title: todo.title, body: issueBody(todo.description, boardRef) },
     options.run,
   );
   if (!result.ok) {
     throw new Error(result.message);
+  }
+  if (options.repo) {
+    store.setBoardRepo(board.key, options.repo, options.actor);
   }
   const number = issueNumberFrom(result.url);
   const updated = store.updateTodo(

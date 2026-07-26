@@ -57,7 +57,19 @@ export const addBoardRepo: Migration = (db) => {
   db.run('ALTER TABLE boards ADD COLUMN repo TEXT');
 };
 
-/** 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다. */
+/**
+ * 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다.
+ *
+ * **규칙(`todos.number` vs `boards.repo` divergence — finding G)**: `SCHEMA` 는 신규 DB 를
+ * 만드는 뼈대이고 신규 DB 도 `user_version` 은 0 에서 시작한다. 그래서 어떤 컬럼을
+ * `SCHEMA` 에 넣어 신규 DB 에 바로 포함시키면서 동시에 그 컬럼을 만드는 마이그레이션도
+ * 배열에 있다면(`addBoardRepo` 가 그 예), 그 마이그레이션은 반드시 `PRAGMA table_info` 로
+ * 컬럼이 이미 있는지 먼저 확인해야 한다 — 안 그러면 신규 DB 는 "duplicate column" 으로
+ * 데몬이 기동조차 못 한다(`todos.number` 는 `SCHEMA` 에 없고 마이그레이션에만 있어서 이
+ * 가드가 필요 없다 — 두 패턴 모두 유효하지만 섞어 쓰려면 이 가드가 필수다). 앞으로
+ * `SCHEMA` 에 컬럼을 추가하면서 그 컬럼을 위한 마이그레이션도 함께 둘 때는 `addBoardRepo`
+ * 를 그대로 본떠라.
+ */
 export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo];
 
 export interface RunMigrationsOptions {

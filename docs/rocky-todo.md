@@ -146,8 +146,10 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - **보드마다 GitHub 레포(`owner/name`)를 알아야 한다** — 보드는 원래 key(=git remote
   basename)만 알아서 owner 를 모른다. 채우는 경로 셋:
   - `rocky-todo board repo [OWNER/NAME]` — 인자 없으면 cwd 의 git remote 에서 유추
-  - `rocky-todo issue REF` 는 보드에 repo 가 없으면 cwd 에서 유추해 저장하고 진행한다
-  - 웹 UI 는 버튼을 처음 누를 때 `OWNER/NAME` 을 1회 입력받아 저장한다
+  - `rocky-todo issue REF` 는 보드에 repo 가 없으면 cwd 에서 유추해 진행한다 — 저장은
+    서버가 `gh` 성공 후 todo 의 실제 보드에 한다(CLI 는 더 이상 미리 PATCH 하지 않는다)
+  - 웹 UI 는 버튼을 처음 누를 때 `OWNER/NAME` 입력을 받는다 — 이것도 `gh` 성공 후에만
+    보드에 저장되고, 실패하면(오타 슬러그 등) 입력이 값을 유지한 채 다시 열린다
 - 이미 이슈 링크가 있는 todo 는 다시 만들지 않는다. **역방향 동기화는 없다** — 이슈를
   닫아도 todo 는 자동으로 완료되지 않고, 이슈 본문/제목이 사후에 바뀌어도 todo 에는
   반영되지 않는다.
