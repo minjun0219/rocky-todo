@@ -1,6 +1,7 @@
 /**
  * UI 순수 헬퍼 — actor 톤(두 대기 컨셉), 시간 표기, 초경량 markdown 렌더 토큰화.
  */
+import type { Comment, HistoryEntry } from '../store';
 
 /** 에이전트로 취급하는 actor 이름 — 따뜻한 앰버 톤 (에리디언의 대기). */
 const AGENT_ACTORS = new Set(['claude-code', 'codex', 'opencode', 'agent', 'rocky']);
@@ -270,4 +271,92 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as { tagName?: string; isContentEditable?: boolean };
   const tag = el.tagName?.toUpperCase();
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+}
+
+/** 히스토리 줄과 댓글 카드를 한 줄기로 묶은 타임라인 항목. */
+export type TimelineItem =
+  | { kind: 'history'; at: string; entry: HistoryEntry }
+  | { kind: 'comment'; at: string; comment: Comment };
+
+/**
+ * 댓글 계열 히스토리 액션 — 타임라인에서는 버린다.
+ *
+ * 댓글 mutation 은 부모 todo 의 히스토리로도 기록된다(SSE·훅 주입 경로를 타기 위해서다).
+ * 그대로 두면 같은 사건이 댓글 카드와 히스토리 한 줄로 두 번 보인다.
+ */
+const COMMENT_HISTORY_ACTIONS: ReadonlySet<string> = new Set([
+  'comment',
+  'comment-edit',
+  'comment-archive',
+  'comment-unarchive',
+]);
+
+/**
+ * 히스토리와 댓글을 시간순(**최신 우선**)으로 병합한다. 드로어의 기존 히스토리 렌더가
+ * 최신 우선이라 그 방향을 유지한다.
+ */
+export function mergeTimeline(history: HistoryEntry[], comments: Comment[]): TimelineItem[] {
+  const items: TimelineItem[] = [
+    ...history
+      .filter((entry) => !COMMENT_HISTORY_ACTIONS.has(entry.action))
+      .map((entry) => ({ kind: 'history' as const, at: entry.at, entry })),
+    ...comments.map((comment) => ({ kind: 'comment' as const, at: comment.createdAt, comment })),
+  ];
+  // 동률은 0 을 돌려 안정 정렬을 유지한다 (같은 밀리초의 두 항목이 뒤바뀌지 않게).
+  return items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/**
+ * 절대 작성 시각 — 오늘이면 `HH:MM`, 다른 날이면 `MM-DD HH:MM` (브라우저 로컬 타임존).
+ * 상대 시각(`formatElapsed`)은 "언제 썼는지"를 정확히 못 알려줘 댓글에는 쓰지 않는다.
+ */
+export function formatStamp(iso: string, now = new Date()): string {
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hm = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const sameDay =
+    at.getFullYear() === now.getFullYear() &&
+    at.getMonth() === now.getMonth() &&
+    at.getDate() === now.getDate();
+  return sameDay ? hm : `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${hm}`;
+}
+
+/** localStorage 의 최소 계약 — 테스트에서 인메모리 대역을 넣기 위해 좁혀 둔다. */
+export interface SeenStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+const SEEN_KEY = 'rocky-todo-seen-comments';
+
+/** todo id → 마지막으로 확인한 댓글 시각(ISO). 깨진 값은 빈 커서로 취급한다. */
+export function readSeen(storage: SeenStorage): Record<string, string> {
+  try {
+    const parsed = JSON.parse(storage.getItem(SEEN_KEY) ?? '{}') as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+/** 이 todo 의 댓글을 `at` 까지 확인했다고 기록한다. */
+export function markSeen(storage: SeenStorage, todoId: string, at: string): void {
+  const seen = readSeen(storage);
+  seen[todoId] = at;
+  storage.setItem(SEEN_KEY, JSON.stringify(seen));
+}
+
+/** 읽음 커서보다 새로운 댓글이 있는지 — 배지 강조 조건. */
+export function hasUnreadComments(
+  todo: { id: string; lastCommentAt?: string },
+  seen: Record<string, string>,
+): boolean {
+  if (!todo.lastCommentAt) {
+    return false;
+  }
+  const at = seen[todo.id];
+  return at === undefined || at < todo.lastCommentAt;
 }

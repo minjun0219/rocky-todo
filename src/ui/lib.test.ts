@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test';
+import type { Comment, HistoryEntry } from '../store';
 import {
   COPY_FEEDBACK_MS,
+  formatStamp,
+  hasUnreadComments,
   isEditableTarget,
+  markSeen,
+  mergeTimeline,
+  readSeen,
   type CopyRefDocument,
   type CopyRefTextArea,
+  type SeenStorage,
   copyRef,
   copyRefWithFeedback,
 } from './lib';
@@ -198,5 +205,121 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget({ tagName: 'DIV' } as unknown as EventTarget)).toBe(false);
     expect(isEditableTarget({ tagName: 'BUTTON' } as unknown as EventTarget)).toBe(false);
     expect(isEditableTarget(null)).toBe(false);
+  });
+});
+
+function history(partial: Partial<HistoryEntry>): HistoryEntry {
+  return {
+    id: 1,
+    entity: 'todo',
+    entityId: 'abcd1234',
+    actor: 'logan',
+    action: 'update',
+    at: '2026-07-26T01:00:00.000Z',
+    ...partial,
+  };
+}
+
+function comment(partial: Partial<Comment>): Comment {
+  return {
+    id: 'c1',
+    todoId: 'abcd1234',
+    actor: 'logan',
+    body: '본문',
+    createdAt: '2026-07-26T02:00:00.000Z',
+    updatedAt: '2026-07-26T02:00:00.000Z',
+    ...partial,
+  };
+}
+
+/** localStorage 대신 쓰는 인메모리 저장소. */
+function fakeStorage(
+  initial: Record<string, string> = {},
+): SeenStorage & { data: Record<string, string> } {
+  const data = { ...initial };
+  return {
+    data,
+    getItem: (key) => data[key] ?? null,
+    setItem: (key, value) => {
+      data[key] = value;
+    },
+  };
+}
+
+describe('mergeTimeline', () => {
+  test('merges newest first', () => {
+    const items = mergeTimeline(
+      [
+        history({ id: 2, at: '2026-07-26T03:00:00.000Z' }),
+        history({ id: 1, at: '2026-07-26T01:00:00.000Z' }),
+      ],
+      [comment({ id: 'c1', createdAt: '2026-07-26T02:00:00.000Z' })],
+    );
+    expect(items.map((i) => i.at)).toEqual([
+      '2026-07-26T03:00:00.000Z',
+      '2026-07-26T02:00:00.000Z',
+      '2026-07-26T01:00:00.000Z',
+    ]);
+    expect(items[1]?.kind).toBe('comment');
+  });
+
+  test('drops comment-family history rows so nothing is shown twice', () => {
+    const items = mergeTimeline(
+      [
+        history({ id: 3, action: 'comment' }),
+        history({ id: 4, action: 'comment-edit' }),
+        history({ id: 5, action: 'comment-archive' }),
+        history({ id: 6, action: 'comment-unarchive' }),
+        history({ id: 7, action: 'done' }),
+      ],
+      [],
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe('history');
+  });
+});
+
+describe('formatStamp', () => {
+  test('shows only the time for today', () => {
+    const now = new Date(2026, 6, 26, 15, 0);
+    const at = new Date(2026, 6, 26, 9, 5);
+    expect(formatStamp(at.toISOString(), now)).toBe('09:05');
+  });
+
+  test('shows month-day and time for other days', () => {
+    const now = new Date(2026, 6, 26, 15, 0);
+    const at = new Date(2026, 6, 24, 18, 30);
+    expect(formatStamp(at.toISOString(), now)).toBe('07-24 18:30');
+  });
+});
+
+describe('seen cursor', () => {
+  test('unread when there is a comment newer than the cursor', () => {
+    const seen = { abcd1234: '2026-07-26T01:00:00.000Z' };
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T02:00:00.000Z' }, seen),
+    ).toBe(true);
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T00:00:00.000Z' }, seen),
+    ).toBe(false);
+  });
+
+  test('no comments means nothing unread', () => {
+    expect(hasUnreadComments({ id: 'abcd1234' }, {})).toBe(false);
+  });
+
+  test('never seen but has a comment counts as unread', () => {
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T02:00:00.000Z' }, {}),
+    ).toBe(true);
+  });
+
+  test('markSeen persists and readSeen survives malformed json', () => {
+    const storage = fakeStorage();
+    markSeen(storage, 'abcd1234', '2026-07-26T02:00:00.000Z');
+    expect(readSeen(storage)).toEqual({ abcd1234: '2026-07-26T02:00:00.000Z' });
+
+    const broken = fakeStorage({ 'rocky-todo-seen-comments': '{not json' });
+    expect(readSeen(broken)).toEqual({});
   });
 });
