@@ -187,6 +187,107 @@ describe('boards & sections REST', () => {
 
     expect((await req('/api/sections')).status).toBe(400);
   });
+
+  // 빈 섹션 생성 경로 — 기존에는 todo 를 만들 때 `section` 이름으로 upsert 되는 길뿐이라
+  // 항목 없이 섹션만 먼저 둘 수 없었다. CLI/에이전트가 이 라우트를 쓴다.
+  test('POST /api/sections 는 빈 섹션을 만든다', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'a' }) });
+    const res = await req('/api/sections', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'a', title: '설계' }),
+    });
+    expect(res.status).toBe(201);
+    const section = (await res.json()) as { id: string; title: string; boardId: string };
+    expect(section.title).toBe('설계');
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as { title: string }[];
+    expect(listed.map((s) => s.title)).toEqual(['설계']);
+  });
+
+  test('POST /api/sections 는 같은 이름을 두 번 만들지 않는다 (upsert)', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'a' }) });
+    const first = (await (
+      await req('/api/sections', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: '설계' }),
+      })
+    ).json()) as { id: string };
+    const second = (await (
+      await req('/api/sections', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: '설계' }),
+      })
+    ).json()) as { id: string };
+    expect(second.id).toBe(first.id);
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as unknown[];
+    expect(listed).toHaveLength(1);
+  });
+
+  test('POST /api/sections 는 board/title 이 없으면 400', async () => {
+    expect(
+      (await req('/api/sections', { method: 'POST', body: JSON.stringify({ title: '설계' }) }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await req('/api/sections', { method: 'POST', body: JSON.stringify({ board: 'a' }) })).status,
+    ).toBe(400);
+    expect(
+      (
+        await req('/api/sections', {
+          method: 'POST',
+          body: JSON.stringify({ board: 'a', title: '  ' }),
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  test('POST /api/sections/:id/archive 는 섹션을 보관하고 항목을 미분류로 돌린다', async () => {
+    const todo = (await (
+      await req('/api/todos', {
+        method: 'POST',
+        body: JSON.stringify({ board: 'a', title: 'x', section: '설계' }),
+      })
+    ).json()) as { id: string; sectionId: string };
+
+    const res = await req(`/api/sections/${todo.sectionId}/archive`, { method: 'POST' });
+    expect(res.status).toBe(200);
+
+    const listed = (await (await req('/api/sections?board=a')).json()) as unknown[];
+    expect(listed).toHaveLength(0);
+
+    const detail = (await (await req(`/api/todos/${todo.id}`)).json()) as {
+      todo: { sectionId?: string };
+    };
+    expect(detail.todo.sectionId).toBeUndefined();
+  });
+
+  // UI 가 이 에러 메시지를 그대로 사용자에게 보여주므로 상태코드·문구를 고정해 둔다.
+  test('POST /api/sections 는 없는 보드에 404 (빈 보드를 만들지 않는다)', async () => {
+    const res = await req('/api/sections', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'nope', title: '설계' }),
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toContain('board not found');
+
+    // 보드가 조용히 만들어지지 않았는지 — ensureBoard 를 쓰면 여기서 새 보드가 생긴다.
+    const boards = (await (await req('/api/boards')).json()) as { key: string }[];
+    expect(boards.map((b) => b.key)).not.toContain('nope');
+  });
+
+  test('POST /api/sections/:id/archive 는 없는 섹션에 404', async () => {
+    expect((await req('/api/sections/zzzzzzzz/archive', { method: 'POST' })).status).toBe(404);
+  });
+
+  // 보드 key 규칙(공백·# 금지)은 파싱 가능한 ref 를 보장하려고 둔 것이다. UI 가 이 에러를
+  // 사용자에게 보여줘야 하므로, 서버가 400 으로 분명히 거절하는지 고정한다.
+  test('POST /api/boards 는 참조에 쓸 수 없는 key 를 400 으로 거절한다', async () => {
+    for (const key of ['my repo', 'a#b', '']) {
+      const res = await req('/api/boards', { method: 'POST', body: JSON.stringify({ key }) });
+      expect(res.status).toBe(400);
+    }
+  });
 });
 
 describe('changes feed', () => {

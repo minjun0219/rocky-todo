@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   COPY_FEEDBACK_MS,
+  isEditableTarget,
   type CopyRefDocument,
   type CopyRefTextArea,
   copyRef,
@@ -177,5 +178,25 @@ describe('copyRefWithFeedback', () => {
 
     expect(copiedCalls).toEqual([]);
     expect(promptCalls).toEqual(['클립보드에 접근할 수 없다 — 아래 텍스트를 직접 복사해라:']);
+  });
+});
+
+describe('isEditableTarget', () => {
+  test('input / textarea / select 는 편집 중으로 본다', () => {
+    for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT', 'input', 'textarea', 'select']) {
+      expect(isEditableTarget({ tagName } as unknown as EventTarget)).toBe(true);
+    }
+  });
+
+  test('contentEditable 요소도 편집 중으로 본다', () => {
+    expect(
+      isEditableTarget({ tagName: 'DIV', isContentEditable: true } as unknown as EventTarget),
+    ).toBe(true);
+  });
+
+  test('일반 요소와 null 은 아니다', () => {
+    expect(isEditableTarget({ tagName: 'DIV' } as unknown as EventTarget)).toBe(false);
+    expect(isEditableTarget({ tagName: 'BUTTON' } as unknown as EventTarget)).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
   });
 });

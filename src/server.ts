@@ -151,6 +151,30 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
         return json(store.listSections(boardId));
       }
+      if (method === 'POST' && path === '/api/sections') {
+        const body = await readBody(req);
+        if (typeof body.board !== 'string' || body.board === '') {
+          return errorResponse('board is required', 400);
+        }
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        if (title === '') {
+          return errorResponse('title is required', 400);
+        }
+        // 없는 보드를 자동 생성하지 않는다 — 섹션은 이미 있는 보드에 붙이는 것이고,
+        // 오타난 board key 로 빈 보드가 생기는 편이 조용한 사고가 된다.
+        const boardId = store.boardIdOf(body.board);
+        if (!boardId) {
+          return errorResponse(`board not found: ${body.board}`, 404);
+        }
+        return json(store.ensureSection(boardId, title, actor), 201);
+      }
+
+      const sectionArchive = path.match(/^\/api\/sections\/([^/]+)\/archive$/);
+      if (sectionArchive?.[1] && method === 'POST') {
+        // 섹션은 id 로만 지정한다 — 이름은 보드 안에서만 유일해 REST 경로로 쓰기 애매하다.
+        store.archiveSection(decodeURIComponent(sectionArchive[1]), actor);
+        return json({ ok: true });
+      }
 
       // ── todos ──
       if (method === 'GET' && path === '/api/todos') {

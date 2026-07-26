@@ -51,6 +51,8 @@ export function TodoPane() {
     if (noSection.length > 0) {
       groups.push({ key: '__none', title: '일반', items: noSection });
     }
+    // 빈 섹션은 그리지 않는다 — 섹션은 항목을 담을 때만 의미가 있고, 빈 헤더가 쌓이면
+    // 노이즈다. 드로어에서 항목을 옮기면 그때 나타난다.
     for (const section of sections) {
       const items = roots.filter((t) => t.sectionId === section.id);
       if (items.length > 0) {

@@ -42,6 +42,12 @@ interface UiState {
   openNoteDetail: (id: string) => Promise<void>;
   closeDetail: () => void;
 
+  /**
+   * 보드 생성 후 그 보드로 전환한다.
+   * @throws 서버가 거절한 이유를 그대로 던진다 — key 에 공백/`#` 이 있으면 참조로 쓸 수
+   *   없어 400 이 온다. 호출자가 사용자에게 보여줘야 한다 (조용히 삼키면 안 된다).
+   */
+  createBoard: (key: string) => Promise<void>;
   addTodo: (input: { board: string; title: string; section?: string }) => Promise<void>;
   patchTodo: (id: string, patch: Record<string, unknown>) => Promise<void>;
   setTodoStatus: (id: string, action: StatusAction) => Promise<void>;
@@ -132,6 +138,18 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   closeDetail: () => set({ detail: null }),
+
+  createBoard: async (key) => {
+    const { actor } = get();
+    const board = await api<Board>('/api/boards', actor, {
+      method: 'POST',
+      body: JSON.stringify({ key }),
+    });
+    // selected 를 먼저 바꾼 뒤 조회한다 — 순서가 반대면 refetch 가 이전 보드 기준으로
+    // 돌아, 새 보드 화면에 직전 보드의 항목·섹션이 그대로 남는다.
+    set({ selected: board.key });
+    await get().refetch();
+  },
 
   addTodo: async (input) => {
     const { actor } = get();

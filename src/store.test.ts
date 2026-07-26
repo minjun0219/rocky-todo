@@ -123,6 +123,82 @@ describe('todos', () => {
     expect(sections[0]?.title).toBe('설계');
   });
 
+  // 섹션에 넣는 길만 있고 빼는 길이 없으면, 웹 UI 에서 한번 지정한 섹션을 되돌릴 수 없다.
+  // parentId 가 null 로 해제되는 것과 같은 대칭이 필요하다.
+  test('section: null 로 섹션에서 뺄 수 있다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    expect(todo.sectionId).toBeDefined();
+
+    const bare = store.updateTodo(todo.id, { section: null }, 'tester');
+    expect(bare.sectionId).toBeUndefined();
+
+    // 섹션 자체는 남는다 — 삭제는 이 제품에 없다.
+    expect(store.listSections(todo.boardId)).toHaveLength(1);
+  });
+
+  // updateTodo 만 공백을 걸러내면 createTodo 로는 여전히 빈 이름 섹션이 생긴다.
+  test('createTodo 도 공백뿐인 section 이름으로 섹션을 만들지 않는다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: 'a', section: '  ' }, 'tester');
+    expect(todo.sectionId).toBeUndefined();
+    expect(store.listSections(todo.boardId)).toHaveLength(0);
+  });
+
+  test('createTodo 는 section 이름의 앞뒤 공백을 다듬어 같은 섹션으로 모은다', () => {
+    const a = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const b = store.createTodo({ board: 'rocky', title: 'b', section: '  설계  ' }, 'tester');
+    expect(b.sectionId).toBe(a.sectionId as string);
+    expect(store.listSections(a.boardId)).toHaveLength(1);
+  });
+
+  test('section 을 빈 문자열로 주면 빈 이름 섹션을 만들지 않고 해제로 본다', () => {
+    const todo = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const bare = store.updateTodo(todo.id, { section: '  ' }, 'tester');
+    expect(bare.sectionId).toBeUndefined();
+    expect(store.listSections(todo.boardId).map((s) => s.title)).toEqual(['설계']);
+  });
+
+  // 섹션을 아카이브했는데 항목의 section_id 가 남아 있으면, 웹 UI 는 그 항목을 어느
+  // 그룹에도 넣지 못해 화면에서 증발시킨다 (섹션 그룹은 사라지고 '일반' 그룹은
+  // sectionId 가 없는 것만 모은다). 섹션이 사라지면 항목은 미분류로 돌아와야 한다.
+  test('섹션을 아카이브하면 그 안의 항목은 미분류로 돌아온다', () => {
+    const a = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const b = store.createTodo({ board: 'rocky', title: 'b', section: '설계' }, 'tester');
+    const other = store.createTodo({ board: 'rocky', title: 'c', section: '검증' }, 'tester');
+    const sectionId = a.sectionId as string;
+
+    store.archiveSection(sectionId, 'tester');
+
+    expect(store.getTodo(a.id)?.sectionId).toBeUndefined();
+    expect(store.getTodo(b.id)?.sectionId).toBeUndefined();
+    // 다른 섹션은 건드리지 않는다
+    expect(store.getTodo(other.id)?.sectionId).toBe(other.sectionId as string);
+    expect(store.listSections(a.boardId).map((s) => s.title)).toEqual(['검증']);
+  });
+
+  // store 의 원칙은 "모든 mutation 은 history 를 남긴다" 다. 섹션 아카이브가 todo 의
+  // section_id 를 바꾸는 것도 그 todo 에 일어난 변경이므로, 상세 타임라인에서 왜 섹션이
+  // 풀렸는지 설명될 수 있어야 한다.
+  test('섹션 아카이브는 영향받은 각 todo 에도 히스토리를 남긴다', () => {
+    const a = store.createTodo({ board: 'rocky', title: 'a', section: '설계' }, 'tester');
+    const b = store.createTodo({ board: 'rocky', title: 'b', section: '설계' }, 'tester');
+    const sectionId = a.sectionId as string;
+
+    store.archiveSection(sectionId, 'logan');
+
+    for (const todo of [a, b]) {
+      const entries = store.listHistory({ entityId: todo.id });
+      const unset = entries.find((e) => e.changes && 'section' in e.changes);
+      expect(unset).toBeDefined();
+      expect(unset?.actor).toBe('logan');
+      expect(unset?.changes?.section).toEqual([sectionId, null]);
+    }
+
+    // 섹션 자체의 archive 이력도 그대로 남는다
+    expect(store.listHistory({ entityId: sectionId }).some((e) => e.action === 'archive')).toBe(
+      true,
+    );
+  });
+
   test('hierarchy: child references parent via parentId', () => {
     const parent = store.createTodo({ board: 'rocky', title: '부모' }, 'tester');
     const child = store.createTodo(

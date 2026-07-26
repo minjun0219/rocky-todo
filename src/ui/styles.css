@@ -571,13 +571,6 @@ textarea {
   margin: 2px 0 10px;
 }
 
-.drawer-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 4px 0 10px;
-  line-height: 1.35;
-}
-
 .drawer-chips,
 .drawer-links {
   display: flex;
@@ -816,4 +809,96 @@ textarea {
   position: absolute;
   inset: 0;
   cursor: default;
+}
+
+/* ── 인라인 편집·생성 (제목 수정 / 보드·섹션 생성) ───────────────────────── */
+
+/* 제목은 노트·todo 상세 양쪽에서 h2 다 — 공통 타이포만 여기 두고, hover/커서 같은
+   클릭 affordance 는 todo 쪽 편집 버튼(.drawer-title-edit)에만 건다. */
+.drawer-title {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  line-height: 1.35;
+}
+
+.drawer-title-edit {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.drawer-title-edit:hover {
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--surface);
+  border-radius: 3px;
+}
+
+.drawer-title-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--warm-dim);
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+  line-height: 1.35;
+}
+
+.board-add-open {
+  color: var(--faint);
+}
+
+.board-add {
+  padding: 2px 0;
+}
+
+.board-add-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--warm-dim);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.board-add-error {
+  color: var(--p1);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 2px 0;
+}
+
+@media (max-width: 900px) {
+  /* 터치 타깃 — 백로그 rocky-todo#1 과 같은 방침 */
+  .board-add-open {
+    min-height: 44px;
+  }
+}
+
+.drawer-section-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.drawer-select {
+  flex: 1 1 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 13px;
 }
