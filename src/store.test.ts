@@ -110,6 +110,19 @@ describe('boards', () => {
     expect(store.listBoards()).toHaveLength(0);
   });
 
+  // 저장된 값은 그대로 `gh -R` 인자가 된다 — 공백이 섞여 들어가면 이후 모든 이슈 생성이
+  // 조용히 실패한다. 호출부가 이미 다듬지만 마지막 관문에서도 막는다.
+  test('setBoardRepo trims the slug — history and reload see the clean value', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+
+    const updated = store.setBoardRepo('rocky', '  o/n\n', 'tester');
+    expect(updated.repo).toBe('o/n');
+    expect(store.boardById(board.id)?.repo).toBe('o/n');
+
+    const entry = store.listHistory({ entityId: board.id }).find((h) => h.action === 'update');
+    expect(entry?.changes?.repo?.[1]).toBe('o/n');
+  });
+
   test('boardById returns undefined for an unknown id', () => {
     expect(store.boardById('nosuchid')).toBeUndefined();
   });

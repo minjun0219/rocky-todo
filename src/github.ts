@@ -111,6 +111,21 @@ export function issueBody(description: string, ref: string): string {
 }
 
 /**
+ * 인증 실패로 보이는 `gh` 출력 — 맞으면 `gh auth login` 힌트를 덧붙인다.
+ *
+ * 실제로 마주치는 문구가 여러 갈래다: `gh auth login` 안내, `not logged in`,
+ * `authentication required`, `HTTP 401: Unauthorized`, `Bad credentials`.
+ * 그래서 `\bauth\b` 하나로는 부족하다 — `authentication`/`authorization` 을 놓친다.
+ *
+ * 다만 `auth` 를 그냥 prefix 로 열면 **`author`/`authored` 가 걸린다**(이슈 생성 오류에
+ * 흔한 단어다). 그래서 어간을 명시한다: `authn`/`authz`(약어) · `authentic…` ·
+ * `authoriz…`. `authoriz`/`credential` 은 앞 경계를 두지 않아 `unauthorized` ·
+ * `credentials` 처럼 붙어 오는 꼴도 잡는다.
+ */
+const AUTH_FAILURE =
+  /\bauth\b|\bauthn\b|\bauthz\b|authentic|authoriz|credential|\blogin\b|\blogged in\b/i;
+
+/**
  * `gh` 로 이슈를 만든다. 실패를 던지지 않고 **사람이 읽는 메시지**로 돌려준다 —
  * 호출자(REST 라우트)가 그대로 사용자에게 보여줄 수 있어야 한다.
  *
@@ -134,7 +149,7 @@ export function createIssue(
   }
   const output = `${result.stdout}${result.stderr}`.trim();
   if (result.code !== 0) {
-    if (/\bauth\b|\blogin\b|\bcredential/i.test(output)) {
+    if (AUTH_FAILURE.test(output)) {
       return { ok: false, message: `${output}\n(먼저: gh auth login)` };
     }
     return { ok: false, message: output === '' ? 'gh issue create 실패' : output };

@@ -598,6 +598,11 @@ export class TodoStore {
 
   /**
    * 보드의 GitHub 레포(`owner/name`)를 설정한다.
+   *
+   * 값은 여기서 한 번 더 trim 한다 — 호출부(REST 라우트·CLI·오케스트레이터)가 이미
+   * 다듬어 넘기지만, 스토어를 통과한 값은 그대로 `gh -R` 인자가 되므로 공백이 섞인 채
+   * 저장되면 이후 모든 이슈 생성이 조용히 실패한다. 마지막 관문에서 막는 편이 싸다.
+   *
    * @throws 없는 보드면 — 여기서 보드를 만들지 않는다. 오타난 key 로 빈 보드가 생기는
    *   편이 조용한 사고가 된다(`ensureSection` 과 같은 판단).
    */
@@ -608,16 +613,17 @@ export class TodoStore {
     if (!existing) {
       throw new Error(`board not found: ${key}`);
     }
-    this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(repo, existing.id);
+    const normalized = repo.trim();
+    this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(normalized, existing.id);
     this.recordHistory(
       'board',
       existing.id,
       actor,
       'update',
-      { repo: [existing.repo ?? null, repo] },
+      { repo: [existing.repo ?? null, normalized] },
       existing.id,
     );
-    return { ...toBoard(existing), repo };
+    return { ...toBoard(existing), repo: normalized };
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────

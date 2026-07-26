@@ -185,8 +185,28 @@ describe('createIssue', () => {
     expect(result.ok === false && result.message).toContain('gh auth login');
   });
 
-  test('does not mistake "Author" for an auth failure', () => {
-    const run = fakeRun({ code: 1, stdout: '', stderr: 'Author field required' });
+  // `\bauth\b` 하나로는 실제로 마주치는 문구 대부분을 놓친다 — gh/GitHub 은 상황마다
+  // 다른 말을 쓴다. 놓치면 사용자는 원인 모를 실패 문구만 보고 `gh auth login` 에 도달하지 못한다.
+  test.each([
+    'authentication required',
+    'HTTP 401: Unauthorized (https://api.github.com/graphql)',
+    'error: Bad credentials',
+    'To get started with GitHub CLI, please run: gh auth login',
+    'error: not logged in to any GitHub hosts',
+  ])('attaches the login hint to %p', (stderr) => {
+    const run = fakeRun({ code: 1, stdout: '', stderr });
+    const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.message).toContain('gh auth login');
+  });
+
+  // 반대로 넓히기만 하면 `auth` 를 품은 무관한 단어가 걸린다 — 이슈 생성 오류에 흔하다.
+  test.each([
+    'Author field required',
+    'could not assign author: not a collaborator',
+    'authored by someone else',
+  ])('does not mistake %p for an auth failure', (stderr) => {
+    const run = fakeRun({ code: 1, stdout: '', stderr });
     const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.message).not.toContain('gh auth login');
