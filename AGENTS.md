@@ -49,15 +49,18 @@ rocky-todo/
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
+│   ├── sessions.ts                 # claude agents --json 래퍼 (활성 세션 목록 + 보드 매칭)
+│   ├── handoff.ts                  # 핸드오프 주입문 생성 (순수)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
 │   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
 │   ├── local-request.ts            # 요청 출처 판별(루프백 + 프록시 헤더 없음) — 이슈 생성 게이트
 │   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
 │   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
 ├── hooks/
-│   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo
+│   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo, Stop→handoff-stop
 │   ├── ensure-daemon.ts (+test)    # health→없으면 spawn / 구버전이면 stop 후 재기동 (fail-open, DI)
-│   └── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op)
+│   ├── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op) — 핸드오프 claim 도 같이 본다
+│   └── handoff-stop.ts (+test)     # Stop 훅 — 대기 중인 보드 요청을 집어 자동 착수 (fail-open, DI)
 ├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
 └── .github/workflows/ + .husky/    # CI/release + git hooks (rocky 미러)
@@ -103,6 +106,16 @@ rocky-todo/
   순번 없이 댓글 id 로만 지정한다(`PATCH /api/comments/:id` 등). mutation 은 부모 todo 의
   히스토리(`entity: 'todo'`, action `comment`/`comment-edit`/`comment-archive`/
   `comment-unarchive`)로 기록되어 SSE·훅 주입 경로를 그대로 탄다.
+- **핸드오프(보드 → 세션)**: 보드에서 todo 를 실행 중인 Claude Code 세션에 넘긴다.
+  데몬은 세션에 밀 수 없다(훅으로 유휴 세션을 깨울 수단이 없다) — `handoffs` 큐에 쌓고
+  세션 훅이 당겨간다. `Stop` 훅이 집으면 `decision: block` 으로 그 자리에서 착수하고,
+  `UserPromptSubmit` 훅은 사용자가 말을 걸 때 같은 큐를 본다. 한 번에 한 건만 배달한다.
+  세션 목록은 `claude agents --json` (`src/sessions.ts`, 주입 가능 `RunCommand`) — `claude`
+  CLI 가 없으면 이 기능만 비활성되고(`available: false` + `reason`) 보드 나머지는 정상이다.
+  대상은 보드 key ↔ 세션 cwd **경로 세그먼트** 매칭 — 후보가 정확히 1개일 때만 자동으로
+  보내고 아니면 사용자가 고른다. 대기 중인 요청에 TTL 은 없다 — 대상 세션이 사라지면
+  "세션 없음"(stale)으로 표시만 하고 큐에는 남는다. **MCP 도구는 늘리지 않았다(5개 유지)**
+  — 사람이 에이전트에게 넘기는 기능이지 에이전트끼리 일을 미루는 경로가 아니다.
 
 ## Coding rules
 

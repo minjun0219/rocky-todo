@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   boardKeyFromMissingRepoError,
   boardRepoPath,
+  formatSessions,
   formatTodoLine,
   formatTodoShow,
   isMissingRepoError,
@@ -53,6 +54,35 @@ describe('parseFlags', () => {
 
   test('unknown flag throws', () => {
     expect(() => parseFlags(['ls', '--explode'])).toThrow(/unknown flag/);
+  });
+
+  test('handoff 의 --session/--cancel 플래그를 받아들인다', () => {
+    const parsed = parseFlags(['handoff', '#1', '--session', 'rocky-todo-1e', '--cancel']);
+    expect(parsed.flags.session).toBe('rocky-todo-1e');
+    expect(parsed.flags.cancel).toBe(true);
+  });
+
+  // handoff 의 메모는 `--message` 다 (VALUE_FLAGS) — history 의 `--note`(순수 boolean) 와
+  // 이름이 겹치지 않아 파서에 특수 카테고리가 필요 없다.
+  test('handoff 의 --message 는 문자열 값으로 읽힌다', () => {
+    const parsed = parseFlags(['handoff', '#1', '--message', '진행 상황 공유']);
+    expect(parsed.flags.message).toBe('진행 상황 공유');
+  });
+
+  test('history 의 --note 는 순수 boolean 이다', () => {
+    const parsed = parseFlags(['history', '#1', '--note']);
+    expect(parsed.flags.note).toBe(true);
+  });
+
+  // 회귀 가드: `--note` 가 한때 "다음 토큰이 플래그가 아니면 값으로 소비" 하는
+  // OPTIONAL_VALUE_FLAGS 로 취급된 적이 있었다 — 그때는 `--note` 뒤에 오는 REF 를
+  // 값으로 삼켜 positionals 에서 REF 가 사라졌다(`history --note rocky#12` 가
+  // `usage: rocky-todo history REF ...` 로 죽는 회귀). `--note` 는 순서와 무관하게
+  // 항상 boolean 이어야 하고, REF 는 어느 위치에 있든 positionals 에 남아야 한다.
+  test('--note 가 REF 보다 앞에 와도 boolean 이고 REF 는 positionals 에 남는다', () => {
+    const parsed = parseFlags(['history', '--note', 'rocky#12']);
+    expect(parsed.flags.note).toBe(true);
+    expect(parsed.positionals).toContain('rocky#12');
   });
 });
 
@@ -484,6 +514,57 @@ describe('comment command paths', () => {
       todoRefPath(`rocky#${todo.number}`, '', 'rocky'),
     );
     expect(detail.comments.map((c) => c.body)).toEqual(['미리 달아둔 댓글']);
+  });
+});
+
+describe('formatSessions', () => {
+  const view = (over: Partial<Parameters<typeof formatSessions>[0]> = {}) => ({
+    available: true,
+    sessions: [
+      {
+        pid: 1,
+        cwd: '/w/rocky-todo',
+        kind: 'interactive',
+        sessionId: 'sess-1',
+        name: 'rocky-todo-1e',
+        status: 'idle',
+        startedAt: 1,
+        matched: true,
+      },
+      {
+        pid: 2,
+        cwd: '/w/forses',
+        kind: 'interactive',
+        sessionId: 'sess-2',
+        name: 'forses-90',
+        status: 'busy',
+        startedAt: 2,
+        matched: false,
+      },
+    ],
+    ...over,
+  });
+
+  test('이름·상태·경로를 한 줄씩 렌더한다', () => {
+    const out = formatSessions(view());
+    expect(out).toContain('rocky-todo-1e');
+    expect(out).toContain('idle');
+    expect(out).toContain('/w/rocky-todo');
+  });
+
+  test('현재 보드와 일치하는 세션에 * 를 붙인다', () => {
+    const lines = formatSessions(view()).split('\n');
+    expect(lines[0]?.startsWith('*')).toBe(true);
+    expect(lines[1]?.startsWith('*')).toBe(false);
+  });
+
+  test('claude 를 못 쓰면 이유를 보여준다', () => {
+    const out = formatSessions(view({ available: false, sessions: [], reason: 'claude CLI 없음' }));
+    expect(out).toContain('claude CLI 없음');
+  });
+
+  test('세션이 없으면 그렇게 말한다', () => {
+    expect(formatSessions(view({ sessions: [] }))).toContain('실행 중인');
   });
 });
 

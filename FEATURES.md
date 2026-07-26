@@ -45,6 +45,9 @@ rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
+rocky-todo handoff REF [--session NAME] [--message "본문"]   # 실행 중인 세션에 작업 요청
+rocky-todo handoff REF --cancel                              # 대기 중인 요청 취소
+rocky-todo sessions                                          # 실행 중인 세션 목록 (* = 이 보드)
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
@@ -100,6 +103,15 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
   쌓이고, 사용자가 단 댓글은 다음 세션에 자동 주입된다. 삭제는 없다(보관만) — 보관된
   댓글은 웹 UI 의 "보관됨 표시" 토글로 흐리게 보이고 "보관 해제" 버튼으로 복원한다.
 - **사람→에이전트 자동 전달** — Claude Code 의 UserPromptSubmit 훅이 사람의 보드 변경을 세션에 주입.
+- **에이전트에게 작업 넘기기** — 보드의 todo 를 실행 중인 Claude Code 세션에 넘긴다. 드로어의
+  "에이전트에게 보내기" 를 누르면 활성 세션 목록이 뜨고(보드 이름과 경로가 맞는 세션은 자동
+  선택), 고른 세션이 **턴을 끝내는 순간 자동으로 그 항목에 착수**한다(`Stop` 훅). 사용자가
+  그 세션에 다음 입력을 넣을 때도 같은 큐가 배달된다. 여러 건을 보내면 한 번에 하나씩
+  순서대로 소화한다. 세션 목록은 `claude agents --json` 에서 얻으므로 `claude` CLI 가
+  PATH 에 있어야 한다 — 없으면 이 버튼(과 `handoff`/`sessions` CLI)만 비활성되고 보드는
+  정상 동작한다. 대기 중인 요청은 만료되지 않으며, 대상 세션이 사라지면 보드에 "세션 없음"
+  으로 표시된다. CLI 대응: `rocky-todo sessions` / `handoff REF --session NAME --message "..."`
+  / `handoff REF --cancel`.
 - **실시간 웹 UI** — Bun fullstack 자동 번들 + SSE (dist 없음, CDN 없음).
 - **URL 퍼머링크** — 주소가 보는 화면을 담는다: `/`(전체) · `/rocky`(보드) · `/rocky/12`(그
   todo 상세). 새로고침해도 유지되고 링크로 공유할 수 있다. board key `api`/`mcp`(데몬 라우트와

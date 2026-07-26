@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NoteView, TodoView } from '../server';
-import type { Board, Comment, HistoryEntry, Section, StatusAction } from '../store';
+import type { AgentSession } from '../sessions';
+import type { Board, Comment, Handoff, HistoryEntry, Section, StatusAction } from '../store';
 import { markSeen, readSeen } from './lib';
 import {
   type BoardSelection,
@@ -54,6 +55,14 @@ interface UiState {
    * 로컬 사용 흐름이 조용히 사라지지 않게 한다.
    */
   issueCreateAllowed: boolean;
+  /** 현재 보드의 대기 중 핸드오프 — refetch 가 함께 갱신한다. */
+  handoffs: Array<Handoff & { stale: boolean }>;
+  /** 보내기 패널을 열 때만 채운다. */
+  sessions: {
+    available: boolean;
+    reason?: string;
+    list: Array<AgentSession & { matched: boolean }>;
+  };
 
   setSelected: (selection: BoardSelection) => void;
   setShowArchived: (show: boolean) => void;
@@ -107,6 +116,11 @@ interface UiState {
    * 강제는 서버가 한다.
    */
   loadCapabilities: () => Promise<void>;
+
+  fetchSessions: () => Promise<void>;
+  /** @throws 서버가 거절한 이유를 그대로 던진다 — 호출자가 화면에 보여줘야 한다. */
+  sendHandoff: (todoId: string, input: { sessionId?: string; note?: string }) => Promise<void>;
+  cancelHandoff: (handoffId: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -168,6 +182,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   detail: null,
   seenComments: readSeen(localStorage),
   issueCreateAllowed: true,
+  handoffs: [],
+  sessions: { available: true, list: [] },
 
   setSelected: (selected) => {
     // 같은 보드를 다시 고른 클릭도 refetch 는 그대로 수행한다(새로고침 용도로 쓰인다) —
@@ -203,15 +219,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     const qs = params.size > 0 ? `?${params.toString()}` : '';
 
-    const [boards, todos, notes, sections] = await Promise.all([
+    const [boards, todos, notes, sections, handoffs] = await Promise.all([
       api<Board[]>('/api/boards', actor),
       api<TodoView[]>(`/api/todos${qs}`, actor),
       api<NoteView[]>(`/api/notes${qs}`, actor),
       selected === 'all'
         ? Promise.resolve([] as Section[])
         : api<Section[]>(`/api/sections?board=${encodeURIComponent(selected)}`, actor),
+      api<Array<Handoff & { stale: boolean }>>(
+        `/api/handoffs?status=pending${
+          selected === 'all' ? '' : `&board=${encodeURIComponent(selected)}`
+        }`,
+        actor,
+      ),
     ]);
-    set({ boards, todos, notes, sections });
+    set({ boards, todos, notes, sections, handoffs });
 
     // 열린 상세가 있으면 함께 갱신 (SSE 로 들어온 변경 반영). await 하지 않으므로
     // `refresh: true` 로 "그 항목이 아직 열려 있을 때만" 반영하게 한다 — 그 사이 라우팅이
@@ -423,6 +445,46 @@ export const useUiStore = create<UiState>((set, get) => ({
     await get().refetch();
   },
 
+  /**
+   * 실패를 **던지지 않고** `available:false + reason` 으로 흡수한다 — 화면이 실패를
+   * 표현하는 경로를 하나로 묶기 위해서다(패널의 `sessions.available` 분기).
+   * 조회 전에 목록을 비우는 것도 같은 이유: 그러지 않으면 서버가 죽었는데 직전 성공의
+   * 세션 목록이 그대로 남아, 이제는 존재하지 않을 수도 있는 대상을 고르게 된다.
+   */
+  fetchSessions: async () => {
+    const { actor, selected } = get();
+    // `selected` 는 'all' 이거나 board key 문자열이다 (객체가 아니다).
+    const board = selected === 'all' ? '' : selected;
+    set({ sessions: { available: true, list: [] } });
+    try {
+      const result = await api<{
+        available: boolean;
+        reason?: string;
+        sessions: Array<AgentSession & { matched: boolean }>;
+      }>(`/api/sessions?board=${encodeURIComponent(board)}`, actor);
+      set({
+        sessions: { available: result.available, reason: result.reason, list: result.sessions },
+      });
+    } catch (error) {
+      set({
+        sessions: {
+          available: false,
+          reason: error instanceof Error ? error.message : String(error),
+          list: [],
+        },
+      });
+    }
+  },
+
+  sendHandoff: async (todoId, input) => {
+    const { actor } = get();
+    await api(`/api/todos/${todoId}/handoff`, actor, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    await get().refetch();
+  },
+
   loadCapabilities: async () => {
     try {
       const health = await api<{ issueCreateAllowed?: boolean }>('/api/health', get().actor);
@@ -431,5 +493,11 @@ export const useUiStore = create<UiState>((set, get) => ({
     } catch {
       // 힌트를 못 얻는 것으로 화면이 망가지면 안 된다. 강제는 서버 몫이다.
     }
+  },
+
+  cancelHandoff: async (handoffId) => {
+    const { actor } = get();
+    await api(`/api/handoffs/${handoffId}/cancel`, actor, { method: 'POST' });
+    await get().refetch();
   },
 }));

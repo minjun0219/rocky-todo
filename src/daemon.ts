@@ -54,6 +54,7 @@ export async function startDaemon(): Promise<void> {
 
   mkdirSync(runtime.dir, { recursive: true });
   const store = new TodoStore({ dbPath: join(runtime.dir, 'todo.db') });
+  let server: ReturnType<typeof Bun.serve> | undefined;
   const api = buildTodoServer({ store });
   const mcp = createMcpFetchHandler({ store });
 
@@ -61,7 +62,7 @@ export async function startDaemon(): Promise<void> {
   // CLI/브릿지가 호출자 cwd 를 상속시켜 spawn 하면 /../../<cwd> 로 깨지므로 ui 디렉터리로 고정한다.
   process.chdir(join(import.meta.dir, 'ui'));
 
-  const server = Bun.serve({
+  server = Bun.serve({
     port: runtime.port,
     // 기본 루프백 전용. `todo.host: "0.0.0.0"` opt-in 시 내부망 개방 (인증 없음 — 신뢰망 전제).
     // 0.0.0.0 은 루프백을 포함하므로 단일 인스턴스 가드/CLI 의 127.0.0.1 경로는 그대로 동작한다.
@@ -85,7 +86,7 @@ export async function startDaemon(): Promise<void> {
   writeFileSync(pidPath, String(process.pid));
 
   const shutdown = () => {
-    void server.stop(true);
+    void server?.stop(true);
     store.close();
     if (existsSync(pidPath)) {
       rmSync(pidPath, { force: true });

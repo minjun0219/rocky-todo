@@ -797,3 +797,103 @@ describe('comments', () => {
     expect(after.lastAt).toBe(first.createdAt);
   });
 });
+
+describe('handoffs', () => {
+  test('생성하면 pending 이고 todo 히스토리에 남는다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프 대상' }, 'logan');
+
+    const handoff = store.createHandoff({
+      ref: todo.id,
+      sessionId: 'sess-1',
+      sessionName: 'eelpout-a3',
+      sessionCwd: '/w/rocky-todo/eelpout',
+      note: '테스트부터',
+      actor: 'logan',
+    });
+
+    expect(handoff.status).toBe('pending');
+    expect(handoff.todoId).toBe(todo.id);
+    expect(handoff.note).toBe('테스트부터');
+    const history = store.listHistory({ entityId: todo.id });
+    expect(history.some((h) => h.action === 'handoff')).toBe(true);
+  });
+
+  test('같은 todo 에 pending 이 이미 있으면 pendingHandoffOf 가 그것을 준다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const first = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    expect(store.pendingHandoffOf(todo.id)?.id).toBe(first.id);
+  });
+
+  test('아카이브된 todo 로는 만들 수 없다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.setTodoStatus(todo.id, 'archive', 'logan');
+    expect(() => store.createHandoff({ ref: todo.id, sessionId: 's', actor: 'logan' })).toThrow(
+      /archived/i,
+    );
+  });
+
+  test('claim 은 가장 오래된 한 건만 가져가고 잔여 수를 알려준다', () => {
+    const a = store.createTodo({ board: 'rocky-todo', title: '첫째' }, 'logan');
+    const b = store.createTodo({ board: 'rocky-todo', title: '둘째' }, 'logan');
+    store.createHandoff({ ref: a.id, sessionId: 'sess-1', actor: 'logan' });
+    store.createHandoff({ ref: b.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const claimed = store.claimHandoff('sess-1', 'stop');
+    expect(claimed?.todoTitle).toBe('첫째');
+    expect(claimed?.todoRef).toBe('rocky-todo#1');
+    expect(claimed?.remaining).toBe(1);
+    expect(claimed?.handoff.status).toBe('delivered');
+    expect(claimed?.handoff.deliveredVia).toBe('stop');
+
+    const second = store.claimHandoff('sess-1', 'prompt');
+    expect(second?.todoTitle).toBe('둘째');
+    expect(second?.remaining).toBe(0);
+
+    expect(store.claimHandoff('sess-1', 'stop')).toBeNull();
+  });
+
+  test('claim 은 다른 세션 앞의 요청을 가져가지 않는다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    expect(store.claimHandoff('sess-2', 'stop')).toBeNull();
+  });
+
+  test('취소하면 cancelled 가 되고 다시 claim 되지 않는다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const handoff = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const cancelled = store.cancelHandoff(handoff.id, 'logan');
+    expect(cancelled.status).toBe('cancelled');
+    expect(store.claimHandoff('sess-1', 'stop')).toBeNull();
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
+  });
+
+  test('이미 배달된 건은 취소할 수 없다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const handoff = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    store.claimHandoff('sess-1', 'stop');
+    expect(() => store.cancelHandoff(handoff.id, 'logan')).toThrow(/pending/i);
+  });
+
+  test('listHandoffs 는 보드로 거를 수 있다', () => {
+    const mine = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const other = store.createTodo({ board: 'forses', title: 'y' }, 'logan');
+    store.createHandoff({ ref: mine.id, sessionId: 's1', actor: 'logan' });
+    store.createHandoff({ ref: other.id, sessionId: 's2', actor: 'logan' });
+
+    const boardId = store.boardIdOf('rocky-todo');
+    const listed = store.listHandoffs({ boardId, status: 'pending' });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.todoId).toBe(mine.id);
+  });
+
+  test('handoff 액션은 /api/changes 피드에서 빠진다 — 다른 세션에 노이즈를 뿌리지 않는다', () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const before = store.listChangesSince(0).lastId;
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const feed = store.listChangesSince(before);
+    expect(feed.entries.some((e) => e.action.startsWith('handoff'))).toBe(false);
+    // 커서는 그래도 전진해야 한다 — 아니면 같은 항목을 영원히 다시 읽는다.
+    expect(feed.lastId).toBeGreaterThan(before);
+  });
+});

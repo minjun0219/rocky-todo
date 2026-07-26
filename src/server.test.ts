@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildTodoServer } from './server';
+import type { SessionsResult } from './sessions';
 import { TodoStore } from './store';
 
 let dir: string;
@@ -893,5 +894,322 @@ describe('POST /api/todos/:ref/issue — 출처 게이트', () => {
       issueCreateAllowed: boolean;
     };
     expect(remote.issueCreateAllowed).toBe(false);
+  });
+});
+
+describe('handoff routes', () => {
+  /** sessions 를 주입한 핸들. store 는 beforeEach 가 만든 것을 공유한다. */
+  const handleWith = (sessions: () => SessionsResult) => buildTodoServer({ store, sessions }).fetch;
+
+  const reqTo = (
+    h: (request: Request, peerAddress?: string) => Promise<Response>,
+    path: string,
+    init?: RequestInit & { actor?: string; peer?: string },
+  ): Promise<Response> => {
+    const headers = new Headers(init?.headers);
+    if (init?.body !== undefined) {
+      headers.set('content-type', 'application/json');
+    }
+    headers.set('x-rocky-actor', init?.actor ?? 'tester');
+    return h(new Request(`${BASE}${path}`, { ...init, headers }), init?.peer ?? '127.0.0.1');
+  };
+
+  const SESSIONS = {
+    available: true as const,
+    sessions: [
+      {
+        pid: 1,
+        cwd: '/w/rocky-todo',
+        kind: 'interactive',
+        sessionId: 'sess-1',
+        name: 'rocky-todo-1e',
+        status: 'idle',
+        startedAt: 1,
+      },
+      {
+        pid: 2,
+        cwd: '/w/forses',
+        kind: 'interactive',
+        sessionId: 'sess-2',
+        name: 'forses-90',
+        status: 'busy',
+        startedAt: 2,
+      },
+    ],
+  };
+
+  test('GET /api/sessions 는 목록과 보드 매칭을 준다', async () => {
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/sessions?board=rocky-todo',
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      available: boolean;
+      sessions: Array<{ name: string; matched: boolean }>;
+    };
+    expect(body.available).toBe(true);
+    expect(body.sessions.find((s) => s.name === 'rocky-todo-1e')?.matched).toBe(true);
+    expect(body.sessions.find((s) => s.name === 'forses-90')?.matched).toBe(false);
+  });
+
+  test('claude 를 못 쓰면 available:false 를 그대로 알린다', async () => {
+    const h = handleWith(() => ({ available: false, sessions: [], reason: 'claude CLI 없음' }));
+    const res = await reqTo(h, '/api/sessions');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { available: boolean; reason: string };
+    expect(body.available).toBe(false);
+    expect(body.reason).toBe('claude CLI 없음');
+  });
+
+  test('POST handoff — sessionId 를 주면 스냅샷과 함께 201', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-1', note: '테스트부터' }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { sessionName: string; sessionCwd: string; note: string };
+    expect(body.sessionName).toBe('rocky-todo-1e');
+    expect(body.sessionCwd).toBe('/w/rocky-todo');
+    expect(body.note).toBe('테스트부터');
+  });
+
+  test('POST handoff — sessionId 를 생략하면 보드로 자동 매칭', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({}),
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { sessionId: string }).sessionId).toBe('sess-1');
+  });
+
+  test('후보가 없거나 여럿이면 409 + 후보 목록', async () => {
+    const todo = store.createTodo({ board: 'gotgan', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({}),
+      },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; candidates: unknown[] };
+    expect(body.error).toBeTruthy();
+    expect(Array.isArray(body.candidates)).toBe(true);
+  });
+
+  test('이미 pending 이 있으면 409', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-1' }),
+      },
+    );
+    expect(res.status).toBe(409);
+  });
+
+  test('없는 todo 는 404', async () => {
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/todos/zzzzzzzz/handoff',
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-1' }),
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  // 타입만 틀렸을 때 자동 매칭으로 떨어지면, 특정 세션을 지정했다고 믿는 호출자의
+  // 요청이 다른 세션으로 간다.
+  test('sessionId 가 문자열이 아니면 400 — 자동 매칭으로 떨어지지 않는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 42 }),
+      },
+    );
+    expect(res.status).toBe(400);
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
+  });
+
+  test('목록에 없는 sessionId 는 400', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'ghost' }),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('claim 은 한 건을 주고, 비면 204', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const h = handleWith(() => SESSIONS);
+
+    const first = await reqTo(h, '/api/handoffs/claim', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+    });
+    expect(first.status).toBe(200);
+    const body = (await first.json()) as { todoTitle: string; remaining: number };
+    expect(body.todoTitle).toBe('핸드오프');
+    expect(body.remaining).toBe(0);
+
+    const second = await reqTo(h, '/api/handoffs/claim', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+    });
+    expect(second.status).toBe(204);
+  });
+
+  test('GET /api/handoffs 는 대상 세션이 사라진 건을 stale 로 표시한다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'ghost-session', actor: 'logan' });
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs?status=pending',
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Array<{ stale: boolean }>;
+    expect(body[0]?.stale).toBe(true);
+  });
+
+  test('취소는 200, 두 번째는 400', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const handoff = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const h = handleWith(() => SESSIONS);
+
+    expect((await reqTo(h, `/api/handoffs/${handoff.id}/cancel`, { method: 'POST' })).status).toBe(
+      200,
+    );
+    expect((await reqTo(h, `/api/handoffs/${handoff.id}/cancel`, { method: 'POST' })).status).toBe(
+      400,
+    );
+  });
+
+  test('GET /api/handoffs 는 pending 이 없으면 세션 조회를 하지 않는다', async () => {
+    let calls = 0;
+    const h = handleWith(() => {
+      calls += 1;
+      return SESSIONS;
+    });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const cancelled = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    store.cancelHandoff(cancelled.id, 'logan');
+
+    // status=pending 필터라 취소된 건은 목록에 안 잡힌다 — hasPending 이 false 여야 한다.
+    const res = await reqTo(h, '/api/handoffs?status=pending');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+    expect(calls).toBe(0);
+
+    // pending 이 하나라도 있으면(필터 없는 조회라 취소된 건 + 새 pending 건이 함께 온다)
+    // stale 판정을 위해 여전히 세션을 조회한다.
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    const all = await reqTo(h, '/api/handoffs');
+    expect(all.status).toBe(200);
+    expect(calls).toBe(1);
+  });
+
+  test('알 수 없는 board 는 전체 큐가 아니라 빈 목록이다', async () => {
+    const mine = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: mine.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs?board=nope',
+    );
+    expect(res.status).toBe(200);
+    // 필터 생략으로 떨어지면 다른 보드의 요청이 새어 나온다.
+    expect((await res.json()) as unknown[]).toEqual([]);
+  });
+
+  // `claude` 를 못 쓰는 환경에서 "모른다"를 "없다"로 읽으면, 멀쩡히 살아 있는 세션 앞의
+  // 요청까지 전부 "세션 없음"으로 보인다.
+  test('세션 목록을 못 얻으면 stale 을 붙이지 않는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const h = handleWith(() => ({ available: false, sessions: [], reason: 'claude CLI 없음' }));
+    const res = await reqTo(h, '/api/handoffs?status=pending');
+    const body = (await res.json()) as Array<{ stale: boolean }>;
+    expect(body[0]?.stale).toBe(false);
+  });
+
+  test('claim 은 LAN 에서 직접 온 요청을 404 로 막는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        peer: '192.168.1.20',
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
+    expect(res.status).toBe(404);
+    // 큐가 소진되지 않았어야 한다 — 막는 목적이 바로 이것이다.
+    expect(store.pendingHandoffOf(todo.id)).toBeDefined();
+  });
+
+  // `tailscale-serve` 는 데몬을 127.0.0.1 에 두고 tailscaled 가 테일넷 요청을 루프백으로
+  // 재다이얼한다 — 주소만 보는 가드는 이 경로를 통과시킨다. 중계 헤더까지 봐야 막힌다.
+  test('claim 은 tailscale 프록시를 거친 요청도 404 로 막는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        peer: '127.0.0.1',
+        headers: { 'tailscale-user-login': 'someone@example.com' },
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
+    expect(res.status).toBe(404);
+    expect(store.pendingHandoffOf(todo.id)).toBeDefined();
+  });
+
+  test('claim 은 로컬 훅의 요청은 그대로 받는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs/claim',
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 'sess-1', via: 'stop' }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
   });
 });

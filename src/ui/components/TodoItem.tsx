@@ -22,6 +22,9 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const openTodoDetail = useUiStore((s) => s.openTodoDetail);
   const seenComments = useUiStore((s) => s.seenComments);
+  const pendingHandoff = useUiStore((s) =>
+    s.handoffs.find((h) => h.todoId === todo.id && h.status === 'pending'),
+  );
   const [copied, setCopied] = useState(false);
 
   const done = todo.status === 'done';
@@ -101,6 +104,14 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
           💬 {todo.commentCount}
         </button>
       )}
+      {pendingHandoff ? (
+        <span
+          className="chip chip-handoff"
+          title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
+        >
+          → {pendingHandoff.sessionName ?? '세션'}
+        </span>
+      ) : null}
       {doing && todo.doingBy && (
         <span
           className={`doing-badge tone-${actorTone(todo.doingBy)} ${stale ? 'is-stale' : ''}`}

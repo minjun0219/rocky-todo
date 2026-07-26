@@ -1,8 +1,15 @@
 import { join } from 'node:path';
 import { resolveTodoRuntimeConfig } from '../src/config';
-import { buildNotifyContext, filterHumanChanges, readCursor, writeCursor } from '../src/notify';
+import { buildHandoffPrompt } from '../src/handoff';
+import {
+  buildNotifyContext,
+  filterHumanChanges,
+  mergeContext,
+  readCursor,
+  writeCursor,
+} from '../src/notify';
 import { loadTodoConfig } from '../src/rocky-config';
-import type { ChangeFeedEntry } from '../src/store';
+import type { ChangeFeedEntry, ClaimedHandoff } from '../src/store';
 
 /**
  * UserPromptSubmit hook: 마지막 확인 이후 호출자(사람)가 rocky-todo 보드에서 바꾼
@@ -51,6 +58,24 @@ async function fetchChanges(
   }
 }
 
+/** 이 세션 앞의 핸드오프 한 건을 집어온다. 없거나 실패하면 null (fail-open). */
+async function claimHandoff(baseUrl: string, sessionId: string): Promise<ClaimedHandoff | null> {
+  try {
+    const res = await fetch(`${baseUrl}/api/handoffs/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, via: 'prompt' }),
+      signal: AbortSignal.timeout(1500),
+    });
+    if (res.status !== 200) {
+      return null;
+    }
+    return (await res.json()) as ClaimedHandoff;
+  } catch {
+    return null;
+  }
+}
+
 async function run(): Promise<void> {
   const envToggle = process.env.ROCKY_TODO_WATCH?.trim().toLowerCase();
   if (envToggle !== undefined && OFF_VALUES.has(envToggle)) {
@@ -77,24 +102,34 @@ async function run(): Promise<void> {
   const baseUrl = `http://127.0.0.1:${runtime.port}`;
   const cursorFile = join(runtime.dir, 'hook-cursors.json');
 
+  // claim 과 changes 조회는 서로 독립적이라 순차 await 하면 각각 1500ms timeout 이
+  // 최악의 경우 더해져(3s) 훅 지연이 배가된다. claim 은 먼저 띄워두고, changes 쪽
+  // 요청(커서 분기에 따라 head 1건 또는 feed)까지 만든 뒤 한 번에 Promise.all 로
+  // 기다린다 — 커서 읽기/쓰기 순서와 "첫 프롬프트엔 과거 히스토리를 주입하지 않는다"는
+  // 기존 동작은 그대로 유지한다 (읽기는 동기, 쓰기는 각 응답이 도착한 뒤).
+  const claimPromise = claimHandoff(baseUrl, sessionId);
+
   const cursor = readCursor(cursorFile, sessionId);
+  const feedPromise =
+    cursor === undefined ? fetchChanges(baseUrl, 0, 1) : fetchChanges(baseUrl, cursor, 100);
+
+  const [claimed, feed] = await Promise.all([claimPromise, feedPromise]);
+  const handoffContext = claimed ? buildHandoffPrompt(claimed) : null;
+
+  let changeContext: string | null = null;
   if (cursor === undefined) {
-    // 첫 프롬프트 — 현재 watermark 만 기록, 주입 없음.
-    const head = await fetchChanges(baseUrl, 0, 1);
-    if (head) {
-      writeCursor(cursorFile, sessionId, head.lastId);
+    // 첫 프롬프트 — 현재 watermark 만 기록하고 과거 히스토리는 주입하지 않는다.
+    if (feed) {
+      writeCursor(cursorFile, sessionId, feed.lastId);
     }
-    return;
+  } else if (feed) {
+    if (feed.lastId !== cursor) {
+      writeCursor(cursorFile, sessionId, feed.lastId);
+    }
+    changeContext = buildNotifyContext(filterHumanChanges(feed.entries));
   }
 
-  const feed = await fetchChanges(baseUrl, cursor, 100);
-  if (!feed) {
-    return;
-  }
-  if (feed.lastId !== cursor) {
-    writeCursor(cursorFile, sessionId, feed.lastId);
-  }
-  const context = buildNotifyContext(filterHumanChanges(feed.entries));
+  const context = mergeContext([changeContext, handoffContext]);
   if (!context) {
     return;
   }

@@ -8,8 +8,10 @@ import {
 } from './github';
 import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
+import { createCachedListSessions, matchBoard, type SessionsResult } from './sessions';
 import {
   DETAIL_HISTORY_EXCLUDED,
+  type HandoffStatus,
   type ListTodosFilter,
   type StatusAction,
   type TodoStore,
@@ -27,6 +29,12 @@ export interface TodoServerOptions {
   store: TodoStore;
   /** 외부 명령 실행자 — 테스트가 fake 를 넣는다. 생략하면 실제 `gh` 를 부른다. */
   run?: RunCommand;
+  /**
+   * 활성 세션 조회 — 테스트에서 주입한다. 기본은 `claude agents --json` 을 TTL 3초로
+   * 메모이즈한 버전(`createCachedListSessions`) — 주입된 함수는 캐시를 거치지 않는다
+   * (테스트가 호출 횟수에 의존할 수 있고, 주입의 목적 자체가 결정론이다).
+   */
+  sessions?: () => SessionsResult;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -117,6 +125,7 @@ function toHttpError(error: unknown): Response {
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store, run } = options;
+  const sessionsOf = options.sessions ?? createCachedListSessions();
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -373,6 +382,66 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
       }
 
+      const todoHandoff = /^\/api\/todos\/([^/]+)\/handoff$/.exec(path);
+      if (todoHandoff?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoHandoff[1]);
+        const body = await readBody(req);
+        const note = typeof body.note === 'string' ? body.note : undefined;
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        if (store.pendingHandoffOf(todo.id)) {
+          return errorResponse(`이 항목은 이미 다른 세션 앞에 대기 중이다: ${ref}`, 409);
+        }
+
+        const result = sessionsOf();
+        if (!result.available) {
+          return errorResponse(result.reason ?? '활성 세션 목록을 가져올 수 없다', 409);
+        }
+
+        // sessionId 를 보냈으면 문자열이어야 한다. 타입만 틀렸을 때 조용히 자동 매칭으로
+        // 떨어뜨리면, 특정 세션을 지정했다고 믿는 호출자의 요청이 **다른 세션**으로 간다.
+        if (body.sessionId !== undefined && typeof body.sessionId !== 'string') {
+          return errorResponse('sessionId must be a string', 400);
+        }
+        let target = result.sessions.find((s) => s.sessionId === body.sessionId);
+        if (typeof body.sessionId === 'string' && !target) {
+          return errorResponse(`활성 세션이 아니다: ${body.sessionId}`, 400);
+        }
+        if (!target) {
+          // 자동 매칭 — 후보가 정확히 하나일 때만 보낸다. 애매하면 사용자에게 되묻는다.
+          const boardKey = store.listBoards(true).find((b) => b.id === todo.boardId)?.key ?? '';
+          const candidates = matchBoard(result.sessions, boardKey);
+          const [only, ...rest] = candidates;
+          if (!only || rest.length > 0) {
+            return json(
+              {
+                error:
+                  candidates.length === 0
+                    ? `"${boardKey}" 에 해당하는 활성 세션이 없다 — 대상을 직접 고르라`
+                    : `"${boardKey}" 후보가 ${candidates.length}개다 — 대상을 직접 고르라`,
+                candidates: candidates.length > 0 ? candidates : result.sessions,
+              },
+              409,
+            );
+          }
+          target = only;
+        }
+
+        const handoff = store.createHandoff({
+          ref,
+          sessionId: target.sessionId,
+          sessionName: target.name,
+          sessionCwd: target.cwd,
+          note,
+          actor,
+          currentBoardId,
+        });
+        return json(handoff, 201);
+      }
+
       // ── comments ──
       const todoComments = path.match(/^\/api\/todos\/([^/]+)\/comments$/);
       if (todoComments?.[1] && method === 'POST') {
@@ -466,6 +535,100 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
               : store.unarchiveNote(ref, actor, currentBoardId),
           ),
         );
+      }
+
+      // ── sessions ──
+      if (method === 'GET' && path === '/api/sessions') {
+        const result = sessionsOf();
+        const boardKey = url.searchParams.get('board');
+        const matched = boardKey
+          ? new Set(matchBoard(result.sessions, boardKey).map((s) => s.sessionId))
+          : null;
+        return json({
+          available: result.available,
+          reason: result.reason,
+          sessions: result.sessions.map((session) => ({
+            ...session,
+            matched: matched ? matched.has(session.sessionId) : false,
+          })),
+        });
+      }
+
+      // ── handoffs ──
+      if (method === 'POST' && path === '/api/handoffs/claim') {
+        // 훅(Stop/UserPromptSubmit)만 이 라우트를 부르고, 훅은 항상 127.0.0.1 로 붙는다
+        // — 루프백 제한에 기능 손실이 0 이다. `todo.expose` 로 lan/tailscale-serve 를
+        // 열어도 "보내기"·세션 목록은 그대로 원격에서 되지만, claim 을 열어두면 남의
+        // 큐를 조용히 소진(delivered 처리)해 배달을 무력화하는 경로가 된다. 404 로 막는
+        // 이유: 이 라우트의 존재 자체를 원격 관찰자에게 드러내지 않기 위해서다 — 아래
+        // catch-all(`not found: METHOD path`)과 구분이 안 가게 해, 있는 걸 알고 두드리는
+        // 시나리오를 403(있는데 막혔다)보다 덜 흥미롭게 만든다.
+        //
+        // 판별은 이슈 라우트와 같은 `isLocalRequest` 를 쓴다 — 주소만 보면 부족하다.
+        // `lan` 은 데몬이 `0.0.0.0` 에 직접 바인딩해 원격 소스 주소가 진짜 LAN IP 로
+        // 찍히지만, `tailscale-serve` 는 데몬을 127.0.0.1 에 두고 tailscaled 가 테일넷
+        // 요청을 루프백으로 재다이얼하므로(`src/tailscale.ts` 상단 주석) 주소만으로는
+        // 원격과 로컬이 구분되지 않는다. `isLocalRequest` 는 루프백 **그리고** 중계
+        // 헤더(`Tailscale-User-*` / `X-Forwarded-*`) 부재를 함께 보므로 두 채널 모두
+        // 막는다. 헤더는 위조로 "있게" 만들 수는 있어도 "없게" 만들 수는 없어, 위조는
+        // 요청을 덜 신뢰하는 방향으로만 작용한다.
+        if (!local) {
+          return errorResponse(`not found: ${method} ${path}`, 404);
+        }
+        const body = await readBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+        const via = body.via === 'prompt' ? 'prompt' : 'stop';
+        if (sessionId === '') {
+          return errorResponse('sessionId is required', 400);
+        }
+        const claimed = store.claimHandoff(sessionId, via);
+        return claimed ? json(claimed) : new Response(null, { status: 204 });
+      }
+
+      if (method === 'GET' && path === '/api/handoffs') {
+        const boardKey = url.searchParams.get('board');
+        const boardId = boardKey ? store.boardIdOf(boardKey) : undefined;
+        // `board` 를 명시했는데 그 키가 스토어에 없으면 **빈 목록**이다 — 필터 생략으로
+        // 떨어뜨리면 오타나 지워진 보드 URL 로 다른 보드의 큐까지 보게 된다. 400/404 이
+        // 아니라 빈 목록인 이유: 보드는 지연 생성이라(add/board add 만 만든다) CLI 가
+        // cwd 로 유추한, 아직 존재하지 않는 키를 흔히 붙인다. 그런 보드에 핸드오프가
+        // 있을 수 없으므로 빈 목록이 사실이기도 하다.
+        if (boardKey && !boardId) {
+          return json([]);
+        }
+        const status = url.searchParams.get('status') as HandoffStatus | null;
+        const handoffs = store.listHandoffs({
+          boardId,
+          status: status ?? undefined,
+        });
+        // 대상 세션이 사라진 pending 은 stale 로 표시만 한다 — 자동 만료는 "보냈는데
+        // 조용히 사라졌다"를 만들고, 그게 이 기능에서 가장 나쁜 실패다.
+        // stale 판정은 pending 건에만 의미가 있다 — pending 이 하나도 없으면 세션 조회
+        // (기본 구현은 `claude agents --json` spawn, 실측 ~220ms, 최악 timeout 5s) 를
+        // 아예 건너뛴다. 이 라우트는 웹 UI `refetch` 가 SSE 이벤트·60초 tick·모든
+        // mutation 뒤에 부르므로, pending 이 없는 대다수 호출에서 그 비용을 없앤다.
+        //
+        // 세션 목록을 **신뢰할 수 있을 때만** stale 을 판정한다. `claude` 를 못 쓰는
+        // 환경(미설치, launchd PATH 누락 등)에서는 `available:false` + 빈 목록이 오는데,
+        // 그걸 그대로 대조하면 멀쩡히 살아 있는 세션 앞의 요청까지 전부 "세션 없음" 으로
+        // 보인다 — 모른다는 것과 없다는 것은 다르다. 판별할 수 없으면 stale 을 붙이지 않는다.
+        const hasPending = handoffs.some((handoff) => handoff.status === 'pending');
+        const sessions = hasPending ? sessionsOf() : undefined;
+        const live = sessions?.available
+          ? new Set(sessions.sessions.map((s) => s.sessionId))
+          : undefined;
+        return json(
+          handoffs.map((handoff) => ({
+            ...handoff,
+            stale:
+              handoff.status === 'pending' && live !== undefined && !live.has(handoff.sessionId),
+          })),
+        );
+      }
+
+      const handoffCancel = /^\/api\/handoffs\/([^/]+)\/cancel$/.exec(path);
+      if (handoffCancel?.[1] && method === 'POST') {
+        return json(store.cancelHandoff(handoffCancel[1], actor));
       }
 
       // ── changes feed (훅 주입용) ──

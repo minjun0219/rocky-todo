@@ -8,7 +8,8 @@ import { isRepoSlug, parseRepoFromRemote } from './github';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
-import type { Board, Comment, HistoryEntry, Section } from './store';
+import type { AgentSession } from './sessions';
+import type { Board, Comment, Handoff, HistoryEntry, Section } from './store';
 import { tailscaleServeOff, tailscaleServeOn, tailscaleServeStatus } from './tailscale';
 import { DETAIL_HISTORY_EXCLUDED, linkLabel } from './ui/lib';
 
@@ -22,7 +23,7 @@ import { DETAIL_HISTORY_EXCLUDED, linkLabel } from './ui/lib';
 
 // ── 인자 파싱 (순수) ─────────────────────────────────────────────────────────
 
-const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'note', 'help']);
+const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'cancel', 'help', 'note']);
 const VALUE_FLAGS = new Set([
   'board',
   'section',
@@ -35,6 +36,8 @@ const VALUE_FLAGS = new Set([
   'content',
   'limit',
   'repo',
+  'session',
+  'message',
 ]);
 const LIST_FLAGS = new Set(['label', 'link']);
 
@@ -160,6 +163,26 @@ export function formatTodoShow(detail: {
   return lines.join('\n');
 }
 
+/** `GET /api/sessions` 응답 — CLI 와 테스트가 공유하는 뷰 타입. */
+export interface SessionsView {
+  available: boolean;
+  reason?: string;
+  sessions: Array<AgentSession & { matched: boolean }>;
+}
+
+/** 세션 목록을 컴팩트하게 렌더한다. `*` 는 현재 보드와 일치하는 세션. */
+export function formatSessions(view: SessionsView): string {
+  if (!view.available) {
+    return `활성 세션 목록을 가져올 수 없다: ${view.reason ?? '알 수 없는 이유'}`;
+  }
+  if (view.sessions.length === 0) {
+    return '실행 중인 Claude Code 세션이 없다';
+  }
+  return view.sessions
+    .map((s) => `${s.matched ? '*' : ' '} ${s.name}  ${s.status}  ${s.cwd}`)
+    .join('\n');
+}
+
 function renderTree(
   todos: TodoView[],
   out: string[],
@@ -281,6 +304,9 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
   rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
   rocky-todo issue REF [--repo OWNER/NAME]      todo 를 GitHub 이슈로 (gh CLI 필요)
+  rocky-todo handoff REF [--session NAME] [--message "본문"]  실행 중인 세션에 작업 요청 보내기
+  rocky-todo handoff REF --cancel               대기 중인 요청 취소
+  rocky-todo sessions                           실행 중인 Claude Code 세션 (* = 이 보드)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
@@ -579,6 +605,63 @@ export async function runCli(): Promise<void> {
         print(result, () => `✓ ${result.url} (보드 repo 를 ${inferred} 로 설정했다)`);
         return;
       }
+    }
+
+    case 'sessions': {
+      const result = await request<SessionsView>(
+        ctx,
+        'GET',
+        `/api/sessions?board=${encodeURIComponent(board)}`,
+      );
+      print(result, () => formatSessions(result));
+      return;
+    }
+
+    case 'handoff': {
+      const id = rest[0];
+      if (!id) {
+        throw new Error(
+          'usage: rocky-todo handoff REF [--session NAME] [--message "본문"] [--cancel]',
+        );
+      }
+      if (flags.cancel === true) {
+        // board 로 거르지 않는다 — 아래에서 REF 가 해석된 **실제 todo id** 로 찾으므로
+        // 필터가 필요 없고, 오히려 해롭다: `board` 는 cwd 로 유추한 값인데 REF 는
+        // 다른 보드를 가리킬 수 있어(`other#12`), 거르면 실재하는 요청을 못 찾는다.
+        const pending = await request<Handoff[]>(ctx, 'GET', '/api/handoffs?status=pending');
+        const detail = await request<{ todo: TodoView }>(ctx, 'GET', todoRefPath(id, '', board));
+        const target = pending.find((h) => h.todoId === detail.todo.id);
+        if (!target) {
+          throw new Error(`${id} 앞으로 대기 중인 요청이 없다`);
+        }
+        const cancelled = await request<Handoff>(
+          ctx,
+          'POST',
+          `/api/handoffs/${encodeURIComponent(target.id)}/cancel`,
+        );
+        print(cancelled, () => `✓ ${id} 핸드오프 취소`);
+        return;
+      }
+
+      const sessionName = str(flags.session);
+      let sessionId: string | undefined;
+      if (sessionName) {
+        const result = await request<SessionsView>(
+          ctx,
+          'GET',
+          `/api/sessions?board=${encodeURIComponent(board)}`,
+        );
+        sessionId = result.sessions.find((s) => s.name === sessionName)?.sessionId;
+        if (!sessionId) {
+          throw new Error(`활성 세션이 아니다: ${sessionName}`);
+        }
+      }
+      const handoff = await request<Handoff>(ctx, 'POST', todoRefPath(id, '/handoff', board), {
+        sessionId,
+        note: str(flags.message),
+      });
+      print(handoff, () => `✓ ${id} → ${handoff.sessionName ?? handoff.sessionId} 에게 보냄`);
+      return;
     }
 
     case 'start':

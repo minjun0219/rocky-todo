@@ -21,6 +21,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/handoff-stop.ts\"",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }

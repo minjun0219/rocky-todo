@@ -35,7 +35,9 @@ claude plugin install rocky-todo@rocky-marketplace     # 공유 보드 데몬 (�
 설치되면 플러그인이 두 가지를 배선한다:
 - **`mcpServers` (http)** — 데몬의 `/mcp` (streamable HTTP, 도구 5개)를 세션에 등록. 수동
   `claude mcp add` 불필요.
-- **hooks** — `SessionStart` 훅이 데몬을 기동하고, `UserPromptSubmit` 훅이 보드의 사람 변경을 주입.
+- **hooks** — `SessionStart` 훅이 데몬을 기동하고, `UserPromptSubmit` 훅이 보드의 사람 변경을
+  주입하며, `Stop` 훅이 그 세션 앞으로 온 핸드오프 요청을 자동 착수시킨다(아래 "보드→세션
+  핸드오프" 참고). 셋 다 플러그인 업데이트 후 **첫 세션부터** 적용된다.
 
 > **첫 세션 순서 주의**: SessionStart 훅의 데몬 기동과 http MCP 초기화 순서는 보장되지 않는다.
 > 첫 세션에서 MCP 가 `failed` 로 뜨면 `/mcp` 패널에서 retry 하거나 다음 세션이면 붙는다.
@@ -57,6 +59,10 @@ rocky-todo daemon uninstall
 > 로 한 번 다시 깐다.
 
 레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
+
+> **PATH 회귀 수정 (재설치 필요)**: 이전 버전으로 `daemon install` 을 이미 해뒀다면
+> `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
+> 재설치해야 launchd 데몬이 `claude` CLI(핸드오프 기능이 쓴다)를 PATH 에서 찾는다.
 
 ## 호스트별 MCP 등록
 
@@ -177,6 +183,30 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - 에이전트 자신의 변경(claude-code/codex/opencode)은 걸러서 자기 반향 없음
 - 끄기: `rocky.json` `todo.watch: false` 또는 env `ROCKY_TODO_WATCH=0`
 
+## 보드 → 세션 핸드오프 (Stop 훅, Claude Code 전용)
+
+보드의 todo 를 실행 중인 Claude Code 세션에 넘길 수 있다 — 웹 UI 드로어의 "에이전트에게
+보내기" 버튼, 또는 `rocky-todo handoff REF [--session NAME] [--message "본문"]`. 데몬은
+세션에 아무것도 밀 수 없으므로(훅으로 유휴 세션을 깨울 수단이 없다) 요청은 큐에 쌓이고,
+대상 세션이 **턴을 끝내는 순간** `Stop` 훅이 집어 `decision: block` 으로 그 자리에서
+착수시킨다. `UserPromptSubmit` 훅도 같은 큐를 보므로 사용자가 그 세션에 먼저 말을 걸어도
+배달된다. 한 번에 한 건씩 순서대로 소화한다.
+
+운영자가 알아둘 것:
+- **`claude` CLI 가 PATH 에 있어야 동작한다** — 세션 목록(`rocky-todo sessions`, 웹 UI 드로어의
+  세션 선택창)이 `claude agents --json` 을 실행해서 얻기 때문이다. 없으면 이 기능(버튼 +
+  `sessions`/`handoff` CLI)만 비활성되고, 보드의 나머지 기능은 정상 동작한다.
+- **`Stop` 훅은 신규다** — 플러그인을 이 버전으로 업데이트하면 다음 세션이 아니라 **그 세션의
+  다음 Stop 이벤트부터** 곧바로 적용된다(훅 등록 자체는 SessionStart 때가 아니라 플러그인
+  설치 시점에 이미 반영되어 있다).
+- 대상 세션은 보드 key 와 세션 cwd 의 **경로 세그먼트** 매칭으로 고른다 — 후보가 정확히 1개면
+  자동으로 그 세션에 보내고, 여러 개면 웹 UI/CLI 에서 직접 골라야 한다.
+- 대기 중인 요청에 TTL 은 없다 — 대상 세션이 종료돼도 큐에는 남고 "세션 없음"(stale)으로만
+  표시된다. 취소하려면 웹 UI 의 취소 버튼 또는 `rocky-todo handoff REF --cancel`.
+- MCP 도구는 늘지 않았다 — 여전히 5개(`todo_list` / `todo_write` / `todo_status` /
+  `note_list` / `note_write`). 핸드오프는 사람이 세션에 넘기는 경로이지, 에이전트가 호출하는
+  도구가 아니다.
+
 ## 노출 범위 (`todo.expose` — 기본 이 머신만)
 
 보드에 **인증이 없으므로** 노출은 전부 opt-in 채널이다. user `rocky.json` 의
@@ -194,6 +224,21 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 | `"lan"` | 같은 내부망의 모든 기기 (`http://<이 머신 IP>:8636`) | 0.0.0.0 | 무인증 — 집 등 신뢰망 전용. `rocky-todo open` 이 내부망 주소를 함께 출력 |
 | `"tailscale-serve"` | 테일넷에 연결된 내 기기들 (HTTPS) | 127.0.0.1 유지 | tailscaled 프록시가 중계, 기동 시 `tailscale serve` 자동 보장. 테일넷 Serve 기능 첫 사용 시 관리 콘솔 1회 승인 필요 |
 
+- 핸드오프 "보내기"(`POST /api/todos/:ref/handoff`)와 세션 목록(`GET /api/sessions`)은
+  노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기).
+  `claim`(`POST /api/handoffs/claim`)은 훅 전용이라 루프백(127.0.0.1/::1) 요청만 받는다 —
+  훅은 항상 로컬에서 붙으니 기능 손실은 없다. 판정은 이슈 생성과 같은 `isLocalRequest`
+  를 쓴다 — **소스 주소가 루프백이고 동시에 중계 헤더가 없어야** 로컬로 본다. 주소만
+  보면 부족하기 때문이다:
+  - `lan` 은 데몬이 `0.0.0.0` 에 직접 바인딩하므로 원격 요청의 소스 주소가 실제 LAN IP 로
+    보인다 — 주소만으로 걸러진다.
+  - `tailscale-serve` 는 데몬이 계속 127.0.0.1 에만 바인딩하고 tailscaled 의 로컬 프록시가
+    테일넷 요청을 다시 `127.0.0.1:<port>` 로 다이얼해 전달한다(위 표의 "바인딩" 참고).
+    그래서 소스 주소는 항상 127.0.0.1 이지만, tailscale serve 가 붙이는
+    `Tailscale-User-*` 헤더가 남으므로 **이 요청도 404 로 막힌다.**
+
+  헤더는 위조로 "있게" 만들 수는 있어도 "없게" 만들 수는 없다 — 위조는 요청을 덜
+  신뢰하는 방향으로만 작용하므로 이 판정을 우회하는 데 쓸 수 없다.
 - env `ROCKY_TODO_EXPOSE`(콤마 구분)가 설정되면 config 를 통째로 덮어쓴다 — `off` 로 강제 차단.
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.
@@ -216,6 +261,8 @@ rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
+rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
+rocky-todo sessions
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```

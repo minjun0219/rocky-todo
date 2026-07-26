@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addBoardRepo, type Migration, runMigrations } from './migrations';
+import { MIGRATIONS, addBoardRepo, type Migration, runMigrations } from './migrations';
 
 function memDb(): Database {
   const db = new Database(':memory:');
@@ -248,4 +248,40 @@ describe('addBoardRepo migration', () => {
     db.close();
     rmSync(dir, { recursive: true, force: true });
   });
+});
+
+test('마이그레이션 3 — 기존 DB 에 handoffs 테이블을 만든다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  // 마이그레이션 2(addBoardRepo)가 이 테이블을 고치므로 전체를 돌리려면 있어야 한다.
+  db.run(
+    'CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)',
+  );
+  db.run('PRAGMA user_version = 1');
+
+  const version = runMigrations(db, { migrations: MIGRATIONS });
+
+  expect(version).toBe(MIGRATIONS.length);
+  const table = db
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='handoffs'",
+    )
+    .get();
+  expect(table?.name).toBe('handoffs');
+  db.close();
+});
+
+test('마이그레이션 3 — 테이블이 이미 있어도(신규 DB) 실패하지 않는다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE handoffs (id TEXT PRIMARY KEY)');
+  db.run(
+    'CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL)',
+  );
+  db.run('PRAGMA user_version = 1');
+
+  expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
+  db.close();
 });

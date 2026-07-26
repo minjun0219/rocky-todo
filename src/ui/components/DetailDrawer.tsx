@@ -69,6 +69,11 @@ function TodoDetail() {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const patchTodo = useUiStore((s) => s.patchTodo);
   const sections = useUiStore((s) => s.sections);
+  const handoffs = useUiStore((s) => s.handoffs);
+  const sessions = useUiStore((s) => s.sessions);
+  const fetchSessions = useUiStore((s) => s.fetchSessions);
+  const sendHandoff = useUiStore((s) => s.sendHandoff);
+  const cancelHandoff = useUiStore((s) => s.cancelHandoff);
   const todo = detail?.todo;
   const [desc, setDesc] = useState(todo?.description ?? '');
   const [editingDesc, setEditingDesc] = useState(false);
@@ -77,6 +82,11 @@ function TodoDetail() {
   const [editingTitle, setEditingTitle] = useState(false);
   /** Esc 로 빠져나온 blur 인지 — 커밋 경로가 onBlur 하나이므로 취소 의사를 여기로 넘긴다. */
   const cancelledRef = useRef(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffNote, setHandoffNote] = useState('');
+  const [handoffSession, setHandoffSession] = useState('');
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!editingDesc) {
@@ -90,12 +100,54 @@ function TodoDetail() {
     }
   }, [todo?.title, editingTitle]);
 
+  // 드로어가 todo A → B 로 전환돼도(언마운트 없이 재사용) 핸드오프 패널의 로컬 상태가
+  // 새 todo 로 새어 들어가면 안 된다 — 열려 있던 패널·입력 중이던 메모가 그대로 남으면
+  // "보내기"를 눌렀을 때 A 에서 쓴 메모가 B 의 핸드오프로 조용히 전송된다.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: todo?.id 는 본문에서 값으로 읽지 않는 리셋 트리거다 — todo 가 바뀌었다는 사실 자체가 신호다.
+  useEffect(() => {
+    setHandoffOpen(false);
+    setHandoffNote('');
+    setHandoffSession('');
+    setHandoffBusy(false);
+    setHandoffError(null);
+  }, [todo?.id]);
+
   if (!todo) {
     return null;
   }
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
   const boardSections = sections.filter((s) => s.boardId === todo.boardId);
+
+  const pending = handoffs.find((h) => h.todoId === todo.id && h.status === 'pending');
+
+  // `fetchSessions` 는 실패를 던지지 않고 `sessions.available:false + reason` 으로
+  // 흡수한다 — 조회 실패는 그 상태 하나로만 표현한다. 여기서 또 잡아 `handoffError` 에
+  // 넣으면 같은 실패를 말하는 자리가 둘이 된다.
+  const openHandoff = async () => {
+    setHandoffOpen(true);
+    setHandoffError(null);
+    await fetchSessions();
+  };
+
+  const submitHandoff = async () => {
+    setHandoffBusy(true);
+    setHandoffError(null);
+    try {
+      await sendHandoff(todo.id, {
+        sessionId: handoffSession || undefined,
+        note: handoffNote || undefined,
+      });
+      // 성공했을 때만 닫는다 — 실패하면 고쳐서 다시 낼 수 있어야 한다.
+      setHandoffOpen(false);
+      setHandoffNote('');
+      setHandoffSession('');
+    } catch (error) {
+      setHandoffError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
 
   /**
    * 제목 커밋은 **onBlur 한 곳**에서만 일어난다. Enter 도 Esc 도 blur 로 빠지고, 취소인지
@@ -283,6 +335,50 @@ function TodoDetail() {
           ? statusButton('보관 해제', 'unarchive')
           : statusButton('▣ 보관', 'archive')}
       </div>
+      {pending ? (
+        <div className="handoff-pending">
+          <span>대기 중 · {pending.sessionName ?? pending.sessionId} 에게</span>
+          {pending.stale ? <span className="handoff-stale">세션 없음</span> : null}
+          <button type="button" onClick={() => void cancelHandoff(pending.id)}>
+            취소
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="drawer-btn" onClick={() => void openHandoff()}>
+          에이전트에게 보내기
+        </button>
+      )}
+      {handoffOpen && !pending ? (
+        <div className="handoff-panel">
+          {sessions.available ? (
+            <>
+              <select value={handoffSession} onChange={(e) => setHandoffSession(e.target.value)}>
+                <option value="">자동 (이 보드의 세션)</option>
+                {sessions.list.map((session) => (
+                  <option key={session.sessionId} value={session.sessionId}>
+                    {session.name} · {session.status} · {session.cwd}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={handoffNote}
+                placeholder="메모 (선택)"
+                onChange={(e) => setHandoffNote(e.target.value)}
+              />
+              <button type="button" onClick={() => void submitHandoff()} disabled={handoffBusy}>
+                보내기
+              </button>
+            </>
+          ) : (
+            <p>세션 목록을 가져올 수 없다: {sessions.reason}</p>
+          )}
+          {handoffError ? (
+            <p className="handoff-error" role="alert">
+              {handoffError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <IssueAction todo={todo} />
     </div>
   );

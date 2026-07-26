@@ -56,6 +56,9 @@ claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies �
    `description` (markdown) 에.
 5. **삭제는 없다** — 잘못 만든 항목도 `archive` 만 한다. 메모도 동일 (`note_write` 의
    `mode: "archive"`).
+6. **보드에서 넘어온 요청**: `# rocky-todo: 보드에서 도착한 작업 요청` 블록이 보이면
+   사용자가 보드에서 명시적으로 넘긴 것이다. 착수 전 재확인은 필요 없지만, `todo_status`
+   의 `start` 로 표시는 반드시 남긴다 — 사용자는 그 뱃지로 진행을 확인한다.
 
 ## 진행 보고는 댓글로
 

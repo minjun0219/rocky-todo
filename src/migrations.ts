@@ -70,7 +70,62 @@ export const addBoardRepo: Migration = (db) => {
  * `SCHEMA` 에 컬럼을 추가하면서 그 컬럼을 위한 마이그레이션도 함께 둘 때는 `addBoardRepo`
  * 를 그대로 본떠라.
  */
-export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo];
+/**
+ * 마이그레이션 3: 핸드오프 큐 테이블.
+ *
+ * 보드에서 실행 중인 Claude Code 세션으로 넘긴 작업 요청이 여기 쌓이고, 세션 훅이
+ * 당겨간다(`src/store.ts` 의 handoff 섹션 참고).
+ *
+ * `SCHEMA` 도 이 테이블을 만들므로 바로 아래 `MIGRATIONS` 주석의 규칙이 그대로 적용된다 —
+ * `CREATE TABLE IF NOT EXISTS` 로 테이블 자체는 넘어가지만, 인덱스는 컬럼을 참조하므로
+ * 컬럼이 갖춰졌는지 `PRAGMA table_info` 로 확인한 뒤에만 만든다.
+ */
+const addHandoffs: Migration = (db) => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS handoffs (
+      id            TEXT PRIMARY KEY,
+      todo_id       TEXT NOT NULL REFERENCES todos(id),
+      session_id    TEXT NOT NULL,
+      session_name  TEXT,
+      session_cwd   TEXT,
+      note          TEXT NOT NULL DEFAULT '',
+      actor         TEXT NOT NULL,
+      status        TEXT NOT NULL CHECK (status IN ('pending','delivered','cancelled')),
+      created_at    TEXT NOT NULL,
+      delivered_at  TEXT,
+      delivered_via TEXT
+    )
+  `);
+  const columns = new Set(
+    db
+      .query<{ name: string }, []>('PRAGMA table_info(handoffs)')
+      .all()
+      .map((row) => row.name),
+  );
+  if (columns.has('session_id') && columns.has('status') && columns.has('created_at')) {
+    db.run(
+      'CREATE INDEX IF NOT EXISTS idx_handoffs_session ON handoffs(session_id, status, created_at)',
+    );
+  }
+  if (columns.has('todo_id') && columns.has('status')) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_handoffs_todo ON handoffs(todo_id, status)');
+  }
+};
+
+/**
+ * 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다.
+ *
+ * **규칙(`todos.number` vs `boards.repo` divergence — finding G)**: `SCHEMA` 는 신규 DB 를
+ * 만드는 뼈대이고 신규 DB 도 `user_version` 은 0 에서 시작한다. 그래서 어떤 컬럼을
+ * `SCHEMA` 에 넣어 신규 DB 에 바로 포함시키면서 동시에 그 컬럼을 만드는 마이그레이션도
+ * 배열에 있다면(`addBoardRepo` 가 그 예), 그 마이그레이션은 반드시 `PRAGMA table_info` 로
+ * 컬럼이 이미 있는지 먼저 확인해야 한다 — 안 그러면 신규 DB 는 "duplicate column" 으로
+ * 데몬이 기동조차 못 한다(`todos.number` 는 `SCHEMA` 에 없고 마이그레이션에만 있어서 이
+ * 가드가 필요 없다 — 두 패턴 모두 유효하지만 섞어 쓰려면 이 가드가 필수다). 앞으로
+ * `SCHEMA` 에 컬럼을 추가하면서 그 컬럼을 위한 마이그레이션도 함께 둘 때는 `addBoardRepo`
+ * 를 그대로 본떠라.
+ */
+export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo, addHandoffs];
 
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */
