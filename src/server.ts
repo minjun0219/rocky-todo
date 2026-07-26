@@ -1,7 +1,9 @@
 import pkg from '../package.json' with { type: 'json' };
 import { refNeedsBoardContext, withRef } from './refs';
+import { listSessions as defaultListSessions, matchBoard, type SessionsResult } from './sessions';
 import {
   DETAIL_HISTORY_EXCLUDED,
+  type HandoffStatus,
   type ListTodosFilter,
   type StatusAction,
   type TodoStore,
@@ -17,6 +19,8 @@ import {
 
 export interface TodoServerOptions {
   store: TodoStore;
+  /** 활성 세션 조회 — 테스트에서 주입한다. 기본은 `claude agents --json`. */
+  sessions?: () => SessionsResult;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -70,6 +74,7 @@ function toHttpError(error: unknown): Response {
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store } = options;
+  const sessionsOf = options.sessions ?? (() => defaultListSessions());
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -255,6 +260,61 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         );
       }
 
+      const todoHandoff = /^\/api\/todos\/([^/]+)\/handoff$/.exec(path);
+      if (todoHandoff?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoHandoff[1]);
+        const body = await readBody(req);
+        const note = typeof body.note === 'string' ? body.note : undefined;
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        if (store.pendingHandoffOf(todo.id)) {
+          return errorResponse(`이 항목은 이미 다른 세션 앞에 대기 중이다: ${ref}`, 409);
+        }
+
+        const result = sessionsOf();
+        if (!result.available) {
+          return errorResponse(result.reason ?? '활성 세션 목록을 가져올 수 없다', 409);
+        }
+
+        let target = result.sessions.find((s) => s.sessionId === body.sessionId);
+        if (typeof body.sessionId === 'string' && !target) {
+          return errorResponse(`활성 세션이 아니다: ${body.sessionId}`, 400);
+        }
+        if (!target) {
+          // 자동 매칭 — 후보가 정확히 하나일 때만 보낸다. 애매하면 사용자에게 되묻는다.
+          const boardKey = store.listBoards(true).find((b) => b.id === todo.boardId)?.key ?? '';
+          const candidates = matchBoard(result.sessions, boardKey);
+          const [only, ...rest] = candidates;
+          if (!only || rest.length > 0) {
+            return json(
+              {
+                error:
+                  candidates.length === 0
+                    ? `"${boardKey}" 에 해당하는 활성 세션이 없다 — 대상을 직접 고르라`
+                    : `"${boardKey}" 후보가 ${candidates.length}개다 — 대상을 직접 고르라`,
+                candidates: candidates.length > 0 ? candidates : result.sessions,
+              },
+              409,
+            );
+          }
+          target = only;
+        }
+
+        const handoff = store.createHandoff({
+          ref,
+          sessionId: target.sessionId,
+          sessionName: target.name,
+          sessionCwd: target.cwd,
+          note,
+          actor,
+          currentBoardId,
+        });
+        return json(handoff, 201);
+      }
+
       // ── comments ──
       const todoComments = path.match(/^\/api\/todos\/([^/]+)\/comments$/);
       if (todoComments?.[1] && method === 'POST') {
@@ -348,6 +408,59 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
               : store.unarchiveNote(ref, actor, currentBoardId),
           ),
         );
+      }
+
+      // ── sessions ──
+      if (method === 'GET' && path === '/api/sessions') {
+        const result = sessionsOf();
+        const boardKey = url.searchParams.get('board');
+        const matched = boardKey
+          ? new Set(matchBoard(result.sessions, boardKey).map((s) => s.sessionId))
+          : null;
+        return json({
+          available: result.available,
+          reason: result.reason,
+          sessions: result.sessions.map((session) => ({
+            ...session,
+            matched: matched ? matched.has(session.sessionId) : false,
+          })),
+        });
+      }
+
+      // ── handoffs ──
+      if (method === 'POST' && path === '/api/handoffs/claim') {
+        const body = await readBody(req);
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+        const via = body.via === 'prompt' ? 'prompt' : 'stop';
+        if (sessionId === '') {
+          return errorResponse('sessionId is required', 400);
+        }
+        const claimed = store.claimHandoff(sessionId, via);
+        return claimed ? json(claimed) : new Response(null, { status: 204 });
+      }
+
+      if (method === 'GET' && path === '/api/handoffs') {
+        const boardKey = url.searchParams.get('board');
+        const boardId = boardKey ? store.boardIdOf(boardKey) : undefined;
+        const status = url.searchParams.get('status') as HandoffStatus | null;
+        const handoffs = store.listHandoffs({
+          boardId,
+          status: status ?? undefined,
+        });
+        // 대상 세션이 사라진 pending 은 stale 로 표시만 한다 — 자동 만료는 "보냈는데
+        // 조용히 사라졌다"를 만들고, 그게 이 기능에서 가장 나쁜 실패다.
+        const live = new Set(sessionsOf().sessions.map((s) => s.sessionId));
+        return json(
+          handoffs.map((handoff) => ({
+            ...handoff,
+            stale: handoff.status === 'pending' && !live.has(handoff.sessionId),
+          })),
+        );
+      }
+
+      const handoffCancel = /^\/api\/handoffs\/([^/]+)\/cancel$/.exec(path);
+      if (handoffCancel?.[1] && method === 'POST') {
+        return json(store.cancelHandoff(handoffCancel[1], actor));
       }
 
       // ── changes feed (훅 주입용) ──
