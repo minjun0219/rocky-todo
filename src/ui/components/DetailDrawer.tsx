@@ -131,6 +131,7 @@ function TodoDetail() {
         <input
           className="drawer-title-input"
           value={title}
+          aria-label="제목 수정 (Enter 저장 · Esc 취소)"
           // biome-ignore lint/a11y/noAutofocus: 클릭으로 진입한 편집이라 즉시 입력이 기대 동작
           autoFocus
           onChange={(e) => setTitle(e.target.value)}
@@ -166,6 +167,7 @@ function TodoDetail() {
             className="drawer-title-edit"
             onClick={() => setEditingTitle(true)}
             title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
+            aria-label={`제목 수정: ${todo.title}`}
           >
             {todo.title}
           </button>

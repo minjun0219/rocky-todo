@@ -68,6 +68,7 @@ export function Sidebar() {
             className="board-add-input"
             value={key}
             placeholder="보드 이름 (레포 이름 권장)"
+            aria-label="새 보드 이름"
             // biome-ignore lint/a11y/noAutofocus: 버튼을 눌러 진입한 입력이라 즉시 타이핑이 기대 동작
             autoFocus
             onChange={(e) => {
@@ -82,7 +83,12 @@ export function Sidebar() {
               }
             }}
           />
-          {error && <div className="board-add-error">{error}</div>}
+          {/* 생성 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
+          {error && (
+            <div className="board-add-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
       ) : (
         <button type="button" className="board-item board-add-open" onClick={() => setAdding(true)}>
