@@ -7,17 +7,25 @@ import { TodoStore } from './store';
 
 let dir: string;
 let store: TodoStore;
-let handle: (req: Request) => Promise<Response>;
+let handle: (req: Request, peerAddress?: string) => Promise<Response>;
 
 const BASE = 'http://localhost';
 
-function req(path: string, init?: RequestInit & { actor?: string }): Promise<Response> {
+/**
+ * @param init.peer 요청 소켓 주소 — 데몬이 `server.requestIP(req)` 로 넘기는 값 자리다.
+ *   기본은 루프백: 이 파일의 테스트는 대부분 로컬 CLI/웹 UI 를 흉내내며, 이슈 생성
+ *   라우트만 이 값을 본다. 노출 경로를 재현하는 테스트가 LAN 주소를 넘긴다.
+ */
+function req(
+  path: string,
+  init?: RequestInit & { actor?: string; peer?: string },
+): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined) {
     headers.set('content-type', 'application/json');
   }
   headers.set('x-rocky-actor', init?.actor ?? 'tester');
-  return handle(new Request(`${BASE}${path}`, { ...init, headers }));
+  return handle(new Request(`${BASE}${path}`, { ...init, headers }), init?.peer ?? '127.0.0.1');
 }
 
 /**
@@ -625,5 +633,265 @@ describe('comments', () => {
       body: JSON.stringify({ body: '본문' }),
     });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe('github issue', () => {
+  test('PATCH /api/boards/:key sets the repo', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'rocky' }) });
+    const res = await req('/api/boards/rocky', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { repo: string }).repo).toBe('o/n');
+  });
+
+  test('PATCH rejects a malformed slug and an unknown board', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'rocky' }) });
+    const bad = await req('/api/boards/rocky', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'not-a-slug' }),
+    });
+    expect(bad.status).toBe(400);
+
+    const missing = await req('/api/boards/nosuch', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  test('POST /api/todos/:ref/issue is 400 without a repo and 404 for an unknown todo', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const noRepo = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(noRepo.status).toBe(400);
+
+    const missing = await req('/api/todos/nosuchid/issue', { method: 'POST' });
+    expect(missing.status).toBe(404);
+  });
+
+  test('POST /api/todos/:ref/issue is 409 when an issue link already exists', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({
+        board: 'rocky',
+        title: '작업',
+        links: [{ url: 'https://github.com/o/n/issues/3' }],
+      }),
+    });
+    const todo = (await created.json()) as { id: string };
+    await req('/api/boards/rocky', { method: 'PATCH', body: JSON.stringify({ repo: 'o/n' }) });
+
+    const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+
+  // finding A/C: 클라이언트가 어느 보드가 todo 를 소유하는지 추측해 PATCH 하던 옛 경로를
+  // 없앴다 — 대신 이 라우트가 body 의 `repo` 를 받아 서버 안에서(= todo 의 실제 보드
+  // 위에서) 처리한다. `run` 을 주입해 실제 `gh` 는 절대 부르지 않는다.
+  test("POST /api/todos/:ref/issue accepts a body repo and sets it on the todo's own board", async () => {
+    handle = buildTodoServer({
+      store,
+      run: () => ({ code: 0, stdout: 'https://github.com/o/n/issues/9\n', stderr: '' }),
+    }).fetch;
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string; boardId: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toBe('https://github.com/o/n/issues/9');
+
+    // /api/boards/:key 는 GET 이 없으므로 목록으로 확인한다
+    const boards = (await (await req('/api/boards')).json()) as { key: string; repo?: string }[];
+    expect(boards.find((b) => b.key === 'rocky')?.repo).toBe('o/n');
+  });
+
+  test('POST /api/todos/:ref/issue with a malformed body repo is 400', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'not-a-slug' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('POST /api/todos/:ref/issue with no body at all still 400s when the board has no repo', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  // finding F: `gh` 실패 메시지에 "not found" 가 들어가면(GitHub API 의 404 응답을 그대로
+  // 옮긴 경우 흔함) `toHttpError` 의 일반 규칙(`/not found/i` → 404)을 타면 이 라우트의
+  // 404("todo not found")와 뜻이 겹쳐버린다. orchestrator 자신의 실패는 문구와 무관하게
+  // 항상 400 이어야 한다.
+  test('a gh failure whose message contains "not found" is still a 400, not a 404', async () => {
+    handle = buildTodoServer({
+      store,
+      run: () => ({
+        code: 1,
+        stdout: '',
+        stderr: 'HTTP 404: Not Found (https://api.github.com/repos/o/n)',
+      }),
+    }).fetch;
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const res = await req(`/api/todos/${todo.id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// 이슈 생성은 데몬 사용자의 `gh` 인증을 빌린다 — `todo.expose` 가 노출하는 것은 보드이고
+// GitHub 계정 권한이 아니다. 노출된 표면에서 이 라우트를 부를 수 있으면 보드 쓰기 권한이
+// GitHub 쓰기 권한으로 확대된다.
+describe('POST /api/todos/:ref/issue — 출처 게이트', () => {
+  // 실제 `gh` 를 절대 부르지 않는다: 게이트가 열려 통과하는 경로도 fake run 을 쓴다.
+  const run = () => ({ code: 0, stdout: 'https://github.com/o/n/issues/5\n', stderr: '' });
+
+  async function todoWithRepo(): Promise<string> {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    await req('/api/boards/rocky', { method: 'PATCH', body: JSON.stringify({ repo: 'o/n' }) });
+    return ((await created.json()) as { id: string }).id;
+  }
+
+  test('a LAN peer gets 403 and no issue is attempted', async () => {
+    let calls = 0;
+    handle = buildTodoServer({
+      store,
+      run: () => {
+        calls += 1;
+        return run();
+      },
+    }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+      peer: '192.168.1.20',
+    });
+
+    expect(res.status).toBe(403);
+    expect(calls).toBe(0);
+    expect(store.getTodo(id)?.links).toEqual([]);
+  });
+
+  test('a tailscale-proxied request is 403 even though its peer is loopback', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '100.101.102.103' },
+      peer: '127.0.0.1',
+    });
+
+    expect(res.status).toBe(403);
+    expect(store.getTodo(id)?.links).toEqual([]);
+  });
+
+  test('403 comes before todo lookup — a nonexistent ref does not leak as 404', async () => {
+    const res = await req('/api/todos/nosuchid/issue', { method: 'POST', peer: '192.168.1.20' });
+    expect(res.status).toBe(403);
+  });
+
+  test('a loopback request still creates the issue', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, { method: 'POST' });
+
+    expect(res.status).toBe(201);
+    expect(store.getTodo(id)?.links.map((l) => l.url)).toEqual(['https://github.com/o/n/issues/5']);
+  });
+
+  test('only issue creation is gated — reads and board writes still work from a LAN peer', async () => {
+    const id = await todoWithRepo();
+
+    expect((await req('/api/todos', { peer: '192.168.1.20' })).status).toBe(200);
+    expect((await req(`/api/todos/${id}`, { peer: '192.168.1.20' })).status).toBe(200);
+    const patched = await req(`/api/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: '고침' }),
+      peer: '192.168.1.20',
+    });
+    expect(patched.status).toBe(200);
+  });
+
+  // 사전 검사와 orchestrator 의 재검사 사이에 `readOptionalBody` 의 await 이 있다. 겹친
+  // 두 요청이 둘 다 사전 검사를 통과하면 나중 쪽은 orchestrator 안에서 걸리는데, 그때도
+  // "이미 있음"은 409 여야 한다 — 같은 원인이 타이밍에 따라 400 이 되면 웹 UI 의 분기가
+  // 흔들린다. 본문 스트림이 소비되는 순간에 링크를 붙여 그 창을 결정론적으로 재현한다.
+  test('a link that appears during body read is still 409, not 400', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const raced = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        // 여기가 라우트의 409 사전 검사 **뒤** — 경쟁 요청이 방금 링크를 붙인 상황이다.
+        store.updateTodo(id, { links: [{ url: 'https://github.com/o/n/issues/3' }] }, 'other');
+        controller.enqueue(new TextEncoder().encode('{}'));
+        controller.close();
+      },
+    });
+    const res = await handle(
+      new Request(`${BASE}/api/todos/${id}/issue`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-rocky-actor': 'tester' },
+        body: raced,
+        // @ts-expect-error duplex 는 스트림 본문에 필요하지만 lib.dom 타입에 없다
+        duplex: 'half',
+      }),
+      '127.0.0.1',
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; url: string };
+    expect(body.url).toBe('https://github.com/o/n/issues/3');
+    // 두 번째 이슈가 만들어지지 않았어야 한다
+    expect(store.getTodo(id)?.links).toHaveLength(1);
+  });
+
+  test('GET /api/health reports whether this origin may create issues', async () => {
+    const local = (await (await req('/api/health')).json()) as { issueCreateAllowed: boolean };
+    expect(local.issueCreateAllowed).toBe(true);
+
+    const remote = (await (await req('/api/health', { peer: '192.168.1.20' })).json()) as {
+      issueCreateAllowed: boolean;
+    };
+    expect(remote.issueCreateAllowed).toBe(false);
   });
 });

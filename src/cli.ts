@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { boardKeyFrom, detectActor } from './actor';
 import { buildContext, type CliContext, ensureDaemon, health, request } from './client';
 import { resolveTodoRuntimeConfig } from './config';
+import { isRepoSlug, parseRepoFromRemote } from './github';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
@@ -33,6 +34,7 @@ const VALUE_FLAGS = new Set([
   'title',
   'content',
   'limit',
+  'repo',
 ]);
 const LIST_FLAGS = new Set(['label', 'link']);
 
@@ -278,13 +280,14 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
   rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
+  rocky-todo issue REF [--repo OWNER/NAME]      todo 를 GitHub 이슈로 (gh CLI 필요)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] [--global|--note] · board ls · board add KEY [제목]
+  rocky-todo history REF [--limit N] [--global|--note] · board ls|add|repo · section ls
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -341,6 +344,34 @@ export function noteRefPath(id: string, suffix: string, board: string, global: b
   // 고정 리터럴이라 인코딩 대상이 아니다.
   const path = `/api/notes/${encodeURIComponent(id)}${suffix}`;
   return global ? path : withBoard(path, board);
+}
+
+/** 보드 단건 엔드포인트 — repo 설정에 쓴다. board key 는 `.` 등을 담을 수 있어 인코딩한다. */
+export function boardRepoPath(key: string): string {
+  return `/api/boards/${encodeURIComponent(key)}`;
+}
+
+/**
+ * `issue` 명령이 보드 repo 를 cwd 에서 유추해 한 번 재시도해야 하는 실패인지.
+ *
+ * 서버가 상태 코드를 실어 보내지 않으므로(`src/client.ts` 의 `request` 는 메시지만 남긴다)
+ * 메시지로 판별한다. 그래서 **넓게 잡으면 안 된다** — 이슈 URL 에 `repo` 가 든 409 나
+ * `gh` 의 `repo` 스코프 인증 실패까지 걸려, 보드 repo 를 조용히 덮어쓰고 진짜 원인을 가린다.
+ * `src/github.ts` 가 던지는 문구(`board has no GitHub repo: ...`)의 접두어만 정확히 맞춘다.
+ */
+export function isMissingRepoError(message: string): boolean {
+  return message.startsWith('board has no GitHub repo');
+}
+
+/**
+ * `board has no GitHub repo: <key> — …` 에서 보드 key 를 꺼낸다. 못 꺼내면 undefined.
+ *
+ * cwd 에서 유추한 레포를 그 보드에 써도 되는지 판단하는 데 쓴다 — 다른 보드의 todo 였다면
+ * cwd 는 아무 관계가 없고, 그대로 진행하면 **엉뚱한 레포에 이슈가 올라간다**.
+ */
+export function boardKeyFromMissingRepoError(message: string): string | undefined {
+  const match = /^board has no GitHub repo: (.+?) — /.exec(message);
+  return match?.[1]?.trim();
 }
 
 /**
@@ -498,6 +529,58 @@ export async function runCli(): Promise<void> {
       return;
     }
 
+    case 'issue': {
+      const id = rest[0];
+      if (!id) {
+        throw new Error('usage: rocky-todo issue REF [--repo OWNER/NAME]');
+      }
+      const path = todoRefPath(id, '/issue', board);
+      // repo 를 이제 CLI 가 미리 PATCH 하지 않는다 — 서버가 ref 로 todo 의 진짜 보드를
+      // 알아서 그 위에 저장한다(finding A). `--board` 로 유추한 board 는 cwd 기준이라
+      // `rocky#12` 처럼 ref 자체가 다른 보드를 가리키면 이전에는 엉뚱한 보드가 조용히
+      // 바뀌었다 — 이제 그 값은 참조 해석에만 쓰이고 repo 갱신 대상 선정에는 안 쓰인다.
+      const explicitRepo = str(flags.repo);
+      if (explicitRepo) {
+        if (!isRepoSlug(explicitRepo)) {
+          throw new Error(`--repo 는 OWNER/NAME 모양이어야 한다: ${explicitRepo}`);
+        }
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path, {
+          repo: explicitRepo,
+        });
+        print(result, () => `✓ ${result.url}`);
+        return;
+      }
+      try {
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path);
+        print(result, () => `✓ ${result.url}`);
+        return;
+      } catch (error) {
+        // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 더 POST 한다(PATCH 는 하지
+        // 않는다 — 서버가 todo 의 보드에 저장한다). 미리 보드를 조회하지 않는 이유:
+        // 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
+        const message = error instanceof Error ? error.message : String(error);
+        // cwd 유추는 cwd 보드와 todo 의 실제 보드가 같을 때만 안전하다 — ref 가
+        // `rocky#12` 처럼 다른 보드를 가리키면 cwd 는 그 보드와 무관하고, 그대로
+        // 유추해 쓰면 엉뚱한 레포에 이슈가 올라간다(finding 1). 서버 메시지가 실토한
+        // 보드 key 가 이 CLI 의 board 와 다르면 유추하지 않고 원래 에러를 그대로 던진다.
+        const errorBoardKey = isMissingRepoError(message)
+          ? boardKeyFromMissingRepoError(message)
+          : undefined;
+        const inferred =
+          errorBoardKey !== undefined && errorBoardKey === board
+            ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
+            : undefined;
+        if (!inferred) {
+          throw error;
+        }
+        const result = await request<{ url: string; todo: TodoView }>(ctx, 'POST', path, {
+          repo: inferred,
+        });
+        print(result, () => `✓ ${result.url} (보드 repo 를 ${inferred} 로 설정했다)`);
+        return;
+      }
+    }
+
     case 'start':
     case 'stop':
     case 'done':
@@ -604,7 +687,22 @@ export async function runCli(): Promise<void> {
         print(created, () => `✓ 보드 ${created.key}`);
         return;
       }
-      throw new Error('usage: rocky-todo board ls | board add KEY [제목]');
+      if (sub === 'repo') {
+        // 인자를 주면 그 값, 없으면 cwd 의 git remote 에서 유추한다.
+        const explicit = rest[1];
+        const repo = explicit ?? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '');
+        if (!repo || !isRepoSlug(repo)) {
+          throw new Error(
+            'GitHub 레포를 알 수 없다 — OWNER/NAME 을 직접 준다: rocky-todo board repo OWNER/NAME',
+          );
+        }
+        const updated = await request<Board>(ctx, 'PATCH', boardRepoPath(board), { repo });
+        print(updated, () => `✓ ${updated.key} → ${updated.repo}`);
+        return;
+      }
+      throw new Error(
+        'usage: rocky-todo board ls | board add KEY [제목] | board repo [OWNER/NAME]',
+      );
     }
 
     case 'open': {

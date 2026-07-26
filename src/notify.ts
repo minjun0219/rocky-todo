@@ -119,13 +119,20 @@ export function readCursor(file: string, sessionId: string): number | undefined 
 export function writeCursor(file: string, sessionId: string, lastId: number): void {
   const all = readCursorFile(file);
   all[sessionId] = { lastId, at: new Date().toISOString() };
-  // `at` desc 로 최신 100개만 유지. 같은 밀리초에 여러 세션이 기록되면 `at` 이 동률이라
-  // 삽입 순서로 tie-break 해야 한다 — reverse() 로 최신 삽입을 앞에 두고, 3-way 비교(동률 0)로
-  // stable sort 를 보장해 최신이 살아남게 한다. (동률에 1/-1 만 반환하면 불안정 → 최신이 잘릴 수 있다.)
+  // `at` desc 로 최신 100개만 유지. `at` 은 밀리초라 여러 세션이 같은 값을 갖기 쉬워
+  // 동률을 **삽입 순서**로 깨야 한다 — reverse() 로 최신 삽입을 앞에 두고, 3-way 비교
+  // (동률 0)로 stable sort 를 보장해 최신이 살아남게 한다.
+  //
+  // 그 reverse() 는 "파일의 키 순서 = 삽입 순서(오래된 것 먼저)"를 전제한다. 그래서
+  // **자르고 나서 다시 reverse 해 그 순서로 되돌려 저장한다**: 정렬된 순서(최신 먼저)를
+  // 그대로 쓰면 다음 호출의 reverse() 가 전제를 잃고, 동률 그룹의 순서가 매 호출 뒤집혀
+  // slice 가 오래된 것이 아니라 임의의 구간을 잘라낸다(관측: 120개를 넣었을 때 0–11 과
+  // 16–23 이 빠지고 12–15 는 남았다).
   const entries = Object.entries(all)
     .reverse()
     .sort(([, a], [, b]) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-    .slice(0, MAX_CURSOR_SESSIONS);
+    .slice(0, MAX_CURSOR_SESSIONS)
+    .reverse();
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(Object.fromEntries(entries)));
 }

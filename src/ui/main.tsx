@@ -22,6 +22,9 @@ function App() {
     void refetch().then(() =>
       useUiStore.getState().applyRoute(parseRoute(window.location.pathname)),
     );
+    // 출처는 화면 수명 동안 바뀌지 않으니 부팅에 한 번만 확인한다 (refetch 에 얹으면
+    // SSE 이벤트마다 health 를 다시 묻게 된다).
+    void useUiStore.getState().loadCapabilities();
 
     const onPopState = () => {
       void useUiStore.getState().applyRoute(parseRoute(window.location.pathname));

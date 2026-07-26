@@ -28,6 +28,8 @@ export interface Board {
   id: string;
   key: string;
   title: string;
+  /** `owner/name` — GitHub 이슈 생성 대상. 설정 전에는 undefined. */
+  repo?: string;
   createdAt: string;
   archivedAt?: string;
 }
@@ -251,6 +253,7 @@ interface BoardRow {
   id: string;
   key: string;
   title: string;
+  repo: string | null;
   created_at: string;
   archived_at: string | null;
 }
@@ -288,6 +291,7 @@ CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
   key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  repo TEXT,
   created_at TEXT NOT NULL,
   archived_at TEXT
 );
@@ -584,6 +588,52 @@ export class TodoStore {
       .query<{ key: string }, [string]>('SELECT key FROM boards WHERE id = ?')
       .get(boardId);
     return row?.key;
+  }
+
+  /** boardId 로 보드 한 건. 이슈 라우트가 todo → 보드 → repo 를 따라갈 때 쓴다. */
+  boardById(boardId: string): Board | undefined {
+    const row = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE id = ?').get(boardId);
+    return row ? toBoard(row) : undefined;
+  }
+
+  /**
+   * 보드의 GitHub 레포(`owner/name`)를 설정한다.
+   *
+   * 값은 여기서 한 번 더 trim 한다 — 호출부(REST 라우트·CLI·오케스트레이터)가 이미
+   * 다듬어 넘기지만, 스토어를 통과한 값은 그대로 `gh -R` 인자가 되므로 공백이 섞인 채
+   * 저장되면 이후 모든 이슈 생성이 조용히 실패한다. 마지막 관문에서 막는 편이 싸다.
+   *
+   * trim 한 값이 기존 값과 같으면 write 도 히스토리도 남기지 않는다(no-op) — 같은 값의
+   * 반복 설정이 흔한 경로라서다.
+   *
+   * @throws 없는 보드면 — 여기서 보드를 만들지 않는다. 오타난 key 로 빈 보드가 생기는
+   *   편이 조용한 사고가 된다(`ensureSection` 과 같은 판단).
+   */
+  setBoardRepo(key: string, repo: string, actor: string): Board {
+    const existing = this.db
+      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
+      .get(key);
+    if (!existing) {
+      throw new Error(`board not found: ${key}`);
+    }
+    const normalized = repo.trim();
+    // 같은 값이면 아무것도 하지 않는다 — `createIssueForTodo` 는 `options.repo` 가 오면
+    // 매번 이걸 부르고, `issue REF --repo o/n` 이나 웹 UI 재시도는 같은 슬러그를 반복해
+    // 넘긴다. 그때마다 `update` 히스토리와 SSE 가 쌓이면 "안 바뀐 변경"이 타임라인을
+    // 어지럽힌다(MCP `todo_write` 가 빈 patch 를 건너뛰는 것과 같은 판단).
+    if (existing.repo === normalized) {
+      return toBoard(existing);
+    }
+    this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(normalized, existing.id);
+    this.recordHistory(
+      'board',
+      existing.id,
+      actor,
+      'update',
+      { repo: [existing.repo ?? null, normalized] },
+      existing.id,
+    );
+    return { ...toBoard(existing), repo: normalized };
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────
@@ -1281,6 +1331,7 @@ function toBoard(row: BoardRow): Board {
     id: row.id,
     key: row.key,
     title: row.title,
+    repo: row.repo ?? undefined,
     createdAt: row.created_at,
     archivedAt: row.archived_at ?? undefined,
   };

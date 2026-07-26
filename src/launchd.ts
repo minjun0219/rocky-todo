@@ -29,6 +29,15 @@ function daemonEntryPath(): string {
   return join(import.meta.dir, 'daemon.ts');
 }
 
+// launchd 가 잡에 물려주는 PATH 는 최소치(`/usr/bin:/bin:/usr/sbin:/sbin`)라 Homebrew 등
+// 사용자 설치 위치가 빠진다 — `bun` 은 그래서 `process.execPath` 로 절대경로를 쓴다
+// (위 ProgramArguments). 하지만 `src/github.ts` 의 `createIssue` 는 `gh` 를 절대경로 없이
+// 그냥 이름으로 spawn 한다: `gh` 가 Homebrew(`/opt/homebrew/bin`) 나 `/usr/local/bin` 에
+// 있으면 이 최소 PATH 아래서는 못 찾는다(finding D — `Bun.spawnSync` 가 던지고
+// "gh CLI 를 찾을 수 없다"는 잘못된 메시지가 뜬다). `EnvironmentVariables` 로 흔한 설치
+// 위치를 최소 기본값 앞에 붙여 이 경로에서도 `gh` 가 해석되게 한다.
+const PLIST_PATH_ENV = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+
 function plistContent(): string {
   const logPath = join(DEFAULT_TODO_DIR, 'daemon.log');
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -44,6 +53,10 @@ function plistContent(): string {
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>${PLIST_PATH_ENV}</string>
+  </dict>
   <key>StandardOutPath</key><string>${logPath}</string>
   <key>StandardErrorPath</key><string>${logPath}</string>
 </dict>

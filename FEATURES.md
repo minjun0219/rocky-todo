@@ -20,7 +20,7 @@ open http://127.0.0.1:8636        # 또는: rocky-todo open
 | 도구 | 하는 일 |
 | --- | --- |
 | `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리+댓글, `{ boards: true }` 보드 목록). `includeArchived` 는 `{ id }` 단건 조회에서 댓글까지 함께 통제한다 |
-| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, actor) |
+| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, createIssue, actor) |
 | `todo_status` | 상태 전환 — `start` / `stop` / `done` / `reopen` / `archive` / `unarchive` |
 | `note_list` | 스크래치패드 메모 조회 (보드 소속 or 글로벌) |
 | `note_write` | 메모 생성/수정/append/archive (`mode`) |
@@ -31,6 +31,9 @@ opencode/Codex 는 `rocky-todo mcp setup` 안내대로 수동 등록.
 각 도구의 `id` 인자는 REF 문법(`rocky#12` / `#12` / id 전체 / id 앞부분)을 받는다 — `#12` 처럼
 보드 접두사 없는 번호를 쓰려면 같이 넘기는 `board` 인자가 그 컨텍스트가 된다.
 
+`createIssue: true` 를 주면 그 todo 를 GitHub 이슈로 만들고 URL 을 `links` 에 자동으로 붙인다
+(보드에 repo 가 설정돼 있어야 한다 — 아래 CLI `board repo` 참고, `gh` CLI 필요).
+
 ## CLI (사람 / 스크립트 / 폴백)
 
 ```
@@ -39,8 +42,9 @@ rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
+rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global|--note] · board ls|add · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
@@ -82,6 +86,11 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
 `"tailscale-serve"` = 테일넷 한정 HTTPS(루프백 유지). 배열로 조합. 자세한 표는
 [docs/rocky-todo.md](./docs/rocky-todo.md) 참고.
 
+노출되는 것은 **보드**다. GitHub 이슈 생성은 데몬 사용자의 `gh` 인증을 빌리므로 노출 대상이
+아니다 — 노출 설정과 무관하게 **로컬(루프백)에서 직접 온 요청만** 이슈를 만들 수 있다
+(REST 는 403, MCP 는 도구 에러). 노출된 화면에서는 웹 UI 가 버튼 대신 그 이유를 보여주고,
+이미 만들어진 이슈로 가는 링크는 어디서든 열린다.
+
 ## 특징
 
 - **계층/섹션/보드** — subtask(parentId), 섹션 그룹, 레포별 보드.
@@ -99,3 +108,11 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
 - **웹에서 편집·생성** — 제목 클릭 수정(Enter 저장/Esc 취소), 사이드바에서 보드 생성,
   상세에서 섹션 배치. 보드 key 규칙(공백·`#` 불가) 위반은 이유와 함께 표시된다.
   섹션 생성/보관은 CLI(`section add|archive`) — 에이전트가 정리하는 쪽이 자연스럽다.
+- **GitHub 이슈 연동** — 웹 UI 상세의 `GitHub 이슈 만들기` 버튼 / CLI `issue` / MCP
+  `todo_write.createIssue` 로 todo 를 이슈로 올린다. `gh` CLI 인증을 빌려쓰고 토큰은 저장하지
+  않는다. 보드마다 GitHub 레포(`owner/name`)를 알아야 하며 `board repo` 로 설정하거나, 없으면
+  cwd 의 git remote 에서 유추(CLI)하거나 입력받고(웹 UI), 실패하면 입력이 열린 채 남아
+  고쳐 다시 시도하거나 이미 설정된 repo 를 바꿀 수 있다. 만들어진 이슈
+  URL 은 그 todo 의 링크에 자동으로 붙는다. 이미 이슈가 있으면 다시 만들지 않고, 이슈 쪽
+  변경(닫힘 등)이 todo 에 역으로 반영되지는 않는다. 만드는 것은 **로컬(루프백) 요청만** —
+  노출된 표면(`todo.expose`)으로는 허용하지 않는다(위 "노출 범위" 참고).
