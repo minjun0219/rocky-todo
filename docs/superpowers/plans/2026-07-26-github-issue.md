@@ -278,8 +278,24 @@ export function parseRepoFromRemote(url: string): string | undefined {
   if (trimmed === '') {
     return undefined;
   }
-  const match = /(?:^|@|\/\/)github\.com[:/]+(.+)$/.exec(trimmed);
-  const tail = match?.[1];
+  // 호스트를 **부분 문자열로 찾지 않는다.** `https://evil.com//github.com/o/n` 처럼
+  // 문자열 뒤쪽에 `//github.com/` 이 끼어 있으면 부분 검색은 그 지점부터 다시 앵커해
+  // 남의 호스트를 GitHub 으로 오인한다 — 이 슬러그가 "어느 레포에 이슈를 올릴지"를
+  // 정하므로 오인은 곧 엉뚱한 레포로 내용이 나가는 일이다.
+  let tail: string | undefined;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.hostname.toLowerCase() === 'github.com') {
+        tail = parsed.pathname.replace(/^\/+/, '');
+      }
+    } catch {
+      return undefined;
+    }
+  } else {
+    // scp 꼴(`git@github.com:o/n`). 앵커해서 user 접두어는 최대 하나만 허용한다.
+    tail = /^(?:[^@/]+@)?github\.com:(.+)$/.exec(trimmed)?.[1];
+  }
   if (!tail) {
     return undefined;
   }
