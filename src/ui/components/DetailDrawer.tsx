@@ -57,6 +57,11 @@ function TodoDetail() {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const patchTodo = useUiStore((s) => s.patchTodo);
   const sections = useUiStore((s) => s.sections);
+  const handoffs = useUiStore((s) => s.handoffs);
+  const sessions = useUiStore((s) => s.sessions);
+  const fetchSessions = useUiStore((s) => s.fetchSessions);
+  const sendHandoff = useUiStore((s) => s.sendHandoff);
+  const cancelHandoff = useUiStore((s) => s.cancelHandoff);
   const todo = detail?.todo;
   const [desc, setDesc] = useState(todo?.description ?? '');
   const [editingDesc, setEditingDesc] = useState(false);
@@ -65,6 +70,11 @@ function TodoDetail() {
   const [editingTitle, setEditingTitle] = useState(false);
   /** Esc 로 빠져나온 blur 인지 — 커밋 경로가 onBlur 하나이므로 취소 의사를 여기로 넘긴다. */
   const cancelledRef = useRef(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffNote, setHandoffNote] = useState('');
+  const [handoffSession, setHandoffSession] = useState('');
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!editingDesc) {
@@ -84,6 +94,37 @@ function TodoDetail() {
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
   const boardSections = sections.filter((s) => s.boardId === todo.boardId);
+
+  const pending = handoffs.find((h) => h.todoId === todo.id && h.status === 'pending');
+
+  const openHandoff = async () => {
+    setHandoffOpen(true);
+    setHandoffError(null);
+    try {
+      await fetchSessions();
+    } catch (error) {
+      setHandoffError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const submitHandoff = async () => {
+    setHandoffBusy(true);
+    setHandoffError(null);
+    try {
+      await sendHandoff(todo.id, {
+        sessionId: handoffSession || undefined,
+        note: handoffNote || undefined,
+      });
+      // 성공했을 때만 닫는다 — 실패하면 고쳐서 다시 낼 수 있어야 한다.
+      setHandoffOpen(false);
+      setHandoffNote('');
+      setHandoffSession('');
+    } catch (error) {
+      setHandoffError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
 
   /**
    * 제목 커밋은 **onBlur 한 곳**에서만 일어난다. Enter 도 Esc 도 blur 로 빠지고, 취소인지
@@ -271,6 +312,50 @@ function TodoDetail() {
           ? statusButton('보관 해제', 'unarchive')
           : statusButton('▣ 보관', 'archive')}
       </div>
+      {pending ? (
+        <div className="handoff-pending">
+          <span>대기 중 · {pending.sessionName ?? pending.sessionId} 에게</span>
+          {pending.stale ? <span className="handoff-stale">세션 없음</span> : null}
+          <button type="button" onClick={() => void cancelHandoff(pending.id)}>
+            취소
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="drawer-btn" onClick={() => void openHandoff()}>
+          에이전트에게 보내기
+        </button>
+      )}
+      {handoffOpen && !pending ? (
+        <div className="handoff-panel">
+          {sessions.available ? (
+            <>
+              <select value={handoffSession} onChange={(e) => setHandoffSession(e.target.value)}>
+                <option value="">자동 (이 보드의 세션)</option>
+                {sessions.list.map((session) => (
+                  <option key={session.sessionId} value={session.sessionId}>
+                    {session.name} · {session.status} · {session.cwd}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={handoffNote}
+                placeholder="메모 (선택)"
+                onChange={(e) => setHandoffNote(e.target.value)}
+              />
+              <button type="button" onClick={() => void submitHandoff()} disabled={handoffBusy}>
+                보내기
+              </button>
+            </>
+          ) : (
+            <p>세션 목록을 가져올 수 없다: {sessions.reason}</p>
+          )}
+          {handoffError ? (
+            <p className="handoff-error" role="alert">
+              {handoffError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

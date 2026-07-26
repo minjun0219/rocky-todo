@@ -381,6 +381,37 @@ textarea {
   border-color: var(--cool);
 }
 
+/* ── handoff — "보냈다"(파랑) 은 doing(앰버)과 다른 상태다 ─────────────── */
+
+.chip-handoff {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.handoff-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.handoff-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #93c5fd;
+}
+
+.handoff-stale {
+  color: #f87171;
+}
+
+.handoff-error {
+  color: #f87171;
+  width: 100%;
+}
+
 /* ── doing badge — 두 대기의 온도 ─────────────────── */
 
 .doing-badge {

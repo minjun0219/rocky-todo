@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NoteView, TodoView } from '../server';
-import type { Board, Comment, HistoryEntry, Section, StatusAction } from '../store';
+import type { AgentSession } from '../sessions';
+import type { Board, Comment, Handoff, HistoryEntry, Section, StatusAction } from '../store';
 import { markSeen, readSeen } from './lib';
 import {
   type BoardSelection,
@@ -46,6 +47,14 @@ interface UiState {
   detail: DetailState | null;
   /** todo id → 마지막으로 확인한 댓글 시각. localStorage 의 화면용 사본. */
   seenComments: Record<string, string>;
+  /** 현재 보드의 대기 중 핸드오프 — refetch 가 함께 갱신한다. */
+  handoffs: Array<Handoff & { stale: boolean }>;
+  /** 보내기 패널을 열 때만 채운다. */
+  sessions: {
+    available: boolean;
+    reason?: string;
+    list: Array<AgentSession & { matched: boolean }>;
+  };
 
   setSelected: (selection: BoardSelection) => void;
   setShowArchived: (show: boolean) => void;
@@ -84,6 +93,11 @@ interface UiState {
   editComment: (id: string, body: string) => Promise<void>;
   archiveComment: (id: string) => Promise<void>;
   unarchiveComment: (id: string) => Promise<void>;
+
+  fetchSessions: () => Promise<void>;
+  /** @throws 서버가 거절한 이유를 그대로 던진다 — 호출자가 화면에 보여줘야 한다. */
+  sendHandoff: (todoId: string, input: { sessionId?: string; note?: string }) => Promise<void>;
+  cancelHandoff: (handoffId: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -144,6 +158,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   connected: false,
   detail: null,
   seenComments: readSeen(localStorage),
+  handoffs: [],
+  sessions: { available: true, list: [] },
 
   setSelected: (selected) => {
     // 같은 보드를 다시 고른 클릭도 refetch 는 그대로 수행한다(새로고침 용도로 쓰인다) —
@@ -179,15 +195,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     const qs = params.size > 0 ? `?${params.toString()}` : '';
 
-    const [boards, todos, notes, sections] = await Promise.all([
+    const [boards, todos, notes, sections, handoffs] = await Promise.all([
       api<Board[]>('/api/boards', actor),
       api<TodoView[]>(`/api/todos${qs}`, actor),
       api<NoteView[]>(`/api/notes${qs}`, actor),
       selected === 'all'
         ? Promise.resolve([] as Section[])
         : api<Section[]>(`/api/sections?board=${encodeURIComponent(selected)}`, actor),
+      api<Array<Handoff & { stale: boolean }>>(
+        `/api/handoffs?status=pending${
+          selected === 'all' ? '' : `&board=${encodeURIComponent(selected)}`
+        }`,
+        actor,
+      ),
     ]);
-    set({ boards, todos, notes, sections });
+    set({ boards, todos, notes, sections, handoffs });
 
     // 열린 상세가 있으면 함께 갱신 (SSE 로 들어온 변경 반영). await 하지 않으므로
     // `refresh: true` 로 "그 항목이 아직 열려 있을 때만" 반영하게 한다 — 그 사이 라우팅이
@@ -387,6 +409,35 @@ export const useUiStore = create<UiState>((set, get) => ({
   unarchiveComment: async (id) => {
     const { actor } = get();
     await api(`/api/comments/${id}/unarchive`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  fetchSessions: async () => {
+    const { actor, selected } = get();
+    // `selected` 는 'all' 이거나 board key 문자열이다 (객체가 아니다).
+    const board = selected === 'all' ? '' : selected;
+    const result = await api<{
+      available: boolean;
+      reason?: string;
+      sessions: Array<AgentSession & { matched: boolean }>;
+    }>(`/api/sessions?board=${encodeURIComponent(board)}`, actor);
+    set({
+      sessions: { available: result.available, reason: result.reason, list: result.sessions },
+    });
+  },
+
+  sendHandoff: async (todoId, input) => {
+    const { actor } = get();
+    await api(`/api/todos/${todoId}/handoff`, actor, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    await get().refetch();
+  },
+
+  cancelHandoff: async (handoffId) => {
+    const { actor } = get();
+    await api(`/api/handoffs/${handoffId}/cancel`, actor, { method: 'POST' });
     await get().refetch();
   },
 }));
