@@ -498,3 +498,86 @@ describe('SSE', () => {
     await reader.cancel();
   });
 });
+
+describe('comments', () => {
+  async function makeTodo(): Promise<{ id: string; ref: string }> {
+    const res = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await res.json()) as { id: string; ref: string };
+    return todo;
+  }
+
+  test('POST /api/todos/:ref/comments creates a comment', async () => {
+    const todo = await makeTodo();
+    const res = await req(`/api/todos/${encodeURIComponent(todo.ref)}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '진행 중' }),
+      actor: 'claude-code',
+    });
+    expect(res.status).toBe(201);
+    const comment = (await res.json()) as { todoId: string; actor: string; body: string };
+    expect(comment.todoId).toBe(todo.id);
+    expect(comment.actor).toBe('claude-code');
+    expect(comment.body).toBe('진행 중');
+  });
+
+  test('GET /api/todos/:ref includes comments', async () => {
+    const todo = await makeTodo();
+    await req(`/api/todos/${todo.id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '첫 댓글' }),
+    });
+    const res = await req(`/api/todos/${todo.id}`);
+    const detail = (await res.json()) as { comments: { body: string }[] };
+    expect(detail.comments.map((c) => c.body)).toEqual(['첫 댓글']);
+  });
+
+  test('PATCH /api/comments/:id edits the body', async () => {
+    const todo = await makeTodo();
+    const created = await req(`/api/todos/${todo.id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '오타' }),
+    });
+    const comment = (await created.json()) as { id: string };
+    const res = await req(`/api/comments/${comment.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body: '고침' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { body: string }).body).toBe('고침');
+  });
+
+  test('archive hides a comment from the detail payload, unarchive restores it', async () => {
+    const todo = await makeTodo();
+    const created = await req(`/api/todos/${todo.id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '잘못 달았다' }),
+    });
+    const comment = (await created.json()) as { id: string };
+
+    await req(`/api/comments/${comment.id}/archive`, { method: 'POST' });
+    const hidden = (await (await req(`/api/todos/${todo.id}`)).json()) as { comments: unknown[] };
+    expect(hidden.comments).toHaveLength(0);
+
+    await req(`/api/comments/${comment.id}/unarchive`, { method: 'POST' });
+    const shown = (await (await req(`/api/todos/${todo.id}`)).json()) as { comments: unknown[] };
+    expect(shown.comments).toHaveLength(1);
+  });
+
+  test('blank body is a 400 and unknown comment id is a 404', async () => {
+    const todo = await makeTodo();
+    const blank = await req(`/api/todos/${todo.id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: '   ' }),
+    });
+    expect(blank.status).toBe(400);
+
+    const missing = await req('/api/comments/nosuchid', {
+      method: 'PATCH',
+      body: JSON.stringify({ body: '본문' }),
+    });
+    expect(missing.status).toBe(404);
+  });
+});
