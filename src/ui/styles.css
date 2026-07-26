@@ -780,8 +780,10 @@ body.is-drawer-open {
   .todo-title {
     white-space: normal;
     overflow-wrap: anywhere;
-    /* min-height 대신 stretch — 버튼이 (줄바꿈된) flex 줄의 전체 높이를 채우게 해
-       행의 빈 공간도 클릭 가능해진다. min-height 를 쓰면 반대로 행이 늘어난다. */
+    /* min-height 대신 stretch — 버튼이 자기 flex 줄의 전체 높이를 채우게 해, 제목 글자
+       위아래의 세로 여백까지 탭이 먹는다. 가로로는 넓어지지 않으므로(flex-grow 없음)
+       제목과 칩 사이의 빈 공간은 여전히 아무 동작도 하지 않는다. min-height 를 쓰면
+       반대로 행 자체가 늘어난다. */
     align-self: stretch;
   }
   /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
@@ -817,20 +819,17 @@ body.is-drawer-open {
     min-height: 44px;
     padding: 0 8px;
   }
-  /* `.comment-badge` 는 여기서 제외한다 — `.todo-row` 가 줄바꿈되면 메타 칩과 같은 두 번째
-     줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로 늘어나 버린다. 배지의 동작
-     (드로어 열기)은 이미 44px 바닥을 가진 `.todo-title`/`.todo-ref` 로도 도달할 수 있다.
-     칩 자체를 접어 줄바꿈을 없애는 건 별도 백로그(rocky-todo#19) — 그때 여기 바닥을
-     되살린다. */
+  /* 메타 칩 전반(`.comment-badge`, `.chip-link` 등)은 여기서 제외한다 — `.todo-row` 가
+     줄바꿈되면 이들은 두 번째 줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로
+     늘어나 행 높이가 두 배가 된다. 배지·링크가 여는 대상(드로어·이슈)은 이미 44px 바닥을
+     가진 `.todo-title`/`.todo-ref` 나 드로어 안에서도 도달할 수 있다. 칩 자체를 접어
+     줄바꿈을 없애는 건 별도 백로그(rocky-todo#19) — 그때 여기 바닥을 되살린다. */
   /* `.drawer-btn` 은 버튼뿐 아니라 `<a>`("이슈 열기 ↗")에도 쓰인다. `<a>` 는 인라인이라
      min-height 가 먹지 않으므로 display 를 함께 준다. */
   .drawer-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
-  }
-  .board-add-open {
     min-height: 44px;
   }
   .notes-rail {
