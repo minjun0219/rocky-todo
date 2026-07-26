@@ -18,10 +18,22 @@ function App() {
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
+    // `refetch` 는 네트워크·서버 오류로 reject 한다(`api()` 가 !res.ok 에 throw). 아래 모든
+    // 호출 지점이 이 가드를 거친다 — 빠뜨리면 처리되지 않은 rejection 으로 남는다.
+    //
+    // **여기서 `connected` 를 내리지 않는다.** 그 배지는 SSE 링크 상태이지 REST 성패가
+    // 아니다. EventSource 는 열려 있는데 재조회 한 번이 실패한 경우까지 NO LINK 로 내리면,
+    // 열린 EventSource 는 `onopen` 을 다시 쏘지 않으므로 이후 SSE 메시지가 정상으로 도착해도
+    // 배지가 영영 내려간 채 남는다. 진짜 링크 단절은 `source.onerror` 가 알려주고, 데이터는
+    // 다음 SSE 이벤트나 60초 tick 이 따라잡는다.
+    const sync = (): void => {
+      void refetch().catch(() => {});
+    };
+
     // 초기 목록을 받은 뒤에야 URL 의 번호를 todo id 로 해석할 수 있다.
-    void refetch().then(() =>
-      useUiStore.getState().applyRoute(parseRoute(window.location.pathname)),
-    );
+    void refetch()
+      .then(() => useUiStore.getState().applyRoute(parseRoute(window.location.pathname)))
+      .catch(() => {});
     // 출처는 화면 수명 동안 바뀌지 않으니 부팅에 한 번만 확인한다 (refetch 에 얹으면
     // SSE 이벤트마다 health 를 다시 묻게 된다).
     void useUiStore.getState().loadCapabilities();
@@ -35,10 +47,7 @@ function App() {
     // 끊겨 있던 동안의 변경은 오지 않으므로, SSE 재연결을 기다리지 않고 즉시 다시 읽는다.
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
-        // LAN 밖에서 포그라운드로 돌아오는 게 가장 흔한 실패 경로 — refetch 가 reject 하면
-        // 처리되지 않은 rejection 으로 남고 사용자에게는 아무 신호도 없다. 연결 배지를
-        // 내려서 현실(끊김)을 보여주고, 이후 SSE 재연결이 다시 올려준다.
-        void refetch().catch(() => setConnected(false));
+        sync();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -49,10 +58,10 @@ function App() {
     source.onmessage = () => {
       // 연속 mutation 을 한 번의 refetch 로 흡수
       clearTimeout(debounce.current);
-      debounce.current = setTimeout(() => void refetch(), 150);
+      debounce.current = setTimeout(sync, 150);
     };
     // doing 경과 표시 갱신용 주기 리렌더
-    const tick = setInterval(() => void refetch(), 60_000);
+    const tick = setInterval(sync, 60_000);
     return () => {
       window.removeEventListener('popstate', onPopState);
       document.removeEventListener('visibilitychange', onVisible);
