@@ -35,6 +35,16 @@ export function DetailDrawer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [detail, closeDetail]);
 
+  // 드로어가 열린 동안 배경 스크롤을 잠근다. 정리 함수에서 **반드시** 지운다 —
+  // 남기면 드로어를 닫은 뒤 페이지 전체가 스크롤 불가가 된다.
+  useEffect(() => {
+    if (!detail) {
+      return;
+    }
+    document.body.classList.add('is-drawer-open');
+    return () => document.body.classList.remove('is-drawer-open');
+  }, [detail]);
+
   if (!detail) {
     return null;
   }

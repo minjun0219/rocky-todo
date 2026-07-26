@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useUiStore } from '../store';
 
-/** 상단 바 — 워드마크 + 링크(SSE) 상태 + 호출자(actor) 설정. */
+/** 상단 바 — 워드마크 + 링크(SSE) 상태 + 보관됨 표시 토글 + 호출자(actor) 설정. */
 export function TopBar() {
   const connected = useUiStore((s) => s.connected);
   const actor = useUiStore((s) => s.actor);
   const setActor = useUiStore((s) => s.setActor);
+  const showArchived = useUiStore((s) => s.showArchived);
+  const setShowArchived = useUiStore((s) => s.setShowArchived);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(actor);
 
@@ -19,6 +21,14 @@ export function TopBar() {
         {connected ? 'LINK ♪' : 'NO LINK'}
       </span>
       <div className="topbar-spacer" />
+      <label className="archived-toggle">
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(e) => setShowArchived(e.target.checked)}
+        />
+        보관됨 표시
+      </label>
       {editing ? (
         <form
           className="actor-form"
