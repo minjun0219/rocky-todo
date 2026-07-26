@@ -102,25 +102,31 @@ async function run(): Promise<void> {
   const baseUrl = `http://127.0.0.1:${runtime.port}`;
   const cursorFile = join(runtime.dir, 'hook-cursors.json');
 
-  const claimed = await claimHandoff(baseUrl, sessionId);
-  const handoffContext = claimed ? buildHandoffPrompt(claimed) : null;
+  // claim 과 changes 조회는 서로 독립적이라 순차 await 하면 각각 1500ms timeout 이
+  // 최악의 경우 더해져(3s) 훅 지연이 배가된다. claim 은 먼저 띄워두고, changes 쪽
+  // 요청(커서 분기에 따라 head 1건 또는 feed)까지 만든 뒤 한 번에 Promise.all 로
+  // 기다린다 — 커서 읽기/쓰기 순서와 "첫 프롬프트엔 과거 히스토리를 주입하지 않는다"는
+  // 기존 동작은 그대로 유지한다 (읽기는 동기, 쓰기는 각 응답이 도착한 뒤).
+  const claimPromise = claimHandoff(baseUrl, sessionId);
 
   const cursor = readCursor(cursorFile, sessionId);
+  const feedPromise =
+    cursor === undefined ? fetchChanges(baseUrl, 0, 1) : fetchChanges(baseUrl, cursor, 100);
+
+  const [claimed, feed] = await Promise.all([claimPromise, feedPromise]);
+  const handoffContext = claimed ? buildHandoffPrompt(claimed) : null;
+
   let changeContext: string | null = null;
   if (cursor === undefined) {
     // 첫 프롬프트 — 현재 watermark 만 기록하고 과거 히스토리는 주입하지 않는다.
-    const head = await fetchChanges(baseUrl, 0, 1);
-    if (head) {
-      writeCursor(cursorFile, sessionId, head.lastId);
-    }
-  } else {
-    const feed = await fetchChanges(baseUrl, cursor, 100);
     if (feed) {
-      if (feed.lastId !== cursor) {
-        writeCursor(cursorFile, sessionId, feed.lastId);
-      }
-      changeContext = buildNotifyContext(filterHumanChanges(feed.entries));
+      writeCursor(cursorFile, sessionId, feed.lastId);
     }
+  } else if (feed) {
+    if (feed.lastId !== cursor) {
+      writeCursor(cursorFile, sessionId, feed.lastId);
+    }
+    changeContext = buildNotifyContext(filterHumanChanges(feed.entries));
   }
 
   const context = mergeContext([changeContext, handoffContext]);
