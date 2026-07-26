@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import type { HistoryEntry } from '../../store';
+import type { Comment, HistoryEntry } from '../../store';
 import {
   actorTone,
   copyRefWithFeedback,
   formatElapsed,
+  formatStamp,
   isEditableTarget,
   linkLabel,
   mdTokens,
+  mergeTimeline,
 } from '../lib';
 import { useUiStore } from '../store';
 
@@ -43,7 +45,8 @@ export function DetailDrawer() {
           ✕
         </button>
         {detail.kind === 'todo' ? <TodoDetail /> : <NoteDetail />}
-        <HistoryTimeline history={detail.history} />
+        {detail.kind === 'todo' && detail.todo && <CommentComposer todoId={detail.todo.id} />}
+        <Timeline history={detail.history} comments={detail.comments} />
       </aside>
     </div>
   );
@@ -334,21 +337,136 @@ function Markdown({ text }: { text: string }) {
   );
 }
 
-function HistoryTimeline({ history }: { history: HistoryEntry[] }) {
+/** 댓글 작성 — ⌘/Ctrl+Enter 로 전송. 빈 본문은 보내지 않는다. */
+function CommentComposer({ todoId }: { todoId: string }) {
+  const addComment = useUiStore((s) => s.addComment);
+  const [body, setBody] = useState('');
+
+  const submit = () => {
+    const next = body.trim();
+    if (next === '') {
+      return;
+    }
+    setBody('');
+    void addComment(todoId, next);
+  };
+
+  return (
+    <div className="comment-compose">
+      <div className="drawer-section-label">댓글</div>
+      <textarea
+        className="comment-input"
+        value={body}
+        rows={3}
+        placeholder="진행 상황이나 질문을 남긴다 (⌘/Ctrl+Enter 전송)"
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <div className="drawer-actions">
+        <button type="button" className="drawer-btn" onClick={submit} disabled={body.trim() === ''}>
+          등록
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 댓글 카드 — 작성 시각(절대) + actor + 본문 + 편집/보관. */
+function CommentCard({ comment }: { comment: Comment }) {
+  const editComment = useUiStore((s) => s.editComment);
+  const archiveComment = useUiStore((s) => s.archiveComment);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.body);
+
+  useEffect(() => {
+    if (!editing) {
+      setDraft(comment.body);
+    }
+  }, [comment.body, editing]);
+
+  const edited = comment.updatedAt !== comment.createdAt;
+
+  return (
+    <div className="comment-card">
+      <div className="comment-head">
+        <span className={`history-dot tone-${actorTone(comment.actor)}`} />
+        <span className={`comment-actor tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
+        <span className="comment-at">{formatStamp(comment.createdAt)}</span>
+        {edited && <span className="comment-edited">(수정됨)</span>}
+        <span className="comment-tools">
+          <button type="button" className="comment-tool" onClick={() => setEditing(!editing)}>
+            {editing ? '취소' : '편집'}
+          </button>
+          <button
+            type="button"
+            className="comment-tool"
+            onClick={() => void archiveComment(comment.id)}
+          >
+            보관
+          </button>
+        </span>
+      </div>
+      {editing ? (
+        <div>
+          <textarea
+            className="comment-input"
+            value={draft}
+            rows={3}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="drawer-actions">
+            <button
+              type="button"
+              className="drawer-btn"
+              onClick={() => {
+                const next = draft.trim();
+                setEditing(false);
+                if (next !== '' && next !== comment.body) {
+                  void editComment(comment.id, next);
+                }
+              }}
+            >
+              저장
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="comment-body">
+          <Markdown text={comment.body} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 히스토리와 댓글을 한 줄기로 보여준다 — 지라식 탭 분리를 하지 않는다. */
+function Timeline({ history, comments }: { history: HistoryEntry[]; comments: Comment[] }) {
+  const items = mergeTimeline(history, comments);
   return (
     <div className="drawer-history">
-      <div className="drawer-section-label">히스토리</div>
-      {history.map((entry) => (
-        <div key={entry.id} className="history-row">
-          <span className={`history-dot tone-${actorTone(entry.actor)}`} />
-          <span className={`history-actor tone-${actorTone(entry.actor)}`}>{entry.actor}</span>
-          <span className="history-action">{actionLabel(entry.action)}</span>
-          {entry.changes?.title && (
-            <span className="history-change">→ {String(entry.changes.title[1])}</span>
-          )}
-          <span className="history-at">{formatElapsed(entry.at)} 전</span>
-        </div>
-      ))}
+      <div className="drawer-section-label">타임라인</div>
+      {items.map((item) =>
+        item.kind === 'comment' ? (
+          <CommentCard key={`c-${item.comment.id}`} comment={item.comment} />
+        ) : (
+          <div key={`h-${item.entry.id}`} className="history-row">
+            <span className={`history-dot tone-${actorTone(item.entry.actor)}`} />
+            <span className={`history-actor tone-${actorTone(item.entry.actor)}`}>
+              {item.entry.actor}
+            </span>
+            <span className="history-action">{actionLabel(item.entry.action)}</span>
+            {item.entry.changes?.title && (
+              <span className="history-change">→ {String(item.entry.changes.title[1])}</span>
+            )}
+            <span className="history-at">{formatElapsed(item.entry.at)} 전</span>
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -362,6 +480,8 @@ const ACTION_LABELS: Record<string, string> = {
   reopen: '다시 열기',
   archive: '보관',
   unarchive: '보관 해제',
+  'comment-archive': '댓글 보관',
+  'comment-unarchive': '댓글 보관 해제',
 };
 
 function actionLabel(action: string): string {
