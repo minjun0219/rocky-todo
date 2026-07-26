@@ -445,18 +445,35 @@ export const useUiStore = create<UiState>((set, get) => ({
     await get().refetch();
   },
 
+  /**
+   * 실패를 **던지지 않고** `available:false + reason` 으로 흡수한다 — 화면이 실패를
+   * 표현하는 경로를 하나로 묶기 위해서다(패널의 `sessions.available` 분기).
+   * 조회 전에 목록을 비우는 것도 같은 이유: 그러지 않으면 서버가 죽었는데 직전 성공의
+   * 세션 목록이 그대로 남아, 이제는 존재하지 않을 수도 있는 대상을 고르게 된다.
+   */
   fetchSessions: async () => {
     const { actor, selected } = get();
     // `selected` 는 'all' 이거나 board key 문자열이다 (객체가 아니다).
     const board = selected === 'all' ? '' : selected;
-    const result = await api<{
-      available: boolean;
-      reason?: string;
-      sessions: Array<AgentSession & { matched: boolean }>;
-    }>(`/api/sessions?board=${encodeURIComponent(board)}`, actor);
-    set({
-      sessions: { available: result.available, reason: result.reason, list: result.sessions },
-    });
+    set({ sessions: { available: true, list: [] } });
+    try {
+      const result = await api<{
+        available: boolean;
+        reason?: string;
+        sessions: Array<AgentSession & { matched: boolean }>;
+      }>(`/api/sessions?board=${encodeURIComponent(board)}`, actor);
+      set({
+        sessions: { available: result.available, reason: result.reason, list: result.sessions },
+      });
+    } catch (error) {
+      set({
+        sessions: {
+          available: false,
+          reason: error instanceof Error ? error.message : String(error),
+          list: [],
+        },
+      });
+    }
   },
 
   sendHandoff: async (todoId, input) => {

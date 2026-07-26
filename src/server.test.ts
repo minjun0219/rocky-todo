@@ -1118,6 +1118,31 @@ describe('handoff routes', () => {
     expect(calls).toBe(1);
   });
 
+  test('알 수 없는 board 는 전체 큐가 아니라 빈 목록이다', async () => {
+    const mine = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: mine.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      '/api/handoffs?board=nope',
+    );
+    expect(res.status).toBe(200);
+    // 필터 생략으로 떨어지면 다른 보드의 요청이 새어 나온다.
+    expect((await res.json()) as unknown[]).toEqual([]);
+  });
+
+  // `claude` 를 못 쓰는 환경에서 "모른다"를 "없다"로 읽으면, 멀쩡히 살아 있는 세션 앞의
+  // 요청까지 전부 "세션 없음"으로 보인다.
+  test('세션 목록을 못 얻으면 stale 을 붙이지 않는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+
+    const h = handleWith(() => ({ available: false, sessions: [], reason: 'claude CLI 없음' }));
+    const res = await reqTo(h, '/api/handoffs?status=pending');
+    const body = (await res.json()) as Array<{ stale: boolean }>;
+    expect(body[0]?.stale).toBe(false);
+  });
+
   test('claim 은 LAN 에서 직접 온 요청을 404 로 막는다', async () => {
     const todo = store.createTodo({ board: 'rocky-todo', title: '핸드오프' }, 'logan');
     store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });

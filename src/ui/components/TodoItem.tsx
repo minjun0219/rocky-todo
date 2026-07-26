@@ -105,7 +105,10 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
         </button>
       )}
       {pendingHandoff ? (
-        <span className="chip chip-handoff" title={`${pendingHandoff.sessionName ?? ''} 에게 보냄`}>
+        <span
+          className="chip chip-handoff"
+          title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
+        >
           → {pendingHandoff.sessionName ?? '세션'}
         </span>
       ) : null}

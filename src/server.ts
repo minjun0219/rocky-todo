@@ -583,6 +583,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       if (method === 'GET' && path === '/api/handoffs') {
         const boardKey = url.searchParams.get('board');
         const boardId = boardKey ? store.boardIdOf(boardKey) : undefined;
+        // `board` 를 명시했는데 그 키가 스토어에 없으면 **빈 목록**이다 — 필터 생략으로
+        // 떨어뜨리면 오타나 지워진 보드 URL 로 다른 보드의 큐까지 보게 된다. 400/404 이
+        // 아니라 빈 목록인 이유: 보드는 지연 생성이라(add/board add 만 만든다) CLI 가
+        // cwd 로 유추한, 아직 존재하지 않는 키를 흔히 붙인다. 그런 보드에 핸드오프가
+        // 있을 수 없으므로 빈 목록이 사실이기도 하다.
+        if (boardKey && !boardId) {
+          return json([]);
+        }
         const status = url.searchParams.get('status') as HandoffStatus | null;
         const handoffs = store.listHandoffs({
           boardId,
@@ -594,14 +602,21 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         // (기본 구현은 `claude agents --json` spawn, 실측 ~220ms, 최악 timeout 5s) 를
         // 아예 건너뛴다. 이 라우트는 웹 UI `refetch` 가 SSE 이벤트·60초 tick·모든
         // mutation 뒤에 부르므로, pending 이 없는 대다수 호출에서 그 비용을 없앤다.
+        //
+        // 세션 목록을 **신뢰할 수 있을 때만** stale 을 판정한다. `claude` 를 못 쓰는
+        // 환경(미설치, launchd PATH 누락 등)에서는 `available:false` + 빈 목록이 오는데,
+        // 그걸 그대로 대조하면 멀쩡히 살아 있는 세션 앞의 요청까지 전부 "세션 없음" 으로
+        // 보인다 — 모른다는 것과 없다는 것은 다르다. 판별할 수 없으면 stale 을 붙이지 않는다.
         const hasPending = handoffs.some((handoff) => handoff.status === 'pending');
-        const live = hasPending
-          ? new Set(sessionsOf().sessions.map((s) => s.sessionId))
-          : new Set<string>();
+        const sessions = hasPending ? sessionsOf() : undefined;
+        const live = sessions?.available
+          ? new Set(sessions.sessions.map((s) => s.sessionId))
+          : undefined;
         return json(
           handoffs.map((handoff) => ({
             ...handoff,
-            stale: handoff.status === 'pending' && !live.has(handoff.sessionId),
+            stale:
+              handoff.status === 'pending' && live !== undefined && !live.has(handoff.sessionId),
           })),
         );
       }
