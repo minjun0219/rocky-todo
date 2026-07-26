@@ -19,8 +19,8 @@ open http://127.0.0.1:8636        # 또는: rocky-todo open
 
 | 도구 | 하는 일 |
 | --- | --- |
-| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리, `{ boards: true }` 보드 목록) |
-| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, actor) |
+| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리+댓글, `{ boards: true }` 보드 목록). `includeArchived` 는 `{ id }` 단건 조회에서 댓글까지 함께 통제한다 |
+| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, actor) |
 | `todo_status` | 상태 전환 — `start` / `stop` / `done` / `reopen` / `archive` / `unarchive` |
 | `note_list` | 스크래치패드 메모 조회 (보드 소속 or 글로벌) |
 | `note_write` | 메모 생성/수정/append/archive (`mode`) |
@@ -38,6 +38,7 @@ rocky-todo ls [--board K|--all] [--archived] [--json]
 rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
+rocky-todo comment REF "본문"
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
@@ -86,6 +87,9 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
 - **계층/섹션/보드** — subtask(parentId), 섹션 그룹, 레포별 보드.
 - **처리중 표시** — `start` 하면 웹 UI 에 actor + 경과 뱃지 (에이전트=앰버, 사람=블루).
 - **히스토리** — 모든 mutation 이 누가/무엇을/언제로 자동 기록.
+- **댓글** — todo 마다 시간순 대화. 에이전트의 진행 보고와 사용자의 답이 같은 타임라인에
+  쌓이고, 사용자가 단 댓글은 다음 세션에 자동 주입된다. 삭제는 없다(보관만) — 보관된
+  댓글은 웹 UI 의 "보관됨 표시" 토글로 흐리게 보이고 "보관 해제" 버튼으로 복원한다.
 - **사람→에이전트 자동 전달** — Claude Code 의 UserPromptSubmit 훅이 사람의 보드 변경을 세션에 주입.
 - **실시간 웹 UI** — Bun fullstack 자동 번들 + SSE (dist 없음, CDN 없음).
 - **웹에서 편집·생성** — 제목 클릭 수정(Enter 저장/Esc 취소), 사이드바에서 보드 생성,

@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { DETAIL_HISTORY_EXCLUDED as STORE_DETAIL_HISTORY_EXCLUDED } from '../store';
+import type { Comment, HistoryEntry } from '../store';
 import {
   COPY_FEEDBACK_MS,
+  DETAIL_HISTORY_EXCLUDED,
+  formatStamp,
+  hasUnreadComments,
   isEditableTarget,
+  markSeen,
+  mergeTimeline,
+  readSeen,
   type CopyRefDocument,
   type CopyRefTextArea,
+  type SeenStorage,
   copyRef,
   copyRefWithFeedback,
 } from './lib';
@@ -198,5 +207,159 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget({ tagName: 'DIV' } as unknown as EventTarget)).toBe(false);
     expect(isEditableTarget({ tagName: 'BUTTON' } as unknown as EventTarget)).toBe(false);
     expect(isEditableTarget(null)).toBe(false);
+  });
+});
+
+function history(partial: Partial<HistoryEntry>): HistoryEntry {
+  return {
+    id: 1,
+    entity: 'todo',
+    entityId: 'abcd1234',
+    actor: 'logan',
+    action: 'update',
+    at: '2026-07-26T01:00:00.000Z',
+    ...partial,
+  };
+}
+
+function comment(partial: Partial<Comment>): Comment {
+  return {
+    id: 'c1',
+    todoId: 'abcd1234',
+    actor: 'logan',
+    body: '본문',
+    createdAt: '2026-07-26T02:00:00.000Z',
+    updatedAt: '2026-07-26T02:00:00.000Z',
+    ...partial,
+  };
+}
+
+/** localStorage 대신 쓰는 인메모리 저장소. */
+function fakeStorage(
+  initial: Record<string, string> = {},
+): SeenStorage & { data: Record<string, string> } {
+  const data = { ...initial };
+  return {
+    data,
+    getItem: (key) => data[key] ?? null,
+    setItem: (key, value) => {
+      data[key] = value;
+    },
+  };
+}
+
+describe('mergeTimeline', () => {
+  test('merges newest first', () => {
+    const items = mergeTimeline(
+      [
+        history({ id: 2, at: '2026-07-26T03:00:00.000Z' }),
+        history({ id: 1, at: '2026-07-26T01:00:00.000Z' }),
+      ],
+      [comment({ id: 'c1', createdAt: '2026-07-26T02:00:00.000Z' })],
+    );
+    expect(items.map((i) => i.at)).toEqual([
+      '2026-07-26T03:00:00.000Z',
+      '2026-07-26T02:00:00.000Z',
+      '2026-07-26T01:00:00.000Z',
+    ]);
+    expect(items[1]?.kind).toBe('comment');
+  });
+
+  test('drops comment/comment-edit history rows (card-represented) but keeps comment-archive/comment-unarchive (card is gone)', () => {
+    const items = mergeTimeline(
+      [
+        history({ id: 3, action: 'comment' }),
+        history({ id: 4, action: 'comment-edit' }),
+        history({ id: 5, action: 'comment-archive' }),
+        history({ id: 6, action: 'comment-unarchive' }),
+        history({ id: 7, action: 'done' }),
+      ],
+      [],
+    );
+    expect(items.map((i) => (i.kind === 'history' ? i.entry.action : i.kind))).toEqual([
+      'comment-archive',
+      'comment-unarchive',
+      'done',
+    ]);
+  });
+});
+
+describe('DETAIL_HISTORY_EXCLUDED drift guard (finding B)', () => {
+  test('the browser-safe copy in ./lib matches src/store.ts exactly', () => {
+    // 두 파일이 독립적으로 export 하는 같은 값 쌍이다(브라우저 번들 제약 때문에 하나로
+    // 합칠 수 없다 — 각 선언부 JSDoc 참고). 셋째 액션이 추가될 때 한쪽만 고치는 걸
+    // 막는 게 이 테스트의 목적이다.
+    expect([...DETAIL_HISTORY_EXCLUDED].sort()).toEqual([...STORE_DETAIL_HISTORY_EXCLUDED].sort());
+  });
+});
+
+describe('formatStamp', () => {
+  test('shows only the time for today', () => {
+    const now = new Date(2026, 6, 26, 15, 0);
+    const at = new Date(2026, 6, 26, 9, 5);
+    expect(formatStamp(at.toISOString(), now)).toBe('09:05');
+  });
+
+  test('shows month-day and time for other days', () => {
+    const now = new Date(2026, 6, 26, 15, 0);
+    const at = new Date(2026, 6, 24, 18, 30);
+    expect(formatStamp(at.toISOString(), now)).toBe('07-24 18:30');
+  });
+});
+
+describe('seen cursor', () => {
+  test('unread when there is a comment newer than the cursor', () => {
+    const seen = { abcd1234: '2026-07-26T01:00:00.000Z' };
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T02:00:00.000Z' }, seen),
+    ).toBe(true);
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T00:00:00.000Z' }, seen),
+    ).toBe(false);
+  });
+
+  test('no comments means nothing unread', () => {
+    expect(hasUnreadComments({ id: 'abcd1234' }, {})).toBe(false);
+  });
+
+  test('never seen but has a comment counts as unread', () => {
+    expect(
+      hasUnreadComments({ id: 'abcd1234', lastCommentAt: '2026-07-26T02:00:00.000Z' }, {}),
+    ).toBe(true);
+  });
+
+  test('markSeen persists and readSeen survives malformed json', () => {
+    const storage = fakeStorage();
+    markSeen(storage, 'abcd1234', '2026-07-26T02:00:00.000Z');
+    expect(readSeen(storage)).toEqual({ abcd1234: '2026-07-26T02:00:00.000Z' });
+
+    const broken = fakeStorage({ 'rocky-todo-seen-comments': '{not json' });
+    expect(readSeen(broken)).toEqual({});
+  });
+
+  test('readSeen drops non-string cursors and they read as unread', () => {
+    const storage = fakeStorage({
+      'rocky-todo-seen-comments': JSON.stringify({
+        good: '2026-07-26T02:00:00.000Z',
+        num: 1753490000000,
+        obj: { at: '2026-07-26T02:00:00.000Z' },
+        nul: null,
+      }),
+    });
+    expect(readSeen(storage)).toEqual({ good: '2026-07-26T02:00:00.000Z' });
+
+    // 걸러진 커서는 "본 적 없음" — 미확인으로 떨어져야 배지가 켜진다.
+    const seen = readSeen(storage);
+    expect(hasUnreadComments({ id: 'num', lastCommentAt: '2026-07-26T02:00:00.000Z' }, seen)).toBe(
+      true,
+    );
+    expect(hasUnreadComments({ id: 'good', lastCommentAt: '2026-07-26T01:00:00.000Z' }, seen)).toBe(
+      false,
+    );
+  });
+
+  test('readSeen ignores a non-object payload', () => {
+    expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': '["a"]' }))).toEqual({});
+    expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': 'null' }))).toEqual({});
   });
 });

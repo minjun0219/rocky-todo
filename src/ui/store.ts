@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NoteView, TodoView } from '../server';
-import type { Board, HistoryEntry, Section, StatusAction } from '../store';
+import type { Board, Comment, HistoryEntry, Section, StatusAction } from '../store';
+import { markSeen, readSeen } from './lib';
 
 /**
  * 웹 UI 상태 — zustand 단일 스토어.
@@ -19,6 +20,7 @@ interface DetailState {
   todo?: TodoView;
   note?: NoteView;
   history: HistoryEntry[];
+  comments: Comment[];
 }
 
 interface UiState {
@@ -31,6 +33,8 @@ interface UiState {
   actor: string;
   connected: boolean;
   detail: DetailState | null;
+  /** todo id → 마지막으로 확인한 댓글 시각. localStorage 의 화면용 사본. */
+  seenComments: Record<string, string>;
 
   setSelected: (selection: BoardSelection) => void;
   setShowArchived: (show: boolean) => void;
@@ -54,6 +58,10 @@ interface UiState {
   addNote: (input: { board?: string; title: string }) => Promise<void>;
   saveNote: (id: string, patch: { title?: string; content?: string }) => Promise<void>;
   archiveNote: (id: string) => Promise<void>;
+  addComment: (todoId: string, body: string) => Promise<void>;
+  editComment: (id: string, body: string) => Promise<void>;
+  archiveComment: (id: string) => Promise<void>;
+  unarchiveComment: (id: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -81,6 +89,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   actor: localStorage.getItem(ACTOR_KEY) ?? 'logan',
   connected: false,
   detail: null,
+  seenComments: readSeen(localStorage),
 
   setSelected: (selected) => {
     set({ selected });
@@ -126,15 +135,29 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   openTodoDetail: async (id) => {
-    const { actor } = get();
-    const body = await api<{ todo: TodoView; history: HistoryEntry[] }>(`/api/todos/${id}`, actor);
-    set({ detail: { kind: 'todo', todo: body.todo, history: body.history } });
+    const { actor, showArchived } = get();
+    // 전역 "보관 항목 보기" 토글을 댓글에도 그대로 연결한다 — 별도 스위치를 만들지
+    // 않고 이미 있는 컨트롤 하나로 todo/note/comment 아카이브 뷰를 통일한다.
+    const qs = showArchived ? '?includeArchived=true' : '';
+    const body = await api<{ todo: TodoView; history: HistoryEntry[]; comments: Comment[] }>(
+      `/api/todos/${id}${qs}`,
+      actor,
+    );
+    set({
+      detail: { kind: 'todo', todo: body.todo, history: body.history, comments: body.comments },
+    });
+    // 드로어를 연 시점에 이 todo 의 댓글은 모두 확인한 것으로 본다. localStorage(세션 간
+    // 유지)와 상태 사본(리렌더 트리거)을 함께 갱신한다.
+    if (body.todo.lastCommentAt) {
+      markSeen(localStorage, body.todo.id, body.todo.lastCommentAt);
+      set({ seenComments: readSeen(localStorage) });
+    }
   },
 
   openNoteDetail: async (id) => {
     const { actor } = get();
     const body = await api<{ note: NoteView; history: HistoryEntry[] }>(`/api/notes/${id}`, actor);
-    set({ detail: { kind: 'note', note: body.note, history: body.history } });
+    set({ detail: { kind: 'note', note: body.note, history: body.history, comments: [] } });
   },
 
   closeDetail: () => set({ detail: null }),
@@ -188,6 +211,33 @@ export const useUiStore = create<UiState>((set, get) => ({
     const { actor } = get();
     await api(`/api/notes/${id}/archive`, actor, { method: 'POST' });
     set({ detail: null });
+    await get().refetch();
+  },
+
+  addComment: async (todoId, body) => {
+    const { actor } = get();
+    await api(`/api/todos/${todoId}/comments`, actor, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    });
+    await get().refetch();
+  },
+
+  editComment: async (id, body) => {
+    const { actor } = get();
+    await api(`/api/comments/${id}`, actor, { method: 'PATCH', body: JSON.stringify({ body }) });
+    await get().refetch();
+  },
+
+  archiveComment: async (id) => {
+    const { actor } = get();
+    await api(`/api/comments/${id}/archive`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  unarchiveComment: async (id) => {
+    const { actor } = get();
+    await api(`/api/comments/${id}/unarchive`, actor, { method: 'POST' });
     await get().refetch();
   },
 }));

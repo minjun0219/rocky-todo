@@ -9,10 +9,14 @@ import type { Note, Todo, TodoStore } from './store';
  * 실어야 한다)를 고치면서, 두 표면이 같은 로직을 복붙하지 않고 여기서 공유하게 뺐다.
  */
 
-/** 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)를 얹은 형태. */
+/** 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)와 댓글 집계를 얹은 형태. */
 export interface TodoView extends Todo {
   /** `rocky#12` — 보드 접두사를 포함한 완전 참조. */
   ref: string;
+  /** 보관되지 않은 댓글 수 — 목록의 배지용. */
+  commentCount: number;
+  /** 가장 최근 댓글 시각(ISO). 댓글이 없으면 undefined. */
+  lastCommentAt?: string;
 }
 
 /** 응답 전용 note. 글로벌 메모는 보드 접두사가 없어 `#3` 이 된다. */
@@ -86,6 +90,11 @@ export function refNeedsBoardContext(ref: string): boolean {
   return Boolean(bare?.[1]) || digits.length < ID_LENGTH;
 }
 
+/** `Todo` 와 `Note` 를 가른다 — `status` 는 todo 에만 있다. */
+function isTodo(entity: Todo | Note): entity is Todo {
+  return 'status' in entity;
+}
+
 /**
  * 응답용 직렬화 — 저장 모델에 ref 를 얹는다.
  * 오버로드 시그니처로 반환형을 `TodoView`/`NoteView` 에 고정한다 — 구현부를
@@ -94,5 +103,10 @@ export function refNeedsBoardContext(ref: string): boolean {
 export function withRef(store: TodoStore, entity: Todo): TodoView;
 export function withRef(store: TodoStore, entity: Note): NoteView;
 export function withRef(store: TodoStore, entity: Todo | Note): TodoView | NoteView {
-  return { ...entity, ref: refOf(store, entity.boardId, entity.number, entity.id) };
+  const ref = refOf(store, entity.boardId, entity.number, entity.id);
+  if (!isTodo(entity)) {
+    return { ...entity, ref };
+  }
+  const stats = store.commentStatsOf(entity.id);
+  return { ...entity, ref, commentCount: stats.count, lastCommentAt: stats.lastAt };
 }

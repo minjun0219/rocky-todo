@@ -99,12 +99,27 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
   - 항목이 없는 섹션은 목록에 뜨지 않는다 — 항목을 옮기면 그때 나타난다.
   - 보관한 섹션에 속해 있던 작업은 사라지지 않고 미분류로 돌아온다.
 
+## 웹 UI — 댓글
+
+상세 드로어는 히스토리와 댓글을 지라식으로 탭을 나누지 않고 **하나의 타임라인**으로 섞어
+보여준다 — 에이전트의 진행 보고와 사람의 답이 시간순으로 같이 쌓인다.
+
+- **작성**: 입력창에 쓰고 ⌘/Ctrl+Enter. **편집·보관은 웹 UI 전용이다** — CLI 는 작성만 한다.
+- 댓글은 절대 작성 시각을 보여준다 — 오늘이면 `HH:MM`, 다른 날이면 `MM-DD HH:MM`.
+- **삭제 없음** — 보관만. 보관해도 history 에는 남는다. 보관된 댓글은 사이드바의 "보관됨
+  표시" 토글(todo/note 아카이브 뷰와 같은 스위치)을 켜면 카드가 흐리게 나타나고, 카드의
+  "보관 해제" 버튼으로 되돌릴 수 있다.
+- 목록 줄에는 `💬 N`(보관 제외 댓글 수) 배지가 뜨고, 마지막 댓글 이후 안 본 항목은 강조된다.
+  읽음 커서는 `localStorage` 에만 있다 — 단일 사용자 로컬 데몬이라 서버측 읽음 상태는 두지
+  않았다(다른 기기/브라우저에서는 다시 안 읽은 것으로 보인다).
+
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
 에이전트→웹 방향은 SSE 로 실시간이고, 반대 방향은 **훅**이 닫는다: 사용자가 프롬프트를
 보낼 때마다 플러그인의 `UserPromptSubmit` 훅이 데몬의 `/api/changes` 를 세션별 커서
 이후로 읽어 **호출자(사람)의 변경만** 요약해 컨텍스트로 주입한다. 웹에서 todo 를 추가하고
-아무 말이나 걸면 에이전트가 그 변경을 이미 알고 있는 구조다.
+아무 말이나 걸면 에이전트가 그 변경을 이미 알고 있는 구조다. 사람이 웹 UI 에서 단 댓글도
+같은 경로로 주입된다(본문 200자 절단, 개행은 공백으로 정리).
 
 - 결정론적 (LLM 미사용), fail-open — 데몬이 꺼져 있으면 조용히 no-op (훅이 데몬을 기동하진 않는다)
 - 에이전트 자신의 변경(claude-code/codex/opencode)은 걸러서 자기 반향 없음
@@ -143,6 +158,7 @@ rocky-todo ls [--board K|--all] [--archived] [--json]
 rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
+rocky-todo comment REF "본문"
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
@@ -160,6 +176,10 @@ REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky#12`(�
 
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. actor 는 `--actor` >
 `ROCKY_TODO_ACTOR` > 호스트 자동 감지 (claude-code / opencode / codex).
+
+`show REF` 출력에는 링크·히스토리와 함께 `댓글:` 섹션(작성 시각 + actor + 본문)이 붙는다 —
+히스토리 목록에서는 댓글 계열 항목을 걸러 중복을 없앤다. **댓글 편집·보관 CLI 명령은
+없다** — 웹 UI 에서만 한다.
 
 `#` 로 시작하는 REF 는 셸(bash/zsh)에서 주석 시작 문자로 해석되므로 반드시 따옴표로 감싼다:
 `rocky-todo show '#12'`. 번호만 쓰면(`rocky-todo show 12`) 따옴표가 필요 없다.

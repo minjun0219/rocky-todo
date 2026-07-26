@@ -524,6 +524,165 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
   });
 });
 
+describe('comments through MCP', () => {
+  test('todo_write with only a comment does not create an update history row', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, comment: '진행 중입니다', actor: 'claude-code' },
+    });
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { comments: { body: string; actor: string }[]; history: { action: string }[] };
+
+    expect(detail.comments.map((c) => c.body)).toEqual(['진행 중입니다']);
+    expect(detail.comments[0]?.actor).toBe('claude-code');
+    expect(detail.history.map((h) => h.action)).not.toContain('update');
+  });
+
+  test('todo_write applies a patch and a comment in the same call', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const patched = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { id: created.id, priority: 'p1', comment: '우선순위 올림' },
+      }),
+    ) as { priority: string; commentCount: number };
+
+    expect(patched.priority).toBe('p1');
+    expect(patched.commentCount).toBe(1);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { history: { action: string }[] };
+    expect(detail.history.map((h) => h.action)).toContain('update');
+  });
+
+  test('todo_write can create a todo with its first comment', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '새 작업', comment: '착수합니다' },
+      }),
+    ) as { id: string; commentCount: number };
+
+    expect(created.commentCount).toBe(1);
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { comments: { body: string }[] };
+    expect(detail.comments.map((c) => c.body)).toEqual(['착수합니다']);
+  });
+
+  test('the tool surface is still exactly five tools', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
+  });
+
+  test('todo_list { id, includeArchived: true } surfaces archived comments; without it they stay hidden (finding 2)', async () => {
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const comment = store.addComment(todo.id, '보관될 댓글', 'tester');
+    store.setCommentArchived(comment.id, true, 'tester');
+
+    const hidden = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: todo.id } }),
+    ) as { comments: { id: string }[] };
+    expect(hidden.comments).toHaveLength(0);
+
+    const shown = resultJson(
+      await client.callTool({
+        name: 'todo_list',
+        arguments: { id: todo.id, includeArchived: true },
+      }),
+    ) as { comments: { id: string }[] };
+    expect(shown.comments.map((c) => c.id)).toEqual([comment.id]);
+  });
+
+  test('todo_write with an empty comment rejects instead of silently no-op-ing (finding 3)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, comment: '' },
+    });
+    expect(result.isError).toBe(true);
+  });
+
+  test('todo_write create with an empty comment rejects without creating the todo (finding A)', async () => {
+    const before = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'rocky' } }),
+    ) as { todos: unknown[] };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '작업', comment: '' },
+    });
+    expect(result.isError).toBe(true);
+
+    const after = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'rocky' } }),
+    ) as { todos: unknown[] };
+    expect(after.todos.length).toBe(before.todos.length);
+  });
+
+  test('todo_write patch with a blank comment rejects without applying the title (finding A)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '원래 제목' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, title: '새 제목', comment: '   ' },
+    });
+    expect(result.isError).toBe(true);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { todo: { title: string } };
+    expect(detail.todo.title).toBe('원래 제목');
+  });
+
+  test('todo_write patch with comment omitted still applies a plain patch (no regression)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, priority: 'p2' },
+    });
+    expect(result.isError).toBeFalsy();
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { todo: { priority: string } };
+    expect(detail.todo.priority).toBe('p2');
+  });
+});
+
 describe('note_write / note_list', () => {
   test('create, append, archive lifecycle over MCP', async () => {
     const created = resultJson(

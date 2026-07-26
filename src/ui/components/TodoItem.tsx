@@ -5,6 +5,7 @@ import {
   copyRefWithFeedback,
   formatDue,
   formatElapsed,
+  hasUnreadComments,
   isOverdue,
   isStale,
   linkLabel,
@@ -16,15 +17,19 @@ interface TodoItemProps {
   depth: number;
 }
 
-/** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + doing 뱃지. 클릭 시 상세 드로어. */
+/** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + 댓글 뱃지 + doing 뱃지. 클릭 시 상세 드로어. */
 export function TodoItem({ todo, depth }: TodoItemProps) {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const openTodoDetail = useUiStore((s) => s.openTodoDetail);
+  const seenComments = useUiStore((s) => s.seenComments);
   const [copied, setCopied] = useState(false);
 
   const done = todo.status === 'done';
   const doing = todo.status === 'doing';
   const stale = doing && isStale(todo.doingSince);
+  // 커서는 zustand 상태에서 읽는다 — localStorage 를 직접 읽으면 커서가 바뀌어도
+  // 리렌더가 걸리지 않아 배지 강조가 다음 refetch 까지 안 풀린다.
+  const unread = hasUnreadComments(todo, seenComments);
 
   const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
 
@@ -78,6 +83,21 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
           {link.title ?? linkLabel(link.url)} ↗
         </a>
       ))}
+      {todo.commentCount > 0 && (
+        <button
+          type="button"
+          className={`comment-badge ${unread ? 'is-unread' : ''}`}
+          title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
+          aria-label={
+            unread
+              ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
+              : `댓글 ${todo.commentCount}개 — 눌러서 열기`
+          }
+          onClick={() => void openTodoDetail(todo.id)}
+        >
+          💬 {todo.commentCount}
+        </button>
+      )}
       {doing && todo.doingBy && (
         <span
           className={`doing-badge tone-${actorTone(todo.doingBy)} ${stale ? 'is-stale' : ''}`}

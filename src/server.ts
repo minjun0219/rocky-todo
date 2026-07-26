@@ -1,6 +1,11 @@
 import pkg from '../package.json' with { type: 'json' };
 import { refNeedsBoardContext, withRef } from './refs';
-import type { ListTodosFilter, StatusAction, TodoStore } from './store';
+import {
+  DETAIL_HISTORY_EXCLUDED,
+  type ListTodosFilter,
+  type StatusAction,
+  type TodoStore,
+} from './store';
 
 /**
  * rocky-todo REST + SSE 표면 — CLI / 웹 UI 가 공유한다.
@@ -220,9 +225,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           if (!todo) {
             return errorResponse(`todo not found: ${ref}`, 404);
           }
+          const includeArchived = url.searchParams.get('includeArchived') === 'true';
           return json({
             todo: withRef(store, todo),
-            history: store.listHistory({ entityId: todo.id }),
+            history: store.listHistory({
+              entityId: todo.id,
+              excludeActions: DETAIL_HISTORY_EXCLUDED,
+            }),
+            comments: store.listComments(todo.id, includeArchived),
           });
         }
         if (method === 'PATCH') {
@@ -242,6 +252,39 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
         return json(
           withRef(store, store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
+        );
+      }
+
+      // ── comments ──
+      const todoComments = path.match(/^\/api\/todos\/([^/]+)\/comments$/);
+      if (todoComments?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoComments[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const body = await readBody(req);
+        if (typeof body.body !== 'string') {
+          return errorResponse('body is required', 400);
+        }
+        return json(store.addComment(ref, body.body, actor, currentBoardId), 201);
+      }
+
+      // 보관/복원 경로가 세그먼트를 하나 더 갖기 때문에 이 정확 일치 패턴과 겹치지 않는다.
+      const commentDetail = path.match(/^\/api\/comments\/([^/]+)$/);
+      if (commentDetail?.[1] && method === 'PATCH') {
+        const body = await readBody(req);
+        if (typeof body.body !== 'string') {
+          return errorResponse('body is required', 400);
+        }
+        return json(store.updateComment(decodeURIComponent(commentDetail[1]), body.body, actor));
+      }
+
+      const commentArchive = path.match(/^\/api\/comments\/([^/]+)\/(archive|unarchive)$/);
+      if (commentArchive?.[1] && commentArchive[2] && method === 'POST') {
+        return json(
+          store.setCommentArchived(
+            decodeURIComponent(commentArchive[1]),
+            commentArchive[2] === 'archive',
+            actor,
+          ),
         );
       }
 
