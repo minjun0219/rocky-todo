@@ -182,6 +182,11 @@ export interface ListHistoryFilter {
  * 자체가 사라지므로(대표하는 화면 요소가 없어짐) history 에 흔적을 남겨야 한다.
  * `listHistory` 를 부르는 두 호출부(`src/server.ts`, `src/mcp.ts`)가 이 상수 하나를
  * 공유해 배열 리터럴이 두 곳에서 따로 놀지 않게 한다.
+ *
+ * `src/ui/lib.ts` 가 같은 값 쌍을 별도로 export 한다(`DETAIL_HISTORY_EXCLUDED`, 같은
+ * 이름) — 브라우저 번들 코드라 이 파일을 런타임으로 import 할 수 없어서다(`bun:sqlite`
+ * 가 딸려 온다). `src/ui/lib.test.ts` 가 두 목록이 같은 값을 갖는지 회귀 테스트로
+ * 고정하니, 여기 값을 바꾸면 그쪽도 함께 고쳐야 한다.
  */
 export const DETAIL_HISTORY_EXCLUDED = ['comment', 'comment-edit'] as const;
 

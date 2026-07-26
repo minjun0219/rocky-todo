@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { DETAIL_HISTORY_EXCLUDED as STORE_DETAIL_HISTORY_EXCLUDED } from '../store';
 import type { Comment, HistoryEntry } from '../store';
 import {
   COPY_FEEDBACK_MS,
+  DETAIL_HISTORY_EXCLUDED,
   formatStamp,
   hasUnreadComments,
   isEditableTarget,
@@ -279,6 +281,15 @@ describe('mergeTimeline', () => {
       'comment-unarchive',
       'done',
     ]);
+  });
+});
+
+describe('DETAIL_HISTORY_EXCLUDED drift guard (finding B)', () => {
+  test('the browser-safe copy in ./lib matches src/store.ts exactly', () => {
+    // 두 파일이 독립적으로 export 하는 같은 값 쌍이다(브라우저 번들 제약 때문에 하나로
+    // 합칠 수 없다 — 각 선언부 JSDoc 참고). 셋째 액션이 추가될 때 한쪽만 고치는 걸
+    // 막는 게 이 테스트의 목적이다.
+    expect([...DETAIL_HISTORY_EXCLUDED].sort()).toEqual([...STORE_DETAIL_HISTORY_EXCLUDED].sort());
   });
 });
 

@@ -279,15 +279,24 @@ export type TimelineItem =
   | { kind: 'comment'; at: string; comment: Comment };
 
 /**
- * 댓글 계열 히스토리 액션 중 타임라인에서 버리는 것 — 댓글 카드가 여전히 그 사건을
- * 대표하는 두 가지(작성/본문 수정)만 뺀다.
+ * 댓글 계열 히스토리 액션 중 타임라인/상세 화면에서 버리는 것 — 댓글 카드가 여전히
+ * 그 사건을 대표하는 두 가지(작성/본문 수정)만 뺀다.
  *
  * 댓글 mutation 은 부모 todo 의 히스토리로도 기록된다(SSE·훅 주입 경로를 타기 위해서다).
  * `comment`/`comment-edit` 을 그대로 두면 같은 사건이 댓글 카드와 히스토리 한 줄로 두 번
  * 보인다. `comment-archive`/`comment-unarchive` 는 빼지 않는다 — 보관되면 카드 자체가
  * 사라지므로(대표하는 화면 요소가 없어짐) 타임라인에 흔적이 남아야 한다.
+ *
+ * `src/store.ts` 의 `DETAIL_HISTORY_EXCLUDED` 와 같은 값 쌍이다 — 여기서 별도로 export
+ * 하는 이유는 이 파일이 브라우저에 번들되는 UI 코드라서다: `store.ts` 를 런타임으로
+ * import 하면 `bun:sqlite` 가 클라이언트 번들 그래프에 끌려온다(기존 `import type`
+ * 은 타입만 지워지니 안전하지만, 값 import 는 안 된다). 값이 둘로 나뉘어 있는 만큼
+ * `src/ui/lib.test.ts` 가 두 목록의 내용이 같은지 회귀 테스트로 고정한다 — 셋째 액션이
+ * 생기면 여기와 `src/store.ts` 양쪽을 함께 고쳐야 한다.
  */
-const COMMENT_HISTORY_ACTIONS: ReadonlySet<string> = new Set(['comment', 'comment-edit']);
+export const DETAIL_HISTORY_EXCLUDED: readonly string[] = ['comment', 'comment-edit'];
+
+const COMMENT_HISTORY_ACTIONS: ReadonlySet<string> = new Set(DETAIL_HISTORY_EXCLUDED);
 
 /**
  * 히스토리와 댓글을 시간순(**최신 우선**)으로 병합한다. 드로어의 기존 히스토리 렌더가

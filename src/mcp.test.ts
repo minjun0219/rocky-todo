@@ -624,6 +624,63 @@ describe('comments through MCP', () => {
     });
     expect(result.isError).toBe(true);
   });
+
+  test('todo_write create with an empty comment rejects without creating the todo (finding A)', async () => {
+    const before = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'rocky' } }),
+    ) as { todos: unknown[] };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'rocky', title: '작업', comment: '' },
+    });
+    expect(result.isError).toBe(true);
+
+    const after = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { board: 'rocky' } }),
+    ) as { todos: unknown[] };
+    expect(after.todos.length).toBe(before.todos.length);
+  });
+
+  test('todo_write patch with a blank comment rejects without applying the title (finding A)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '원래 제목' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, title: '새 제목', comment: '   ' },
+    });
+    expect(result.isError).toBe(true);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { todo: { title: string } };
+    expect(detail.todo.title).toBe('원래 제목');
+  });
+
+  test('todo_write patch with comment omitted still applies a plain patch (no regression)', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, priority: 'p2' },
+    });
+    expect(result.isError).toBeFalsy();
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { todo: { priority: string } };
+    expect(detail.todo.priority).toBe('p2');
+  });
 });
 
 describe('note_write / note_list', () => {

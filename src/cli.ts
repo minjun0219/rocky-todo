@@ -9,7 +9,7 @@ import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
 import type { Board, Comment, HistoryEntry, Section } from './store';
 import { tailscaleServeOff, tailscaleServeOn, tailscaleServeStatus } from './tailscale';
-import { linkLabel } from './ui/lib';
+import { DETAIL_HISTORY_EXCLUDED, linkLabel } from './ui/lib';
 
 /**
  * rocky-todo CLI — 데몬의 얇은 HTTP 클라이언트 (보조 표면).
@@ -149,7 +149,9 @@ export function formatTodoShow(detail: {
   lines.push('', '히스토리:');
   // comment/comment-edit 은 위 댓글 섹션이 본문까지 보여주니 같은 사건을 한 줄 더 찍지
   // 않는다. comment-archive/comment-unarchive 는 카드가 사라진 뒤라 여기 남아야 한다.
-  const rows = detail.history.filter((h) => h.action !== 'comment' && h.action !== 'comment-edit');
+  // 목록은 `./ui/lib` 의 `DETAIL_HISTORY_EXCLUDED` 를 그대로 쓴다 — `src/store.ts` 의
+  // 같은 이름 상수와 값이 갈리지 않도록 `src/ui/lib.test.ts` 가 회귀 테스트로 고정한다.
+  const rows = detail.history.filter((h) => !DETAIL_HISTORY_EXCLUDED.includes(h.action));
   for (const h of rows.slice(0, 8)) {
     lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
   }

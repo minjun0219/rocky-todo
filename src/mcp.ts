@@ -153,6 +153,15 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     },
     async ({ id, board, title, comment, actor, ...rest }) => {
       const who = actor ?? 'agent';
+      // create/patch 를 먼저 실행하고 나서 comment 검증에 걸리면, 이미 만들어진/바뀐
+      // todo 는 그대로 남고 에러만 돌아간다 — 호출자가 재시도하면 중복 생성(create)
+      // 이거나 의도치 않은 부분 수정(patch)이 이미 적용된 채 남는다. `store.addComment`
+      // 가 던질 조건(trim 후 빈 문자열)을 write 전에 그대로 재현해 all-or-nothing 을
+      // 보장한다 — 메시지는 `store.addComment` 와 동일하게 맞춰 REST/MCP 표면 간
+      // 에러 문구가 갈리지 않게 한다.
+      if (comment !== undefined && comment.trim() === '') {
+        throw new Error('comment body is required');
+      }
       if (id) {
         const currentBoardId = resolveBoardId(store, board, id);
         // comment 만 온 호출은 updateTodo 를 건너뛴다 — 아무것도 안 바뀐 `update`
