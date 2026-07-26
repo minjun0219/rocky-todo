@@ -28,4 +28,33 @@ describe('plistContent', () => {
       }
     }
   });
+
+  test('PATH 에 &/</> 가 섞여도 XML 엔티티로 이스케이프해 파싱 가능한 plist 를 만든다', () => {
+    // 예: `/Users/x/Tools & Scripts/bin` — 실제로 나올 수 있는 디렉터리 이름이다.
+    const xml = plistContent({ path: '/usr/bin:/Users/x/Tools & Scripts<bin>:/bin' });
+    expect(xml).toContain('<string>/usr/bin:/Users/x/Tools &amp; Scripts&lt;bin&gt;:/bin</string>');
+    expect(xml).not.toContain('Tools & Scripts<bin>');
+  });
+
+  test('execPath/entryPath/logPath 에 특수문자가 있어도 각각 이스케이프된다', () => {
+    const xml = plistContent({
+      execPath: '/opt/bun & co/bin/bun',
+      entryPath: '/repo/<daemon>.ts',
+      logPath: '/tmp/rocky & todo/daemon.log',
+    });
+    expect(xml).toContain('<string>/opt/bun &amp; co/bin/bun</string>');
+    expect(xml).toContain('<string>/repo/&lt;daemon&gt;.ts</string>');
+    expect(xml).toContain('<string>/tmp/rocky &amp; todo/daemon.log</string>');
+    expect(xml).not.toContain('/opt/bun & co');
+    expect(xml).not.toContain('<daemon>.ts');
+    expect(xml).not.toContain('/tmp/rocky & todo');
+  });
+
+  test('override 없이 호출하면 기존 기본 동작(실제 process.execPath 등)이 그대로다', () => {
+    const xml = plistContent();
+    // escapeXml 은 항등 함수와 다를 게 없는 값(특수문자 없는 실제 경로)에 대해
+    // 회귀를 만들지 않는다 — 기존 두 테스트가 이미 이 계약을 커버하므로 여기서는
+    // ProgramArguments 자리에 process.execPath 가 그대로(이스케이프해도 불변) 있는지만 본다.
+    expect(xml).toContain(`<string>${process.execPath}</string>`);
+  });
 });

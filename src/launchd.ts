@@ -43,9 +43,36 @@ function pathForPlist(): string {
   return process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin';
 }
 
+/**
+ * plist 는 XML 이다 — 보간되는 값(PATH, 실행 파일 경로, 로그 경로 등)에 `&`/`<`/`>` 가
+ * 섞이면(예: `/Users/x/Tools & Scripts/bin`) 이스케이프 없이는 파싱 불가한 plist 가
+ * 만들어진다. `installLaunchd` 는 이 plist 를 쓰기 전에 기존 job 을 먼저 내리므로
+ * (`launchctl bootout` → `bootstrap`), 깨진 plist 로 로드가 실패하면 상주 데몬이 롤백 없이
+ * 사라진다 — 여기서 막아야 하는 이유다. `"` 는 속성값이 아니라 텍스트 노드 안에서만
+ * 쓰이므로(이 파일의 모든 보간이 `<string>...</string>` 안) 이스케이프 대상에서 뺐다.
+ */
+function escapeXml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/**
+ * plist 에 들어가는 보간값 — 기본은 실제 install 시점 값(process.execPath/PATH/실제 경로).
+ * 테스트에서 특수문자가 든 값의 이스케이프를 검증할 수 있도록 override 가능한 seam 을
+ * 열어뒀다 — `plistContent()`(인자 없이 호출)의 기본 동작은 이전과 동일하다.
+ */
+export interface PlistValues {
+  execPath?: string;
+  entryPath?: string;
+  logPath?: string;
+  path?: string;
+}
+
 /** plist 본문 — install 시점에 캡처한 PATH 를 EnvironmentVariables 로 굽는다. 테스트 전용 export. */
-export function plistContent(): string {
-  const logPath = join(DEFAULT_TODO_DIR, 'daemon.log');
+export function plistContent(overrides?: PlistValues): string {
+  const execPath = overrides?.execPath ?? process.execPath;
+  const entryPath = overrides?.entryPath ?? daemonEntryPath();
+  const logPath = overrides?.logPath ?? join(DEFAULT_TODO_DIR, 'daemon.log');
+  const path = overrides?.path ?? pathForPlist();
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -53,17 +80,17 @@ export function plistContent(): string {
   <key>Label</key><string>${LAUNCHD_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${process.execPath}</string>
+    <string>${escapeXml(execPath)}</string>
     <string>run</string>
-    <string>${daemonEntryPath()}</string>
+    <string>${escapeXml(entryPath)}</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${logPath}</string>
-  <key>StandardErrorPath</key><string>${logPath}</string>
+  <key>StandardOutPath</key><string>${escapeXml(logPath)}</string>
+  <key>StandardErrorPath</key><string>${escapeXml(logPath)}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>${pathForPlist()}</string>
+    <key>PATH</key><string>${escapeXml(path)}</string>
   </dict>
 </dict>
 </plist>

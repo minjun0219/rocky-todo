@@ -450,6 +450,18 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         // 이유: 이 라우트의 존재 자체를 원격 관찰자에게 드러내지 않기 위해서다 — 아래
         // catch-all(`not found: METHOD path`)과 구분이 안 가게 해, 있는 걸 알고 두드리는
         // 시나리오를 403(있는데 막혔다)보다 덜 흥미롭게 만든다.
+        //
+        // ⚠️ 이 가드는 `lan` 채널에서만 실제로 막는다. `lan` 은 데몬이 `0.0.0.0` 에
+        // 직접 바인딩해(`src/config.ts` 의 host 유도) 원격 요청의 소스 주소가 진짜
+        // LAN IP 로 찍히므로 `isLoopbackOf`(`server.requestIP()` 기반)가 정확히
+        // 걸러낸다. `tailscale-serve` 는 다르다 — 데몬은 계속 127.0.0.1 에만
+        // 바인딩하고(`src/tailscale.ts` 상단 주석 참고) tailscaled 의 로컬 프록시가
+        // 테일넷 요청을 다시 `127.0.0.1:<port>` 로 다이얼해 전달한다. 그래서 어느
+        // 테일넷 기기에서 왔든 여기서 보는 소스 주소는 항상 127.0.0.1 이고, 이 가드는
+        // 통과된다 — `tailscale-serve` 로 열면 테일넷에 접근할 수 있는 기기는 claim 도
+        // 부를 수 있다는 뜻이다. 코드로 더 좁히려면 tailscale serve 가 주입하는
+        // `Tailscale-User-*` 헤더로 발신자를 구분하는 방법이 있지만, 이 헤더가 실제로
+        // 덮어써지는지(스푸핑 불가한지) 이 환경에서 실측하지 못해 아직 넣지 않았다.
         if (!isLoopbackOf(req)) {
           return errorResponse(`not found: ${method} ${path}`, 404);
         }
