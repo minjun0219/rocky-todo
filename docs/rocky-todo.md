@@ -156,7 +156,7 @@ rocky-todo ls [--board K|--all] [--archived] [--json]
 rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
-rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
+rocky-todo comment REF "본문"
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup

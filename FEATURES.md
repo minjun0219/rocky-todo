@@ -19,7 +19,7 @@ open http://127.0.0.1:8636        # 또는: rocky-todo open
 
 | 도구 | 하는 일 |
 | --- | --- |
-| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리, `{ boards: true }` 보드 목록) |
+| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리+댓글, `{ boards: true }` 보드 목록) |
 | `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, actor) |
 | `todo_status` | 상태 전환 — `start` / `stop` / `done` / `reopen` / `archive` / `unarchive` |
 | `note_list` | 스크래치패드 메모 조회 (보드 소속 or 글로벌) |

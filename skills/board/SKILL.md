@@ -70,7 +70,7 @@ id 자리는 랜덤 id 대신 번호 참조(REF)를 받는다: `rocky#12`(보드
 
 ```
 todo_list  { board: "rocky" }                            # 보드 현황
-todo_list  { id: "rocky#12" }                             # 상세 + 히스토리
+todo_list  { id: "rocky#12" }                             # 상세 + 히스토리 + 댓글
 todo_write { board: "rocky", title: "...", section: "설계",
              priority: "p2", links: [{ url: "https://github.com/..." }],
              actor: "claude-code" }
