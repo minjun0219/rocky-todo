@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  formatSessions,
   formatTodoLine,
   formatTodoShow,
   noteRefPath,
@@ -50,6 +51,30 @@ describe('parseFlags', () => {
 
   test('unknown flag throws', () => {
     expect(() => parseFlags(['ls', '--explode'])).toThrow(/unknown flag/);
+  });
+
+  test('handoff 의 --session/--cancel 플래그를 받아들인다', () => {
+    const parsed = parseFlags(['handoff', '#1', '--session', 'rocky-todo-1e', '--cancel']);
+    expect(parsed.flags.session).toBe('rocky-todo-1e');
+    expect(parsed.flags.cancel).toBe(true);
+  });
+
+  // `--note` 는 history(값 없는 boolean)와 handoff(문자열 값) 양쪽에서 같은 이름을 쓴다.
+  // 다음 토큰이 있고 플래그가 아니면 값으로, 아니면 boolean true 로 떨어져야 두 자리 다 깨지지 않는다.
+  test('--note 단독이면 boolean true (history 용법)', () => {
+    const parsed = parseFlags(['history', '#1', '--note']);
+    expect(parsed.flags.note).toBe(true);
+  });
+
+  test('--note 뒤에 값이 오면 문자열로 읽는다 (handoff 용법)', () => {
+    const parsed = parseFlags(['handoff', '#1', '--note', '진행 상황 공유']);
+    expect(parsed.flags.note).toBe('진행 상황 공유');
+  });
+
+  test('--note 뒤가 다른 플래그면 값을 삼키지 않고 boolean 으로 남는다', () => {
+    const parsed = parseFlags(['handoff', '#1', '--note', '--session', 'x']);
+    expect(parsed.flags.note).toBe(true);
+    expect(parsed.flags.session).toBe('x');
   });
 });
 
@@ -473,6 +498,57 @@ describe('comment command paths', () => {
       todoRefPath(`rocky#${todo.number}`, '', 'rocky'),
     );
     expect(detail.comments.map((c) => c.body)).toEqual(['미리 달아둔 댓글']);
+  });
+});
+
+describe('formatSessions', () => {
+  const view = (over: Partial<Parameters<typeof formatSessions>[0]> = {}) => ({
+    available: true,
+    sessions: [
+      {
+        pid: 1,
+        cwd: '/w/rocky-todo',
+        kind: 'interactive',
+        sessionId: 'sess-1',
+        name: 'rocky-todo-1e',
+        status: 'idle',
+        startedAt: 1,
+        matched: true,
+      },
+      {
+        pid: 2,
+        cwd: '/w/forses',
+        kind: 'interactive',
+        sessionId: 'sess-2',
+        name: 'forses-90',
+        status: 'busy',
+        startedAt: 2,
+        matched: false,
+      },
+    ],
+    ...over,
+  });
+
+  test('이름·상태·경로를 한 줄씩 렌더한다', () => {
+    const out = formatSessions(view());
+    expect(out).toContain('rocky-todo-1e');
+    expect(out).toContain('idle');
+    expect(out).toContain('/w/rocky-todo');
+  });
+
+  test('현재 보드와 일치하는 세션에 * 를 붙인다', () => {
+    const lines = formatSessions(view()).split('\n');
+    expect(lines[0]?.startsWith('*')).toBe(true);
+    expect(lines[1]?.startsWith('*')).toBe(false);
+  });
+
+  test('claude 를 못 쓰면 이유를 보여준다', () => {
+    const out = formatSessions(view({ available: false, sessions: [], reason: 'claude CLI 없음' }));
+    expect(out).toContain('claude CLI 없음');
+  });
+
+  test('세션이 없으면 그렇게 말한다', () => {
+    expect(formatSessions(view({ sessions: [] }))).toContain('실행 중인');
   });
 });
 
