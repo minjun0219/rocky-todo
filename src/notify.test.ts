@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildNotifyContext, filterHumanChanges, readCursor, writeCursor } from './notify';
+import {
+  buildNotifyContext,
+  filterHumanChanges,
+  mergeContext,
+  readCursor,
+  writeCursor,
+} from './notify';
 import type { ChangeFeedEntry } from './store';
 
 function entry(partial: Partial<ChangeFeedEntry>): ChangeFeedEntry {
@@ -138,5 +144,24 @@ describe('cursor store', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('mergeContext', () => {
+  test('둘 다 있으면 빈 줄로 잇는다', () => {
+    expect(mergeContext(['A', 'B'])).toBe('A\n\nB');
+  });
+
+  test('하나만 있으면 그것만', () => {
+    expect(mergeContext([null, 'B'])).toBe('B');
+    expect(mergeContext(['A', null])).toBe('A');
+  });
+
+  test('둘 다 없으면 null — 아무것도 주입하지 않는다', () => {
+    expect(mergeContext([null, null])).toBeNull();
+  });
+
+  test('빈 문자열은 없는 것으로 친다', () => {
+    expect(mergeContext(['', 'B'])).toBe('B');
   });
 });

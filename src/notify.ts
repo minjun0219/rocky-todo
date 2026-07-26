@@ -116,6 +116,16 @@ export function readCursor(file: string, sessionId: string): number | undefined 
   return typeof cursor?.lastId === 'number' ? cursor.lastId : undefined;
 }
 
+/**
+ * 여러 주입 블록을 하나의 additionalContext 로 합친다 — 사람의 보드 변경과 핸드오프
+ * 요청이 같은 프롬프트에 함께 도착할 수 있다.
+ * @returns 실을 내용이 하나도 없으면 null.
+ */
+export function mergeContext(parts: Array<string | null>): string | null {
+  const kept = parts.filter((part): part is string => typeof part === 'string' && part !== '');
+  return kept.length > 0 ? kept.join('\n\n') : null;
+}
+
 export function writeCursor(file: string, sessionId: string, lastId: number): void {
   const all = readCursorFile(file);
   all[sessionId] = { lastId, at: new Date().toISOString() };

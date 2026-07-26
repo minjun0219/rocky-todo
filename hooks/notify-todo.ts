@@ -1,8 +1,15 @@
 import { join } from 'node:path';
 import { resolveTodoRuntimeConfig } from '../src/config';
-import { buildNotifyContext, filterHumanChanges, readCursor, writeCursor } from '../src/notify';
+import { buildHandoffPrompt } from '../src/handoff';
+import {
+  buildNotifyContext,
+  filterHumanChanges,
+  mergeContext,
+  readCursor,
+  writeCursor,
+} from '../src/notify';
 import { loadTodoConfig } from '../src/rocky-config';
-import type { ChangeFeedEntry } from '../src/store';
+import type { ChangeFeedEntry, ClaimedHandoff } from '../src/store';
 
 /**
  * UserPromptSubmit hook: 마지막 확인 이후 호출자(사람)가 rocky-todo 보드에서 바꾼
@@ -51,6 +58,24 @@ async function fetchChanges(
   }
 }
 
+/** 이 세션 앞의 핸드오프 한 건을 집어온다. 없거나 실패하면 null (fail-open). */
+async function claimHandoff(baseUrl: string, sessionId: string): Promise<ClaimedHandoff | null> {
+  try {
+    const res = await fetch(`${baseUrl}/api/handoffs/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, via: 'prompt' }),
+      signal: AbortSignal.timeout(1500),
+    });
+    if (res.status !== 200) {
+      return null;
+    }
+    return (await res.json()) as ClaimedHandoff;
+  } catch {
+    return null;
+  }
+}
+
 async function run(): Promise<void> {
   const envToggle = process.env.ROCKY_TODO_WATCH?.trim().toLowerCase();
   if (envToggle !== undefined && OFF_VALUES.has(envToggle)) {
@@ -77,24 +102,28 @@ async function run(): Promise<void> {
   const baseUrl = `http://127.0.0.1:${runtime.port}`;
   const cursorFile = join(runtime.dir, 'hook-cursors.json');
 
+  const claimed = await claimHandoff(baseUrl, sessionId);
+  const handoffContext = claimed ? buildHandoffPrompt(claimed) : null;
+
   const cursor = readCursor(cursorFile, sessionId);
+  let changeContext: string | null = null;
   if (cursor === undefined) {
-    // 첫 프롬프트 — 현재 watermark 만 기록, 주입 없음.
+    // 첫 프롬프트 — 현재 watermark 만 기록하고 과거 히스토리는 주입하지 않는다.
     const head = await fetchChanges(baseUrl, 0, 1);
     if (head) {
       writeCursor(cursorFile, sessionId, head.lastId);
     }
-    return;
+  } else {
+    const feed = await fetchChanges(baseUrl, cursor, 100);
+    if (feed) {
+      if (feed.lastId !== cursor) {
+        writeCursor(cursorFile, sessionId, feed.lastId);
+      }
+      changeContext = buildNotifyContext(filterHumanChanges(feed.entries));
+    }
   }
 
-  const feed = await fetchChanges(baseUrl, cursor, 100);
-  if (!feed) {
-    return;
-  }
-  if (feed.lastId !== cursor) {
-    writeCursor(cursorFile, sessionId, feed.lastId);
-  }
-  const context = buildNotifyContext(filterHumanChanges(feed.entries));
+  const context = mergeContext([changeContext, handoffContext]);
   if (!context) {
     return;
   }
