@@ -35,7 +35,9 @@ claude plugin install rocky-todo@rocky-marketplace     # 공유 보드 데몬 (�
 설치되면 플러그인이 두 가지를 배선한다:
 - **`mcpServers` (http)** — 데몬의 `/mcp` (streamable HTTP, 도구 5개)를 세션에 등록. 수동
   `claude mcp add` 불필요.
-- **hooks** — `SessionStart` 훅이 데몬을 기동하고, `UserPromptSubmit` 훅이 보드의 사람 변경을 주입.
+- **hooks** — `SessionStart` 훅이 데몬을 기동하고, `UserPromptSubmit` 훅이 보드의 사람 변경을
+  주입하며, `Stop` 훅이 그 세션 앞으로 온 핸드오프 요청을 자동 착수시킨다(아래 "보드→세션
+  핸드오프" 참고). 셋 다 플러그인 업데이트 후 **첫 세션부터** 적용된다.
 
 > **첫 세션 순서 주의**: SessionStart 훅의 데몬 기동과 http MCP 초기화 순서는 보장되지 않는다.
 > 첫 세션에서 MCP 가 `failed` 로 뜨면 `/mcp` 패널에서 retry 하거나 다음 세션이면 붙는다.
@@ -145,6 +147,30 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 - 에이전트 자신의 변경(claude-code/codex/opencode)은 걸러서 자기 반향 없음
 - 끄기: `rocky.json` `todo.watch: false` 또는 env `ROCKY_TODO_WATCH=0`
 
+## 보드 → 세션 핸드오프 (Stop 훅, Claude Code 전용)
+
+보드의 todo 를 실행 중인 Claude Code 세션에 넘길 수 있다 — 웹 UI 드로어의 "에이전트에게
+보내기" 버튼, 또는 `rocky-todo handoff REF [--session NAME] [--message "본문"]`. 데몬은
+세션에 아무것도 밀 수 없으므로(훅으로 유휴 세션을 깨울 수단이 없다) 요청은 큐에 쌓이고,
+대상 세션이 **턴을 끝내는 순간** `Stop` 훅이 집어 `decision: block` 으로 그 자리에서
+착수시킨다. `UserPromptSubmit` 훅도 같은 큐를 보므로 사용자가 그 세션에 먼저 말을 걸어도
+배달된다. 한 번에 한 건씩 순서대로 소화한다.
+
+운영자가 알아둘 것:
+- **`claude` CLI 가 PATH 에 있어야 동작한다** — 세션 목록(`rocky-todo sessions`, 웹 UI 드로어의
+  세션 선택창)이 `claude agents --json` 을 실행해서 얻기 때문이다. 없으면 이 기능(버튼 +
+  `sessions`/`handoff` CLI)만 비활성되고, 보드의 나머지 기능은 정상 동작한다.
+- **`Stop` 훅은 신규다** — 플러그인을 이 버전으로 업데이트하면 다음 세션이 아니라 **그 세션의
+  다음 Stop 이벤트부터** 곧바로 적용된다(훅 등록 자체는 SessionStart 때가 아니라 플러그인
+  설치 시점에 이미 반영되어 있다).
+- 대상 세션은 보드 key 와 세션 cwd 의 **경로 세그먼트** 매칭으로 고른다 — 후보가 정확히 1개면
+  자동으로 그 세션에 보내고, 여러 개면 웹 UI/CLI 에서 직접 골라야 한다.
+- 대기 중인 요청에 TTL 은 없다 — 대상 세션이 종료돼도 큐에는 남고 "세션 없음"(stale)으로만
+  표시된다. 취소하려면 웹 UI 의 취소 버튼 또는 `rocky-todo handoff REF --cancel`.
+- MCP 도구는 늘지 않았다 — 여전히 5개(`todo_list` / `todo_write` / `todo_status` /
+  `note_list` / `note_write`). 핸드오프는 사람이 세션에 넘기는 경로이지, 에이전트가 호출하는
+  도구가 아니다.
+
 ## 노출 범위 (`todo.expose` — 기본 이 머신만)
 
 보드에 **인증이 없으므로** 노출은 전부 opt-in 채널이다. user `rocky.json` 의
@@ -181,6 +207,8 @@ rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add · section ls · open
+rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
+rocky-todo sessions
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
