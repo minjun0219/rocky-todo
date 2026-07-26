@@ -147,6 +147,29 @@ export function createIssue(
   return { ok: true, url: urlMatch[0] };
 }
 
+/** repo 미설정 에러 문구 — 사전 검증(`assertBoardHasRepo`)과 오케스트레이터가 같은 말을 하도록. */
+function noRepoMessage(boardKey: string): string {
+  return `board has no GitHub repo: ${boardKey} — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)`;
+}
+
+/**
+ * 보드에 repo 가 설정돼 있는지 **todo 를 만들기 전에** 확인한다.
+ *
+ * `createIssueForTodo` 는 todo 가 이미 있어야 부를 수 있어, MCP `todo_write` 의 생성
+ * 경로(`id` 없이 `createIssue: true`)에서는 todo 를 저장한 뒤에야 이 전제 위반을 알게
+ * 된다 — 호출자는 에러만 받고 만들어진 todo 의 id 를 못 받으니, 같은 요청을 재시도하면
+ * 중복 todo 가 쌓인다. 외부 호출 전에 알 수 있는 조건은 write 전에 끊는다.
+ *
+ * @throws 보드가 없거나 repo 가 설정되지 않았으면 — 메시지는 `createIssueForTodo` 와 같다.
+ */
+export function assertBoardHasRepo(store: TodoStore, boardKey: string): void {
+  const boardId = store.boardIdOf(boardKey);
+  const board = boardId ? store.boardById(boardId) : undefined;
+  if (!board?.repo) {
+    throw new Error(noRepoMessage(boardKey));
+  }
+}
+
 /**
  * todo 하나를 GitHub 이슈로 만들고 그 URL 을 todo 의 `links` 에 덧붙인다.
  *
@@ -181,9 +204,7 @@ export function createIssueForTodo(
   }
   const repo = options.repo ?? board.repo;
   if (!repo) {
-    throw new Error(
-      `board has no GitHub repo: ${board.key} — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)`,
-    );
+    throw new Error(noRepoMessage(board.key));
   }
   const boardRef = `${board.key}#${todo.number}`;
   const result = createIssue(

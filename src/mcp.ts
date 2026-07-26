@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
-import { createIssueForTodo, findIssueLink, type RunCommand } from './github';
+import { assertBoardHasRepo, createIssueForTodo, findIssueLink, type RunCommand } from './github';
 import { refNeedsBoardContext, withRef } from './refs';
 import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './store';
 
@@ -205,6 +205,13 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       }
       if (!board || !title) {
         throw new Error('board and title are required to create a todo');
+      }
+      // 이슈 생성의 전제(보드 repo)는 createTodo 보다 먼저 검증한다 — 뒤에서 던지면
+      // 만들어진 todo 는 남는데 호출자는 그 id 를 못 받아, 재시도가 중복 todo 를 쌓는다.
+      // `gh` 실행 자체의 실패는 미리 알 수 없어 여전히 todo 를 남기지만, 그건 "todo 는
+      // 정당하게 만들어졌고 발행만 실패" 라 재시도 대상이 이슈 생성뿐이다.
+      if (wantIssue) {
+        assertBoardHasRepo(store, board);
       }
       let created = store.createTodo({ board, title, ...rest }, who);
       if (comment !== undefined) {

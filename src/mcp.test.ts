@@ -755,6 +755,20 @@ describe('createIssue through MCP', () => {
     expect(store.getTodo(created.id)?.links).toEqual([]);
   });
 
+  test('creating with createIssue on a repo-less board leaves no todo behind', async () => {
+    store.ensureBoard('norepo2', { actor: 'tester' });
+
+    const result = await client.callTool({
+      name: 'todo_write',
+      arguments: { board: 'norepo2', title: '작업', createIssue: true },
+    });
+
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    // 재시도가 중복을 쌓지 않으려면 실패한 호출이 todo 를 남기지 않아야 한다 — 호출자는
+    // 에러만 받고 만들어진 todo 의 id 를 못 받는다.
+    expect(store.listTodos({ board: 'norepo2' })).toHaveLength(0);
+  });
+
   test('the tool surface is still exactly five tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
