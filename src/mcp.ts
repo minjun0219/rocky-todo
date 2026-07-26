@@ -3,6 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { assertBoardHasRepo, createIssueForTodo, findIssueLink, type RunCommand } from './github';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './store';
 
@@ -19,6 +20,13 @@ export interface TodoMcpOptions {
   store: TodoStore;
   /** 외부 명령 실행자 — 테스트가 fake 를 넣는다. 생략하면 실제 `gh` 를 부른다. */
   run?: RunCommand;
+  /**
+   * 이 요청이 이슈 생성(= 사용자의 `gh` 인증으로 외부 발행)을 해도 되는 출처인지.
+   * `createMcpFetchHandler` 가 요청마다 `isLocalRequest` 로 판정해 넣는다 — MCP 도구
+   * 핸들러는 Request 를 볼 수 없어 boolean 으로 미리 접어 내려보낸다.
+   * 생략하면 거부다(fail-closed) — 근거 없이 외부 발행을 허용하지 않는다.
+   */
+  allowIssueCreate?: boolean;
 }
 
 function jsonResult(value: unknown) {
@@ -67,7 +75,7 @@ function resolveBoardId(
 
 /** 5개 도구가 등록된 McpServer 를 만든다 — transport 바인딩은 호출자 몫. */
 export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
-  const { store, run } = options;
+  const { store, run, allowIssueCreate = false } = options;
   const server = new McpServer({ name: 'rocky-todo', version: pkg.version });
 
   server.registerTool(
@@ -155,7 +163,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
           .boolean()
           .optional()
           .describe(
-            'true → also open a GitHub issue for this todo and attach its URL to links. Requires the board to have a repo set (rocky-todo board repo OWNER/NAME). This is an irreversible external publication, not a local board write: the issue is created immediately with no undo, the target repository may be public, and the todo title and description are published verbatim as the issue title/body. Ask the user for confirmation before setting this to true.',
+            "true → also open a GitHub issue for this todo and attach its URL to links. Requires the board to have a repo set (rocky-todo board repo OWNER/NAME), and only works when this MCP request reaches the daemon locally over loopback — it borrows the daemon user's gh credentials, so exposed surfaces are refused. This is an irreversible external publication, not a local board write: the issue is created immediately with no undo, the target repository may be public, and the todo title and description are published verbatim as the issue title/body. Ask the user for confirmation before setting this to true.",
           ),
         actor: actorSchema,
       },
@@ -170,6 +178,12 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       // 에러 문구가 갈리지 않게 한다.
       if (comment !== undefined && comment.trim() === '') {
         throw new Error('comment body is required');
+      }
+      // 출처 거부는 모든 write 앞이다 — 어차피 발행이 안 될 호출이 patch/create 만
+      // 적용해놓고 실패하면, 호출자는 "이슈는 안 만들어졌는데 todo 는 바뀐" 상태를
+      // 되짚어야 한다. 인가는 부수효과 전에 끊는다.
+      if (wantIssue && !allowIssueCreate) {
+        throw new Error(NON_LOCAL_ISSUE_MESSAGE);
       }
       if (id) {
         const currentBoardId = resolveBoardId(store, board, id);
@@ -348,12 +362,22 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
 /**
  * `/mcp` 용 fetch 핸들러 — stateless 모드로 요청마다 서버+transport 를 새로 만든다.
  * 로컬 단일 사용자 데몬이라 세션 관리가 불필요하고, 요청 간 상태는 전부 store 에 있다.
+ *
+ * 요청마다 서버를 새로 만드는 성질을 그대로 활용해, 그 요청의 출처 판정을
+ * `allowIssueCreate` 로 접어 도구에 내려보낸다 — REST 의 403 가드와 같은 판별
+ * (`isLocalRequest`)을 공유하므로 두 표면이 갈리지 않는다.
+ *
+ * @param peerAddress 요청 소켓의 주소 — `daemon.ts` 가 `server.requestIP(req)` 에서
+ *   넘긴다. 생략하면 이슈 생성은 거부된다(fail-closed).
  */
 export function createMcpFetchHandler(
   options: TodoMcpOptions,
-): (req: Request) => Promise<Response> {
-  return async (req: Request): Promise<Response> => {
-    const server = buildTodoMcpServer(options);
+): (req: Request, peerAddress?: string) => Promise<Response> {
+  return async (req: Request, peerAddress?: string): Promise<Response> => {
+    const server = buildTodoMcpServer({
+      ...options,
+      allowIssueCreate: isLocalRequest(req, peerAddress),
+    });
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

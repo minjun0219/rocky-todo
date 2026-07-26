@@ -292,6 +292,7 @@ function TodoDetail() {
 function IssueAction({ todo }: { todo: TodoView }) {
   const boards = useUiStore((s) => s.boards);
   const createIssue = useUiStore((s) => s.createIssue);
+  const issueCreateAllowed = useUiStore((s) => s.issueCreateAllowed);
   const [repo, setRepo] = useState('');
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -306,6 +307,19 @@ function IssueAction({ todo }: { todo: TodoView }) {
         <a className="drawer-btn" href={issueUrl} target="_blank" rel="noreferrer">
           이슈 열기 ↗
         </a>
+      </div>
+    );
+  }
+
+  // 이미 있는 이슈로 가는 링크는 어디서든 유효하지만(위), 만드는 건 로컬에서만 된다 —
+  // 서버가 403 을 줄 버튼을 그리는 대신 왜 못 하는지 한 줄로 밝힌다. 조용히 사라지면
+  // tailscale 로 접속한 사용자는 기능이 없어진 줄로 읽는다.
+  if (!issueCreateAllowed) {
+    return (
+      <div className="issue-action">
+        <p className="issue-unavailable">
+          GitHub 이슈 만들기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
+        </p>
       </div>
     );
   }

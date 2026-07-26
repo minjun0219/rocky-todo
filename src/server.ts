@@ -1,5 +1,6 @@
 import pkg from '../package.json' with { type: 'json' };
 import { createIssueForTodo, findIssueLink, isRepoSlug, type RunCommand } from './github';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import {
   DETAIL_HISTORY_EXCLUDED,
@@ -27,7 +28,12 @@ export interface TodoServerOptions {
 export type { NoteView, TodoView } from './refs';
 
 export interface TodoServer {
-  fetch: (req: Request) => Promise<Response>;
+  /**
+   * @param peerAddress 요청을 보낸 소켓의 주소 — `daemon.ts` 가 `server.requestIP(req)`
+   *   에서 넘긴다. 이슈 생성 라우트가 출처를 판별하는 데만 쓴다(`isLocalRequest`).
+   *   생략하면 루프백이 아닌 것으로 취급된다 — 근거 없음은 거부다(fail-closed).
+   */
+  fetch: (req: Request, peerAddress?: string) => Promise<Response>;
 }
 
 const STATUS_ACTIONS: ReadonlySet<string> = new Set([
@@ -134,18 +140,27 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
   // boardId 가 있는데 board 를 못 찾으면 refs.ts 의 refOf 가 던진다 — 아래 catch →
   // toHttpError 경유로 400 이 된다 (조용히 위조 글로벌 참조를 만들지 않기 위함).
 
-  const fetch = async (req: Request): Promise<Response> => {
+  const fetch = async (req: Request, peerAddress?: string): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method.toUpperCase();
     const actor = req.headers.get('x-rocky-actor') ?? 'unknown';
+    const local = isLocalRequest(req, peerAddress);
 
     try {
       // ── health ──
       if (method === 'GET' && path === '/api/health') {
         // version 은 "지금 돌고 있는 코드"의 버전이다 — 플러그인 캐시가 버전 디렉터리라
         // 데몬이 구버전 경로에서 계속 살아있을 수 있어, 호출자가 stale 을 판별할 근거가 된다.
-        return json({ ok: true, name: 'rocky-todo', version: pkg.version, pid: process.pid });
+        // issueCreateAllowed 는 이 요청과 같은 출처에서 이슈 생성이 가능한지다 — 웹 UI 가
+        // 없는 버튼을 그리지 않도록 미리 보는 힌트일 뿐, 강제는 이슈 라우트 자신이 한다.
+        return json({
+          ok: true,
+          name: 'rocky-todo',
+          version: pkg.version,
+          pid: process.pid,
+          issueCreateAllowed: local,
+        });
       }
 
       // ── SSE ──
@@ -295,6 +310,12 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
 
       const todoIssue = path.match(/^\/api\/todos\/([^/]+)\/issue$/);
       if (todoIssue?.[1] && method === 'POST') {
+        // 출처 검사가 가장 먼저다 — 인가 판정이므로 todo 존재 여부보다 앞서야 하고,
+        // 그래야 노출된 표면에 어떤 ref 가 있는지도 흘리지 않는다. 노출(`todo.expose`)은
+        // 보드에 대한 것이고, 데몬 사용자의 gh 인증까지 노출하는 것이 아니다.
+        if (!local) {
+          return errorResponse(NON_LOCAL_ISSUE_MESSAGE, 403);
+        }
         const ref = decodeURIComponent(todoIssue[1]);
         const currentBoardId = currentBoardIdOf(url, ref);
         const todo = store.getTodo(ref, currentBoardId);

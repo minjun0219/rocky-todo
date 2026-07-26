@@ -32,8 +32,19 @@ function idPrefix(id: string): string {
   return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
 }
 
-async function connect(options: { run?: RunCommand } = {}): Promise<Client> {
-  const server = buildTodoMcpServer({ store, run: options.run });
+/**
+ * @param options.allowIssueCreate 이슈 생성 허용 출처인지 — 데몬에서는
+ *   `createMcpFetchHandler` 가 요청마다 `isLocalRequest` 로 채운다. 이 헬퍼는 로컬
+ *   MCP 클라이언트(Claude Code 등)를 흉내내므로 기본을 true 로 둔다.
+ */
+async function connect(
+  options: { run?: RunCommand; allowIssueCreate?: boolean } = {},
+): Promise<Client> {
+  const server = buildTodoMcpServer({
+    store,
+    run: options.run,
+    allowIssueCreate: options.allowIssueCreate ?? true,
+  });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const c = new Client({ name: 'test-client', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), c.connect(clientTransport)]);
@@ -767,6 +778,64 @@ describe('createIssue through MCP', () => {
     // 재시도가 중복을 쌓지 않으려면 실패한 호출이 todo 를 남기지 않아야 한다 — 호출자는
     // 에러만 받고 만들어진 todo 의 id 를 못 받는다.
     expect(store.listTodos({ board: 'norepo2' })).toHaveLength(0);
+  });
+
+  // REST 의 403 가드와 같은 판별을 공유한다 — `/mcp` 도 같은 createIssueForTodo 를 부르므로
+  // 한쪽만 막으면 노출된 데몬에서 MCP 로 우회된다.
+  test('createIssue is refused when the request origin may not publish', async () => {
+    store.ensureBoard('gated', { actor: 'tester' });
+    store.setBoardRepo('gated', 'o/n', 'tester');
+    const created = resultJson(
+      await client.callTool({ name: 'todo_write', arguments: { board: 'gated', title: '작업' } }),
+    ) as { id: string };
+
+    let calls = 0;
+    const remote = await connect({
+      allowIssueCreate: false,
+      run: () => {
+        calls += 1;
+        return { code: 0, stdout: 'https://github.com/o/n/issues/1\n', stderr: '' };
+      },
+    });
+    const result = await remote.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, createIssue: true },
+    });
+
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    expect(calls).toBe(0);
+    expect(store.getTodo(created.id)?.links).toEqual([]);
+  });
+
+  test('a refused origin does not apply the rest of the patch either', async () => {
+    store.ensureBoard('gated2', { actor: 'tester' });
+    store.setBoardRepo('gated2', 'o/n', 'tester');
+    const created = resultJson(
+      await client.callTool({ name: 'todo_write', arguments: { board: 'gated2', title: '작업' } }),
+    ) as { id: string };
+
+    const remote = await connect({ allowIssueCreate: false });
+    await remote.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, title: '바뀐 제목', createIssue: true },
+    });
+
+    // 인가 거부는 부수효과 전에 끊는다 — "이슈는 없는데 제목만 바뀐" 상태를 남기지 않는다.
+    expect(store.getTodo(created.id)?.title).toBe('작업');
+  });
+
+  test('a refused origin creating a new todo leaves nothing behind', async () => {
+    store.ensureBoard('gated3', { actor: 'tester' });
+    store.setBoardRepo('gated3', 'o/n', 'tester');
+
+    const remote = await connect({ allowIssueCreate: false });
+    const result = await remote.callTool({
+      name: 'todo_write',
+      arguments: { board: 'gated3', title: '작업', createIssue: true },
+    });
+
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    expect(store.listTodos({ board: 'gated3' })).toHaveLength(0);
   });
 
   test('the tool surface is still exactly five tools', async () => {

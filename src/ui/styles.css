@@ -1013,3 +1013,11 @@ textarea {
   color: var(--p1);
   white-space: pre-wrap;
 }
+
+/* 실패가 아니라 "여기서는 불가"라는 안내 — 에러색을 쓰지 않는다. */
+.issue-unavailable {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}

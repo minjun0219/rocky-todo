@@ -7,17 +7,25 @@ import { TodoStore } from './store';
 
 let dir: string;
 let store: TodoStore;
-let handle: (req: Request) => Promise<Response>;
+let handle: (req: Request, peerAddress?: string) => Promise<Response>;
 
 const BASE = 'http://localhost';
 
-function req(path: string, init?: RequestInit & { actor?: string }): Promise<Response> {
+/**
+ * @param init.peer 요청 소켓 주소 — 데몬이 `server.requestIP(req)` 로 넘기는 값 자리다.
+ *   기본은 루프백: 이 파일의 테스트는 대부분 로컬 CLI/웹 UI 를 흉내내며, 이슈 생성
+ *   라우트만 이 값을 본다. 노출 경로를 재현하는 테스트가 LAN 주소를 넘긴다.
+ */
+function req(
+  path: string,
+  init?: RequestInit & { actor?: string; peer?: string },
+): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (init?.body !== undefined) {
     headers.set('content-type', 'application/json');
   }
   headers.set('x-rocky-actor', init?.actor ?? 'tester');
-  return handle(new Request(`${BASE}${path}`, { ...init, headers }));
+  return handle(new Request(`${BASE}${path}`, { ...init, headers }), init?.peer ?? '127.0.0.1');
 }
 
 /**
@@ -760,5 +768,96 @@ describe('github issue', () => {
       body: JSON.stringify({ repo: 'o/n' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// 이슈 생성은 데몬 사용자의 `gh` 인증을 빌린다 — `todo.expose` 가 노출하는 것은 보드이고
+// GitHub 계정 권한이 아니다. 노출된 표면에서 이 라우트를 부를 수 있으면 보드 쓰기 권한이
+// GitHub 쓰기 권한으로 확대된다.
+describe('POST /api/todos/:ref/issue — 출처 게이트', () => {
+  // 실제 `gh` 를 절대 부르지 않는다: 게이트가 열려 통과하는 경로도 fake run 을 쓴다.
+  const run = () => ({ code: 0, stdout: 'https://github.com/o/n/issues/5\n', stderr: '' });
+
+  async function todoWithRepo(): Promise<string> {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    await req('/api/boards/rocky', { method: 'PATCH', body: JSON.stringify({ repo: 'o/n' }) });
+    return ((await created.json()) as { id: string }).id;
+  }
+
+  test('a LAN peer gets 403 and no issue is attempted', async () => {
+    let calls = 0;
+    handle = buildTodoServer({
+      store,
+      run: () => {
+        calls += 1;
+        return run();
+      },
+    }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, {
+      method: 'POST',
+      body: JSON.stringify({ repo: 'o/n' }),
+      peer: '192.168.1.20',
+    });
+
+    expect(res.status).toBe(403);
+    expect(calls).toBe(0);
+    expect(store.getTodo(id)?.links).toEqual([]);
+  });
+
+  test('a tailscale-proxied request is 403 even though its peer is loopback', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '100.101.102.103' },
+      peer: '127.0.0.1',
+    });
+
+    expect(res.status).toBe(403);
+    expect(store.getTodo(id)?.links).toEqual([]);
+  });
+
+  test('403 comes before todo lookup — a nonexistent ref does not leak as 404', async () => {
+    const res = await req('/api/todos/nosuchid/issue', { method: 'POST', peer: '192.168.1.20' });
+    expect(res.status).toBe(403);
+  });
+
+  test('a loopback request still creates the issue', async () => {
+    handle = buildTodoServer({ store, run }).fetch;
+    const id = await todoWithRepo();
+
+    const res = await req(`/api/todos/${id}/issue`, { method: 'POST' });
+
+    expect(res.status).toBe(201);
+    expect(store.getTodo(id)?.links.map((l) => l.url)).toEqual(['https://github.com/o/n/issues/5']);
+  });
+
+  test('only issue creation is gated — reads and board writes still work from a LAN peer', async () => {
+    const id = await todoWithRepo();
+
+    expect((await req('/api/todos', { peer: '192.168.1.20' })).status).toBe(200);
+    expect((await req(`/api/todos/${id}`, { peer: '192.168.1.20' })).status).toBe(200);
+    const patched = await req(`/api/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: '고침' }),
+      peer: '192.168.1.20',
+    });
+    expect(patched.status).toBe(200);
+  });
+
+  test('GET /api/health reports whether this origin may create issues', async () => {
+    const local = (await (await req('/api/health')).json()) as { issueCreateAllowed: boolean };
+    expect(local.issueCreateAllowed).toBe(true);
+
+    const remote = (await (await req('/api/health', { peer: '192.168.1.20' })).json()) as {
+      issueCreateAllowed: boolean;
+    };
+    expect(remote.issueCreateAllowed).toBe(false);
   });
 });

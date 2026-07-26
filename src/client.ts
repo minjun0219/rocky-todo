@@ -31,6 +31,12 @@ export interface DaemonHealth {
   name?: string;
   version?: string;
   pid?: number;
+  /**
+   * 이 요청과 같은 출처에서 GitHub 이슈를 만들 수 있는지 — 웹 UI 가 누를 수 없는 버튼을
+   * 그리지 않기 위한 힌트다(강제는 이슈 라우트가 403 으로 한다). 이 필드가 없는 데몬에는
+   * 애초에 그 가드가 없다.
+   */
+  issueCreateAllowed?: boolean;
 }
 
 /**

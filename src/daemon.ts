@@ -19,7 +19,10 @@ import { ensureTailscaleServe } from './tailscale';
  *   /mcp         MCP streamable HTTP (Claude Code / opencode / Codex)
  *
  * 단일성 보장: 기동 시 같은 포트의 기존 인스턴스 health 를 확인하고 있으면 즉시
- * 종료한다 (포트 자체가 락). 127.0.0.1 바인딩 전용 — 인증 없음이 안전한 전제.
+ * 종료한다 (포트 자체가 락). 기본은 127.0.0.1 바인딩 — 인증 없음이 안전한 전제.
+ * 노출(`todo.expose`)의 대상은 보드까지다: 이슈 생성은 사용자의 `gh` 인증을 빌리므로
+ * 노출 여부와 무관하게 로컬 요청만 허용한다 — 그래서 두 핸들러에 peer 주소를 넘긴다
+ * (`src/local-request.ts`).
  * 설정은 env > user rocky.json 의 `todo` 블록 > 기본값 — project rocky.json 은
  * 보지 않는다 (어디서 기동돼도 같은 데몬이어야 하므로).
  */
@@ -66,14 +69,16 @@ export async function startDaemon(): Promise<void> {
     development: false,
     routes: {
       '/': ui,
-      '/mcp': (req) => mcp(req),
-      '/api/*': (req) => api.fetch(req),
+      // peer 주소를 넘기는 이유: 이슈 생성은 사용자의 `gh` 인증을 빌리므로 노출된 표면에서
+      // 실행되면 안 된다 (`src/local-request.ts`). 두 핸들러가 같은 판별을 공유한다.
+      '/mcp': (req, server) => mcp(req, server.requestIP(req)?.address),
+      '/api/*': (req, server) => api.fetch(req, server.requestIP(req)?.address),
       // 웹 UI 퍼머링크(`/rocky/12`)는 클라이언트 라우팅이라 서버에 그 경로가 없다.
       // 이 fallback 이 없으면 새로고침이 아래 `fetch`(REST) 로 떨어져 404 가 된다.
       // Bun 은 더 구체적인 패턴을 먼저 매칭하므로 `/api/*`·`/mcp` 는 영향받지 않는다.
       '/*': ui,
     },
-    fetch: (req) => api.fetch(req),
+    fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
   });
 
   const pidPath = join(runtime.dir, 'daemon.pid');
@@ -95,6 +100,7 @@ export async function startDaemon(): Promise<void> {
   );
   if (runtime.host !== '127.0.0.1') {
     console.log('주의: 루프백 외 바인딩 — 같은 네트워크의 기기가 인증 없이 보드에 접근할 수 있다');
+    console.log('      (GitHub 이슈 생성은 예외 — 로컬 요청만 허용된다)');
   }
 
   // 옵션: expose 에 tailscale 채널이 있을 때만 serve 보장 — 없으면 tailscale 을 일절 안 건드린다 (회사 환경 대비)

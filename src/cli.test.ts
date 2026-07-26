@@ -130,7 +130,11 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
     dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-ref-'));
     store = new TodoStore({ dbPath: join(dir, 'todo.db') });
     const api = buildTodoServer({ store });
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
     if (server.port === undefined) {
       throw new Error('Bun.serve did not assign a port');
     }
@@ -436,7 +440,11 @@ describe('comment command paths', () => {
     dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-comment-'));
     store = new TodoStore({ dbPath: join(dir, 'todo.db') });
     const api = buildTodoServer({ store });
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
     if (server.port === undefined) {
       throw new Error('Bun.serve did not assign a port');
     }
@@ -503,7 +511,11 @@ describe('issue command paths', () => {
     dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-issue-'));
     store = new TodoStore({ dbPath: join(dir, 'todo.db') });
     const api = buildTodoServer({ store });
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
     if (server.port === undefined) {
       throw new Error('Bun.serve did not assign a port');
     }

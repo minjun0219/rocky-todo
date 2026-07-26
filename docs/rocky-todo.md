@@ -157,6 +157,13 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - 이미 이슈 링크가 있는 todo 는 다시 만들지 않는다. **역방향 동기화는 없다** — 이슈를
   닫아도 todo 는 자동으로 완료되지 않고, 이슈 본문/제목이 사후에 바뀌어도 todo 에는
   반영되지 않는다.
+- **로컬(루프백) 요청만 이슈를 만들 수 있다.** `gh` 인증을 빌리기 때문이다 — 보드를 노출하는
+  것(`todo.expose`)과 GitHub 계정 권한을 노출하는 것은 다른 얘기라, 노출 설정과 무관하게
+  이 표면만 잠긴다. 노출된 주소로 접속한 브라우저는 버튼 대신 그 이유를 보고(이미 만들어진
+  이슈로 가는 링크는 그대로 열린다), REST 는 403, MCP `todo_write` 는 도구 에러가 된다.
+  `tailscale serve` 를 거친 접속도 마찬가지다 — 프록시가 루프백으로 중계하지만 중계 흔적
+  (`X-Forwarded-*` / `Tailscale-User-*`)으로 구분한다. 폰에서 보드를 보다 이슈를 만들려면
+  그 머신에서 CLI(`rocky-todo issue REF`)를 쓰거나 에이전트에게 시킨다.
 
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
@@ -191,6 +198,8 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
+- 노출되는 것은 **보드**다. GitHub 이슈 생성은 어느 채널로도 열리지 않는다 — 로컬 요청
+  전용이다 ([GitHub 이슈로 만들기](#github-이슈로-만들기) 참고).
 - 데몬 설정 변경 후에는 재시작해야 반영된다: `rocky-todo daemon stop && rocky-todo daemon start`.
 - 플러그인 업데이트는 다음 세션 시작 때 자동 반영된다 — SessionStart 훅이 실행 중인 데몬의
   버전을 확인해 구버전이면 내리고 새 버전으로 재기동한다 (보드 데이터는 `~/.config/rocky/todo`

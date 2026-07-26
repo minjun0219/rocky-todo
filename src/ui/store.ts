@@ -46,6 +46,14 @@ interface UiState {
   detail: DetailState | null;
   /** todo id → 마지막으로 확인한 댓글 시각. localStorage 의 화면용 사본. */
   seenComments: Record<string, string>;
+  /**
+   * 이 화면의 출처에서 GitHub 이슈를 만들 수 있는지 — `/api/health` 가 알려준다.
+   * 노출된 데몬(LAN/tailscale)을 거쳐 열린 화면에서는 false 다. 어디까지나 **힌트**로,
+   * 실제 거부는 서버의 이슈 라우트가 403 으로 한다 — 여기서는 누를 수 없는 버튼을 그리지
+   * 않으려고 본다. 아직 안 물어봤거나 health 조회가 실패하면 true 로 두어(낙관) 기존
+   * 로컬 사용 흐름이 조용히 사라지지 않게 한다.
+   */
+  issueCreateAllowed: boolean;
 
   setSelected: (selection: BoardSelection) => void;
   setShowArchived: (show: boolean) => void;
@@ -93,6 +101,12 @@ interface UiState {
    *   있거나(409), gh 가 실패한 경우다. 호출자가 사용자에게 보여줘야 한다.
    */
   createIssue: (todoId: string, repo?: string) => Promise<void>;
+  /**
+   * `/api/health` 로 이 출처의 능력을 한 번 확인한다 — 부팅 때만 부른다(출처는 화면
+   * 수명 동안 바뀌지 않는다). 실패는 삼킨다: 힌트를 못 얻어도 화면은 그대로 동작해야 하고,
+   * 강제는 서버가 한다.
+   */
+  loadCapabilities: () => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -153,6 +167,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   connected: false,
   detail: null,
   seenComments: readSeen(localStorage),
+  issueCreateAllowed: true,
 
   setSelected: (selected) => {
     // 같은 보드를 다시 고른 클릭도 refetch 는 그대로 수행한다(새로고침 용도로 쓰인다) —
@@ -406,5 +421,15 @@ export const useUiStore = create<UiState>((set, get) => ({
       ...(repo !== undefined ? { body: JSON.stringify({ repo }) } : {}),
     });
     await get().refetch();
+  },
+
+  loadCapabilities: async () => {
+    try {
+      const health = await api<{ issueCreateAllowed?: boolean }>('/api/health', get().actor);
+      // 필드가 없는 구버전 데몬이면 낙관적으로 둔다 — 그 데몬에는 애초에 이 가드가 없다.
+      set({ issueCreateAllowed: health.issueCreateAllowed ?? true });
+    } catch {
+      // 힌트를 못 얻는 것으로 화면이 망가지면 안 된다. 강제는 서버 몫이다.
+    }
   },
 }));
