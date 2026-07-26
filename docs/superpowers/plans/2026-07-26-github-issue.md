@@ -1294,7 +1294,10 @@ import { isRepoSlug, parseRepoFromRemote } from './github';
         // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 재시도한다. 미리 보드를 조회하지
         // 않는 이유: 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
         const message = error instanceof Error ? error.message : String(error);
-        const inferred = /repo/.test(message)
+        // 판별은 반드시 서버의 **특정 메시지**로 한다(`isMissingRepoError`). 맨 `/repo/`
+        // 부분 문자열은 이슈 URL 에 `repo` 가 든 409 나 `gh` 의 `repo` 스코프 인증 실패까지
+        // 걸려, 보드 repo 를 조용히 덮어쓰고 진짜 원인을 가린다.
+        const inferred = isMissingRepoError(message)
           ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
           : undefined;
         if (!inferred) {
