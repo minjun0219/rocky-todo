@@ -121,14 +121,13 @@ function TodoDetail() {
 
   const pending = handoffs.find((h) => h.todoId === todo.id && h.status === 'pending');
 
+  // `fetchSessions` 는 실패를 던지지 않고 `sessions.available:false + reason` 으로
+  // 흡수한다 — 조회 실패는 그 상태 하나로만 표현한다. 여기서 또 잡아 `handoffError` 에
+  // 넣으면 같은 실패를 말하는 자리가 둘이 된다.
   const openHandoff = async () => {
     setHandoffOpen(true);
     setHandoffError(null);
-    try {
-      await fetchSessions();
-    } catch (error) {
-      setHandoffError(error instanceof Error ? error.message : String(error));
-    }
+    await fetchSessions();
   };
 
   const submitHandoff = async () => {

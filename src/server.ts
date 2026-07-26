@@ -401,6 +401,11 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           return errorResponse(result.reason ?? '활성 세션 목록을 가져올 수 없다', 409);
         }
 
+        // sessionId 를 보냈으면 문자열이어야 한다. 타입만 틀렸을 때 조용히 자동 매칭으로
+        // 떨어뜨리면, 특정 세션을 지정했다고 믿는 호출자의 요청이 **다른 세션**으로 간다.
+        if (body.sessionId !== undefined && typeof body.sessionId !== 'string') {
+          return errorResponse('sessionId must be a string', 400);
+        }
         let target = result.sessions.find((s) => s.sessionId === body.sessionId);
         if (typeof body.sessionId === 'string' && !target) {
           return errorResponse(`활성 세션이 아니다: ${body.sessionId}`, 400);

@@ -1035,6 +1035,22 @@ describe('handoff routes', () => {
     expect(res.status).toBe(404);
   });
 
+  // 타입만 틀렸을 때 자동 매칭으로 떨어지면, 특정 세션을 지정했다고 믿는 호출자의
+  // 요청이 다른 세션으로 간다.
+  test('sessionId 가 문자열이 아니면 400 — 자동 매칭으로 떨어지지 않는다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: 42 }),
+      },
+    );
+    expect(res.status).toBe(400);
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
+  });
+
   test('목록에 없는 sessionId 는 400', async () => {
     const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
     const res = await reqTo(
