@@ -408,6 +408,8 @@ function CommentCard({ comment }: { comment: Comment }) {
   const unarchiveComment = useUiStore((s) => s.unarchiveComment);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!editing) {
@@ -418,6 +420,41 @@ function CommentCard({ comment }: { comment: Comment }) {
   const edited = comment.updatedAt !== comment.createdAt;
   const archived = comment.archivedAt !== undefined;
 
+  /**
+   * 요청이 성공했을 때만 화면 상태를 넘긴다 — `CommentComposer` 와 같은 방침. 실패를
+   * `void` 로 버리면 unhandled rejection 이 콘솔에만 남고, 편집 초안은 닫힌 채 사라지며
+   * 화면은 성공한 것처럼 보인다(실제 저장 상태와 어긋난다).
+   */
+  const run = async (op: () => Promise<void>, onDone?: () => void) => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await op();
+      setError(null);
+      onDone?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () => {
+    const next = draft.trim();
+    // 빈 본문·무변경은 요청 없이 닫는다 — 서버가 빈 본문을 거절하므로 보내봐야 에러다.
+    if (next === '' || next === comment.body) {
+      setEditing(false);
+      setError(null);
+      return;
+    }
+    void run(
+      () => editComment(comment.id, next),
+      () => setEditing(false),
+    );
+  };
+
   return (
     <div className={`comment-card${archived ? ' is-archived' : ''}`}>
       <div className="comment-head">
@@ -427,14 +464,22 @@ function CommentCard({ comment }: { comment: Comment }) {
         {edited && <span className="comment-edited">(수정됨)</span>}
         {archived && <span className="comment-edited">(보관됨)</span>}
         <span className="comment-tools">
-          <button type="button" className="comment-tool" onClick={() => setEditing(!editing)}>
+          <button
+            type="button"
+            className="comment-tool"
+            onClick={() => {
+              setEditing(!editing);
+              setError(null);
+            }}
+          >
             {editing ? '취소' : '편집'}
           </button>
           <button
             type="button"
             className="comment-tool"
+            disabled={busy}
             onClick={() =>
-              void (archived ? unarchiveComment(comment.id) : archiveComment(comment.id))
+              void run(() => (archived ? unarchiveComment(comment.id) : archiveComment(comment.id)))
             }
           >
             {archived ? '보관 해제' : '보관'}
@@ -450,24 +495,19 @@ function CommentCard({ comment }: { comment: Comment }) {
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className="drawer-actions">
-            <button
-              type="button"
-              className="drawer-btn"
-              onClick={() => {
-                const next = draft.trim();
-                setEditing(false);
-                if (next !== '' && next !== comment.body) {
-                  void editComment(comment.id, next);
-                }
-              }}
-            >
-              저장
+            <button type="button" className="drawer-btn" disabled={busy} onClick={save}>
+              {busy ? '저장 중…' : '저장'}
             </button>
           </div>
         </div>
       ) : (
         <div className="comment-body">
           <Markdown text={comment.body} />
+        </div>
+      )}
+      {error && (
+        <div className="comment-error" role="alert">
+          {error}
         </div>
       )}
     </div>
