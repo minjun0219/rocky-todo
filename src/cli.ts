@@ -625,11 +625,10 @@ export async function runCli(): Promise<void> {
         );
       }
       if (flags.cancel === true) {
-        const pending = await request<Handoff[]>(
-          ctx,
-          'GET',
-          `/api/handoffs?board=${encodeURIComponent(board)}&status=pending`,
-        );
+        // board 로 거르지 않는다 — 아래에서 REF 가 해석된 **실제 todo id** 로 찾으므로
+        // 필터가 필요 없고, 오히려 해롭다: `board` 는 cwd 로 유추한 값인데 REF 는
+        // 다른 보드를 가리킬 수 있어(`other#12`), 거르면 실재하는 요청을 못 찾는다.
+        const pending = await request<Handoff[]>(ctx, 'GET', '/api/handoffs?status=pending');
         const detail = await request<{ todo: TodoView }>(ctx, 'GET', todoRefPath(id, '', board));
         const target = pending.find((h) => h.todoId === detail.todo.id);
         if (!target) {
