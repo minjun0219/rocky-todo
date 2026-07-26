@@ -118,6 +118,37 @@ export function formatTodoLine(todo: TodoView, depth: number): string {
   return `${'  '.repeat(depth)}${parts.join(' ')}`;
 }
 
+/** `show` 의 텍스트 출력 — 상세 + 링크 + 댓글 타임라인 + 히스토리. 순수 함수라 단위 테스트된다. */
+export function formatTodoShow(detail: {
+  todo: TodoView;
+  history: HistoryEntry[];
+  comments: Comment[];
+}): string {
+  const t = detail.todo;
+  const lines = [t.ref, formatTodoLine(t, 0)];
+  if (t.description !== '') {
+    lines.push('', t.description);
+  }
+  if (t.links.length > 0) {
+    lines.push('', ...t.links.map((l) => `↗ ${l.url}`));
+  }
+  lines.push('', `id: ${t.id}`);
+  if (detail.comments.length > 0) {
+    lines.push('', '댓글:');
+    for (const c of detail.comments) {
+      const stamp = c.createdAt.slice(0, 16).replace('T', ' ');
+      lines.push(`  ${stamp} ${c.actor}: ${c.body.replace(/\s+/g, ' ')}`);
+    }
+  }
+  lines.push('', '히스토리:');
+  // 댓글은 위 섹션이 본문까지 보여준다 — 히스토리에서 같은 사건을 한 줄 더 찍지 않는다.
+  const rows = detail.history.filter((h) => !h.action.startsWith('comment'));
+  for (const h of rows.slice(0, 8)) {
+    lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
+  }
+  return lines.join('\n');
+}
+
 function renderTree(
   todos: TodoView[],
   out: string[],
@@ -422,31 +453,7 @@ export async function runCli(): Promise<void> {
         history: HistoryEntry[];
         comments: Comment[];
       }>(ctx, 'GET', todoRefPath(id, '', board));
-      print(detail, () => {
-        const t = detail.todo;
-        const lines = [t.ref, formatTodoLine(t, 0)];
-        if (t.description !== '') {
-          lines.push('', t.description);
-        }
-        if (t.links.length > 0) {
-          lines.push('', ...t.links.map((l) => `↗ ${l.url}`));
-        }
-        lines.push('', `id: ${t.id}`);
-        if (detail.comments.length > 0) {
-          lines.push('', '댓글:');
-          for (const c of detail.comments) {
-            const stamp = c.createdAt.slice(0, 16).replace('T', ' ');
-            lines.push(`  ${stamp} ${c.actor}: ${c.body.replace(/\s+/g, ' ')}`);
-          }
-        }
-        lines.push('', '히스토리:');
-        // 댓글은 위 섹션이 본문까지 보여준다 — 히스토리에서 같은 사건을 한 줄 더 찍지 않는다.
-        const rows = detail.history.filter((h) => !h.action.startsWith('comment'));
-        for (const h of rows.slice(0, 8)) {
-          lines.push(`  ${h.at.slice(0, 16)} ${h.actor} ${h.action}`);
-        }
-        return lines.join('\n');
-      });
+      print(detail, () => formatTodoShow(detail));
       return;
     }
 

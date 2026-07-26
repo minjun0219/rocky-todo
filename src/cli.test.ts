@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   formatTodoLine,
+  formatTodoShow,
   noteRefPath,
   parseFlags,
   resolveHistoryEntity,
@@ -13,6 +14,7 @@ import {
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
+import type { Comment, HistoryEntry } from './store';
 import { TodoStore } from './store';
 
 describe('parseFlags', () => {
@@ -295,6 +297,106 @@ describe('formatTodoLine', () => {
     expect(line).toContain('~2026-08-01');
     expect(line).toContain('↗r#3');
     expect(line.startsWith('    ')).toBe(true);
+  });
+});
+
+describe('formatTodoShow', () => {
+  const todo: TodoView = {
+    id: 'a1b2c3d4',
+    number: 1,
+    ref: 'rocky#1',
+    boardId: 'b',
+    title: '작업 제목',
+    description: '',
+    status: 'todo',
+    priority: 'p4',
+    labels: [],
+    links: [],
+    position: 1,
+    createdAt: '2026-07-23T00:00:00.000Z',
+    updatedAt: '2026-07-23T00:00:00.000Z',
+    commentCount: 0,
+  };
+
+  function comment(overrides: Partial<Comment> = {}): Comment {
+    return {
+      id: 'c1',
+      todoId: todo.id,
+      actor: 'claude-code',
+      body: '본문',
+      createdAt: '2026-07-24T09:05:12.000Z',
+      updatedAt: '2026-07-24T09:05:12.000Z',
+      ...overrides,
+    };
+  }
+
+  function history(overrides: Partial<HistoryEntry> = {}, id = 1): HistoryEntry {
+    return {
+      id,
+      entity: 'todo',
+      entityId: todo.id,
+      actor: 'claude-code',
+      action: 'create',
+      at: '2026-07-23T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  test('댓글이 없으면 댓글: 섹션이 아예 나오지 않는다', () => {
+    const out = formatTodoShow({ todo, history: [], comments: [] });
+    expect(out).not.toContain('댓글:');
+  });
+
+  test('댓글이 있으면 각 줄에 작성시각 actor: 본문 이 나온다 (T 가 공백으로 바뀐다)', () => {
+    const out = formatTodoShow({
+      todo,
+      history: [],
+      comments: [comment({ createdAt: '2026-07-24T09:05:12.000Z', actor: 'minjun', body: '메모' })],
+    });
+    expect(out).toContain('댓글:');
+    expect(out).toContain('2026-07-24 09:05 minjun: 메모');
+    expect(out).not.toContain('2026-07-24T09:05');
+  });
+
+  test('여러 줄 본문이 한 줄로 접힌다', () => {
+    const out = formatTodoShow({
+      todo,
+      history: [],
+      comments: [comment({ body: '첫째 줄\n둘째 줄\n\n넷째 줄' })],
+    });
+    expect(out).not.toContain('\n둘째');
+    expect(out).toContain('첫째 줄 둘째 줄 넷째 줄');
+  });
+
+  test('comment 계열 히스토리 액션이 히스토리 섹션에서 걸러진다', () => {
+    const rows: HistoryEntry[] = [
+      history({ action: 'create' }, 1),
+      history({ action: 'comment' }, 2),
+      history({ action: 'comment-edit' }, 3),
+      history({ action: 'comment-archive' }, 4),
+      history({ action: 'comment-unarchive' }, 5),
+      history({ action: 'done' }, 6),
+    ];
+    const out = formatTodoShow({ todo, history: rows, comments: [] });
+    expect(out).toContain('create');
+    expect(out).toContain('done');
+    expect(out).not.toContain('comment');
+    expect(out).not.toContain('comment-edit');
+    expect(out).not.toContain('comment-archive');
+    expect(out).not.toContain('comment-unarchive');
+  });
+
+  test('히스토리가 8줄로 잘린다', () => {
+    const rows: HistoryEntry[] = Array.from({ length: 12 }, (_, i) =>
+      history({ action: `action-${i}` }, i + 1),
+    );
+    const out = formatTodoShow({ todo, history: rows, comments: [] });
+    for (let i = 0; i < 8; i++) {
+      expect(out).toContain(`action-${i}`);
+    }
+    for (let i = 8; i < 12; i++) {
+      expect(out).not.toContain(`action-${i}`);
+    }
   });
 });
 
