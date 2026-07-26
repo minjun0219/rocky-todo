@@ -1,3 +1,5 @@
+import type { Todo, TodoStore } from './store';
+
 /**
  * GitHub 연동 — todo 를 이슈로 올리는 경로의 단일 소유자.
  *
@@ -143,4 +145,52 @@ export function createIssue(
     return { ok: false, message: `gh 가 이슈 URL 을 돌려주지 않았다: ${output || '(빈 출력)'}` };
   }
   return { ok: true, url: urlMatch[0] };
+}
+
+/**
+ * todo 하나를 GitHub 이슈로 만들고 그 URL 을 todo 의 `links` 에 덧붙인다.
+ *
+ * 링크 저장은 기존 `updateTodo` 를 거친다 — 새 저장 경로를 만들지 않으므로 히스토리·SSE·
+ * `/api/changes` 훅 주입에 자동으로 실린다.
+ *
+ * @throws todo/보드를 못 찾거나, 보드에 repo 가 없거나, 이미 이슈 링크가 있거나,
+ *   `gh` 가 실패하면. 메시지는 그대로 사용자에게 보여줄 수 있게 쓴다.
+ */
+export function createIssueForTodo(
+  store: TodoStore,
+  ref: string,
+  options: { actor: string; currentBoardId?: string; run?: RunCommand },
+): { url: string; todo: Todo } {
+  const todo = store.getTodo(ref, options.currentBoardId);
+  if (!todo) {
+    throw new Error(`todo not found: ${ref}`);
+  }
+  const existing = findIssueLink(todo.links);
+  if (existing) {
+    throw new Error(`todo already has a GitHub issue: ${existing}`);
+  }
+  const board = store.boardById(todo.boardId);
+  if (!board) {
+    throw new Error(`board not found for todo: ${ref}`);
+  }
+  if (!board.repo) {
+    throw new Error(
+      `board has no GitHub repo: ${board.key} — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)`,
+    );
+  }
+  const boardRef = `${board.key}#${todo.number}`;
+  const result = createIssue(
+    { repo: board.repo, title: todo.title, body: issueBody(todo.description, boardRef) },
+    options.run,
+  );
+  if (!result.ok) {
+    throw new Error(result.message);
+  }
+  const number = issueNumberFrom(result.url);
+  const updated = store.updateTodo(
+    todo.id,
+    { links: [...todo.links, { url: result.url, title: number ? `#${number}` : 'issue' }] },
+    options.actor,
+  );
+  return { url: result.url, todo: updated };
 }

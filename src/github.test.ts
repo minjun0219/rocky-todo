@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   createIssue,
+  createIssueForTodo,
   findIssueLink,
   isRepoSlug,
   issueBody,
@@ -8,6 +12,7 @@ import {
   parseRepoFromRemote,
   type RunCommand,
 } from './github';
+import { TodoStore } from './store';
 
 /** gh 를 부르지 않고 그 자리에 끼우는 fake — 호출 인자도 기록한다. */
 function fakeRun(result: {
@@ -209,5 +214,74 @@ describe('createIssue', () => {
     });
     const result = createIssue({ repo: 'o/n', title: 't', body: 'b' }, run);
     expect(result).toEqual({ ok: true, url: 'https://github.com/o/n/issues/9' });
+  });
+});
+
+describe('createIssueForTodo', () => {
+  let dir: string;
+  let store: TodoStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-gh-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('creates the issue and appends the link to the todo', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const todo = store.createTodo({ board: 'rocky', title: '작업', description: '설명' }, 'tester');
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/o/n/issues/7\n', stderr: '' });
+
+    const result = createIssueForTodo(store, todo.id, { actor: 'tester', run });
+
+    expect(result.url).toBe('https://github.com/o/n/issues/7');
+    expect(result.todo.links).toEqual([{ url: 'https://github.com/o/n/issues/7', title: '#7' }]);
+    expect(store.getTodo(todo.id)?.links).toHaveLength(1);
+    // 본문에 설명과 백링크가 함께 들어간다
+    expect(run.calls[0]?.stdin).toContain('설명');
+    expect(run.calls[0]?.stdin).toContain(`rocky#${todo.number}`);
+  });
+
+  test('refuses when the board has no repo', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/o/n/issues/7', stderr: '' });
+
+    expect(() => createIssueForTodo(store, todo.id, { actor: 'tester', run })).toThrow(/repo/);
+    expect(run.calls).toHaveLength(0);
+  });
+
+  test('refuses when the todo already has an issue link', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const todo = store.createTodo(
+      { board: 'rocky', title: '작업', links: [{ url: 'https://github.com/o/n/issues/3' }] },
+      'tester',
+    );
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/o/n/issues/7', stderr: '' });
+
+    expect(() => createIssueForTodo(store, todo.id, { actor: 'tester', run })).toThrow(/already/);
+    expect(run.calls).toHaveLength(0);
+  });
+
+  test('a gh failure leaves the todo untouched', () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 1, stdout: '', stderr: 'could not resolve to a Repository' });
+
+    expect(() => createIssueForTodo(store, todo.id, { actor: 'tester', run })).toThrow(
+      /could not resolve/,
+    );
+    expect(store.getTodo(todo.id)?.links).toEqual([]);
+  });
+
+  test('an unknown todo throws not found', () => {
+    expect(() => createIssueForTodo(store, 'nosuchid', { actor: 'tester' })).toThrow(/not found/);
   });
 });

@@ -627,3 +627,60 @@ describe('comments', () => {
     expect(missing.status).toBe(404);
   });
 });
+
+describe('github issue', () => {
+  test('PATCH /api/boards/:key sets the repo', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'rocky' }) });
+    const res = await req('/api/boards/rocky', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { repo: string }).repo).toBe('o/n');
+  });
+
+  test('PATCH rejects a malformed slug and an unknown board', async () => {
+    await req('/api/boards', { method: 'POST', body: JSON.stringify({ key: 'rocky' }) });
+    const bad = await req('/api/boards/rocky', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'not-a-slug' }),
+    });
+    expect(bad.status).toBe(400);
+
+    const missing = await req('/api/boards/nosuch', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'o/n' }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  test('POST /api/todos/:ref/issue is 400 without a repo and 404 for an unknown todo', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({ board: 'rocky', title: '작업' }),
+    });
+    const todo = (await created.json()) as { id: string };
+
+    const noRepo = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(noRepo.status).toBe(400);
+
+    const missing = await req('/api/todos/nosuchid/issue', { method: 'POST' });
+    expect(missing.status).toBe(404);
+  });
+
+  test('POST /api/todos/:ref/issue is 409 when an issue link already exists', async () => {
+    const created = await req('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify({
+        board: 'rocky',
+        title: '작업',
+        links: [{ url: 'https://github.com/o/n/issues/3' }],
+      }),
+    });
+    const todo = (await created.json()) as { id: string };
+    await req('/api/boards/rocky', { method: 'PATCH', body: JSON.stringify({ repo: 'o/n' }) });
+
+    const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+});

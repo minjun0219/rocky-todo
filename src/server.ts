@@ -1,4 +1,5 @@
 import pkg from '../package.json' with { type: 'json' };
+import { createIssueForTodo, findIssueLink, isRepoSlug, type RunCommand } from './github';
 import { refNeedsBoardContext, withRef } from './refs';
 import {
   DETAIL_HISTORY_EXCLUDED,
@@ -17,6 +18,8 @@ import {
 
 export interface TodoServerOptions {
   store: TodoStore;
+  /** 외부 명령 실행자 — 테스트가 fake 를 넣는다. 생략하면 실제 `gh` 를 부른다. */
+  run?: RunCommand;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -69,7 +72,7 @@ function toHttpError(error: unknown): Response {
 }
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
-  const { store } = options;
+  const { store, run } = options;
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -141,6 +144,17 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             actor,
           }),
           201,
+        );
+      }
+
+      const boardDetail = path.match(/^\/api\/boards\/([^/]+)$/);
+      if (boardDetail?.[1] && method === 'PATCH') {
+        const body = await readBody(req);
+        if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
+          return errorResponse('repo must look like OWNER/NAME', 400);
+        }
+        return json(
+          store.setBoardRepo(decodeURIComponent(boardDetail[1]), body.repo.trim(), actor),
         );
       }
 
@@ -253,6 +267,27 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         return json(
           withRef(store, store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
         );
+      }
+
+      const todoIssue = path.match(/^\/api\/todos\/([^/]+)\/issue$/);
+      if (todoIssue?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoIssue[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        // 중복은 409 로 구분한다 — 400(설정/실행 실패)과 원인이 전혀 다르고, 웹 UI 가
+        // "이미 있음"을 별도로 다뤄야 한다. 판별은 `findIssueLink` 하나를 공유한다.
+        const existing = findIssueLink(todo.links);
+        if (existing) {
+          return json(
+            { error: `todo already has a GitHub issue: ${existing}`, url: existing },
+            409,
+          );
+        }
+        const result = createIssueForTodo(store, ref, { actor, currentBoardId, run });
+        return json({ url: result.url, todo: withRef(store, result.todo) }, 201);
       }
 
       // ── comments ──
