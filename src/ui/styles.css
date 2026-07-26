@@ -964,3 +964,17 @@ textarea {
   font-size: 13px;
   line-height: 1.5;
 }
+
+.comment-badge {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.comment-badge.is-unread {
+  color: inherit;
+  font-weight: 600;
+}
