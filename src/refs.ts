@@ -1,4 +1,6 @@
-import { ID_LENGTH } from './store';
+import { ID_LENGTH } from './ids';
+// store 는 **타입만** 가져온다 — 런타임 import 를 만들면 store 가 이 모듈의 `refOf` 를
+// 쓰므로 순환이 된다. `import type` 은 컴파일 시 지워져 순환을 만들지 않는다.
 import type { Note, Todo, TodoStore } from './store';
 
 /**

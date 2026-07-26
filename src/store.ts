@@ -1,9 +1,14 @@
 import { Database } from 'bun:sqlite';
-import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { ID_LENGTH, newId } from './ids';
 import { runMigrations } from './migrations';
 import { refOf } from './refs';
+
+// id 생성과 그 길이는 `./ids` 가 소유한다 — `refs.ts` 도 `ID_LENGTH` 가 필요해서, 여기
+// 두면 store ↔ refs 런타임 순환이 된다. 기존 import 경로(`from './store'`)를 쓰던
+// 호출자를 위해 그대로 재수출한다.
+export { ID_LENGTH };
 
 /**
  * rocky-todo 의 저장 계층 — SQLite (bun:sqlite) 단일 파일.
@@ -236,21 +241,6 @@ export const DETAIL_HISTORY_EXCLUDED = ['comment', 'comment-edit'] as const;
 
 export interface TodoStoreOptions {
   dbPath: string;
-}
-
-const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
-
-/** 랜덤 id 길이 — 참조 해석이 "번호냐 id 냐"를 가르는 기준이라 상수로 묶어 둔다. */
-export const ID_LENGTH = 8;
-
-/** 8자 base36 랜덤 id — 짧아서 CLI/대화에서 다루기 좋고 prefix 매칭을 허용한다. */
-function newId(): string {
-  const bytes = randomBytes(ID_LENGTH);
-  let id = '';
-  for (const b of bytes) {
-    id += ID_ALPHABET[b % 36];
-  }
-  return id;
 }
 
 function nowIso(): string {
