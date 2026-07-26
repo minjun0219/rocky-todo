@@ -766,7 +766,20 @@ textarea {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  /* 터치 타깃 44×44 — 백로그 mxndnikm 1번과 같은 방침 */
+  /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
+     rocky-todo#1 에서 마무리했다(그 전에는 건드리는 컨트롤마다 그때그때 더해 왔다). */
+  .todo-check-hit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
+    margin: -8px 0 -8px -8px;
+  }
+  .todo-row {
+    min-height: 44px;
+  }
   .todo-ref {
     min-height: 44px;
     min-width: 44px;
@@ -776,6 +789,35 @@ textarea {
     align-items: center;
     min-height: 44px;
     min-width: 44px;
+  }
+  .note-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .drawer-close {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .comment-tool {
+    min-height: 44px;
+    padding: 0 8px;
+  }
+  .comment-badge {
+    min-height: 44px;
+  }
+  .archived-toggle {
+    min-height: 44px;
+  }
+  /* `.drawer-btn` 은 버튼뿐 아니라 `<a>`("이슈 열기 ↗")에도 쓰인다. `<a>` 는 인라인이라
+     min-height 가 먹지 않으므로 display 를 함께 준다. */
+  .drawer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+  .board-add-open {
+    min-height: 44px;
   }
   .notes-rail {
     border-left: none;
@@ -877,13 +919,6 @@ textarea {
   font-size: 12px;
   line-height: 1.4;
   padding: 4px 2px 0;
-}
-
-@media (max-width: 900px) {
-  /* 터치 타깃 — 백로그 rocky-todo#1 과 같은 방침 */
-  .board-add-open {
-    min-height: 44px;
-  }
 }
 
 .drawer-section-pick {
