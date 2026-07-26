@@ -516,6 +516,12 @@ textarea {
 
 /* ── drawer ─────────────────────────────────────── */
 
+/* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. 모바일에서 `.layout` 이
+   `overflow-y: auto` 라 드로어 위에서 스크롤하면 배경이 함께 움직인다. */
+body.is-drawer-open {
+  overflow: hidden;
+}
+
 .drawer-backdrop {
   position: fixed;
   inset: 0;
