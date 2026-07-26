@@ -524,6 +524,74 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
   });
 });
 
+describe('comments through MCP', () => {
+  test('todo_write with only a comment does not create an update history row', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    await client.callTool({
+      name: 'todo_write',
+      arguments: { id: created.id, comment: '진행 중입니다', actor: 'claude-code' },
+    });
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { comments: { body: string; actor: string }[]; history: { action: string }[] };
+
+    expect(detail.comments.map((c) => c.body)).toEqual(['진행 중입니다']);
+    expect(detail.comments[0]?.actor).toBe('claude-code');
+    expect(detail.history.map((h) => h.action)).not.toContain('update');
+  });
+
+  test('todo_write applies a patch and a comment in the same call', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '작업' },
+      }),
+    ) as { id: string };
+
+    const patched = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { id: created.id, priority: 'p1', comment: '우선순위 올림' },
+      }),
+    ) as { priority: string; commentCount: number };
+
+    expect(patched.priority).toBe('p1');
+    expect(patched.commentCount).toBe(1);
+
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { history: { action: string }[] };
+    expect(detail.history.map((h) => h.action)).toContain('update');
+  });
+
+  test('todo_write can create a todo with its first comment', async () => {
+    const created = resultJson(
+      await client.callTool({
+        name: 'todo_write',
+        arguments: { board: 'rocky', title: '새 작업', comment: '착수합니다' },
+      }),
+    ) as { id: string; commentCount: number };
+
+    expect(created.commentCount).toBe(1);
+    const detail = resultJson(
+      await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
+    ) as { comments: { body: string }[] };
+    expect(detail.comments.map((c) => c.body)).toEqual(['착수합니다']);
+  });
+
+  test('the tool surface is still exactly five tools', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
+  });
+});
+
 describe('note_write / note_list', () => {
   test('create, append, archive lifecycle over MCP', async () => {
     const created = resultJson(

@@ -102,6 +102,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         return jsonResult({
           todo: withRef(store, todo),
           history: store.listHistory({ entityId: todo.id }),
+          comments: store.listComments(todo.id),
         });
       }
       return jsonResult({
@@ -116,7 +117,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_write',
     {
       description:
-        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다.',
+        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다. 진행 상황·중간 보고·사용자에게 묻고 싶은 것은 description 을 덮어쓰지 말고 comment 로 남긴다 — description 은 "이 할 일이 무엇인가"의 자리이고, comment 는 사용자와 주고받는 타임라인이다.',
       inputSchema: {
         id: z
           .string()
@@ -138,21 +139,42 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         due: z.string().optional().describe('ISO date, e.g. 2026-08-01'),
         labels: z.array(z.string()).optional(),
         links: z.array(linkSchema).optional(),
+        comment: z
+          .string()
+          .optional()
+          .describe(
+            'append a comment to this todo — progress notes, findings, questions to the user. Use this instead of rewriting description',
+          ),
         actor: actorSchema,
       },
     },
-    async ({ id, board, title, actor, ...rest }) => {
+    async ({ id, board, title, comment, actor, ...rest }) => {
       const who = actor ?? 'agent';
       if (id) {
         const currentBoardId = resolveBoardId(store, board, id);
-        return jsonResult(
-          withRef(store, store.updateTodo(id, { title, ...rest }, who, currentBoardId)),
-        );
+        // comment 만 온 호출은 updateTodo 를 건너뛴다 — 아무것도 안 바뀐 `update`
+        // 히스토리 줄이 댓글마다 하나씩 따라붙어 타임라인을 어지럽히지 않게.
+        const hasPatch =
+          title !== undefined || Object.values(rest).some((value) => value !== undefined);
+        const todo = hasPatch
+          ? store.updateTodo(id, { title, ...rest }, who, currentBoardId)
+          : store.getTodo(id, currentBoardId);
+        if (!todo) {
+          throw new Error(`todo not found: ${id}`);
+        }
+        if (comment) {
+          store.addComment(todo.id, comment, who);
+        }
+        return jsonResult(withRef(store, todo));
       }
       if (!board || !title) {
         throw new Error('board and title are required to create a todo');
       }
-      return jsonResult(withRef(store, store.createTodo({ board, title, ...rest }, who)));
+      const created = store.createTodo({ board, title, ...rest }, who);
+      if (comment) {
+        store.addComment(created.id, comment, who);
+      }
+      return jsonResult(withRef(store, created));
     },
   );
 
