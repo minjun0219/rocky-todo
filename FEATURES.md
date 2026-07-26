@@ -106,6 +106,7 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
 - **GitHub 이슈 연동** — 웹 UI 상세의 `GitHub 이슈 만들기` 버튼 / CLI `issue` / MCP
   `todo_write.createIssue` 로 todo 를 이슈로 올린다. `gh` CLI 인증을 빌려쓰고 토큰은 저장하지
   않는다. 보드마다 GitHub 레포(`owner/name`)를 알아야 하며 `board repo` 로 설정하거나, 없으면
-  cwd 의 git remote 에서 유추(CLI)하거나 처음 누를 때 1회 입력(웹 UI)받는다. 만들어진 이슈
+  cwd 의 git remote 에서 유추(CLI)하거나 입력받고(웹 UI), 실패하면 입력이 열린 채 남아
+  고쳐 다시 시도하거나 이미 설정된 repo 를 바꿀 수 있다. 만들어진 이슈
   URL 은 그 todo 의 링크에 자동으로 붙는다. 이미 이슈가 있으면 다시 만들지 않고, 이슈 쪽
   변경(닫힘 등)이 todo 에 역으로 반영되지는 않는다.

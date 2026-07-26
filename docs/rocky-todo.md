@@ -52,6 +52,10 @@ rocky-todo daemon status      # 기동 여부 + launchd 상태
 rocky-todo daemon uninstall
 ```
 
+> **이미 `daemon install` 을 해둔 환경**은 plist 가 자동 갱신되지 않는다 — GitHub 이슈
+> 기능(`gh` PATH 인식)을 쓰려면 `rocky-todo daemon uninstall && rocky-todo daemon install`
+> 로 한 번 다시 깐다.
+
 레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
 
 ## 호스트별 MCP 등록

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  boardKeyFromMissingRepoError,
   boardRepoPath,
   formatTodoLine,
   formatTodoShow,
@@ -571,5 +572,32 @@ describe('isMissingRepoError', () => {
   test('does not match unrelated failures', () => {
     expect(isMissingRepoError('todo not found: abc')).toBe(false);
     expect(isMissingRepoError('')).toBe(false);
+  });
+});
+
+describe('boardKeyFromMissingRepoError', () => {
+  test('extracts the board key from the server message', () => {
+    expect(
+      boardKeyFromMissingRepoError(
+        'board has no GitHub repo: rocky-todo — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe('rocky-todo');
+  });
+
+  test('extracts a key containing a hyphen and a dot', () => {
+    expect(
+      boardKeyFromMissingRepoError(
+        'board has no GitHub repo: my-board.v2 — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe('my-board.v2');
+  });
+
+  test('returns undefined for messages that are not that error', () => {
+    expect(boardKeyFromMissingRepoError('todo not found: abc')).toBeUndefined();
+    expect(boardKeyFromMissingRepoError('')).toBeUndefined();
+  });
+
+  test('returns undefined when the prefix matches but the separator is missing', () => {
+    expect(boardKeyFromMissingRepoError('board has no GitHub repo: rocky')).toBeUndefined();
   });
 });

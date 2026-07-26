@@ -364,6 +364,17 @@ export function isMissingRepoError(message: string): boolean {
 }
 
 /**
+ * `board has no GitHub repo: <key> — …` 에서 보드 key 를 꺼낸다. 못 꺼내면 undefined.
+ *
+ * cwd 에서 유추한 레포를 그 보드에 써도 되는지 판단하는 데 쓴다 — 다른 보드의 todo 였다면
+ * cwd 는 아무 관계가 없고, 그대로 진행하면 **엉뚱한 레포에 이슈가 올라간다**.
+ */
+export function boardKeyFromMissingRepoError(message: string): string | undefined {
+  const match = /^board has no GitHub repo: (.+?) — /.exec(message);
+  return match?.[1]?.trim();
+}
+
+/**
  * `history` 커맨드용 엔티티 조회 — REF 만으로 대상이 todo 인지 note 인지 모른다.
  * `--global` 이 서 있으면 대상은 무조건 전역 note(`board_id IS NULL`) 다 — global note 는
  * todo 일 수 없으므로 todo 조회를 아예 시도하지 않는다. todo 와 (보드 소속) note 와 전역
@@ -548,9 +559,17 @@ export async function runCli(): Promise<void> {
         // 않는다 — 서버가 todo 의 보드에 저장한다). 미리 보드를 조회하지 않는 이유:
         // 이미 설정된 흔한 경우에 왕복이 하나 줄어든다.
         const message = error instanceof Error ? error.message : String(error);
-        const inferred = isMissingRepoError(message)
-          ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
+        // cwd 유추는 cwd 보드와 todo 의 실제 보드가 같을 때만 안전하다 — ref 가
+        // `rocky#12` 처럼 다른 보드를 가리키면 cwd 는 그 보드와 무관하고, 그대로
+        // 유추해 쓰면 엉뚱한 레포에 이슈가 올라간다(finding 1). 서버 메시지가 실토한
+        // 보드 key 가 이 CLI 의 board 와 다르면 유추하지 않고 원래 에러를 그대로 던진다.
+        const errorBoardKey = isMissingRepoError(message)
+          ? boardKeyFromMissingRepoError(message)
           : undefined;
+        const inferred =
+          errorBoardKey !== undefined && errorBoardKey === board
+            ? parseRepoFromRemote(git(['remote', 'get-url', 'origin']) ?? '')
+            : undefined;
         if (!inferred) {
           throw error;
         }
