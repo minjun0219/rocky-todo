@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Migration, runMigrations } from './migrations';
+import { addBoardRepo, type Migration, runMigrations } from './migrations';
 
 function memDb(): Database {
   const db = new Database(':memory:');
@@ -218,6 +218,32 @@ describe('runMigrations backup', () => {
     expect(cols.some((c) => c.name === 'number')).toBe(true);
     const version = db.query<{ user_version: number }, []>('PRAGMA user_version').get();
     expect(version?.user_version).toBe(1);
+
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('addBoardRepo migration', () => {
+  test('adds the column and preserves existing rows', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rocky-todo-mig-repo-'));
+    const dbPath = join(dir, 'todo.db');
+    const db = new Database(dbPath, { create: true });
+    db.run(`CREATE TABLE boards (
+      id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+      created_at TEXT NOT NULL, archived_at TEXT
+    )`);
+    db.run(
+      "INSERT INTO boards (id, key, title, created_at) VALUES ('b1', 'rocky', 'rocky', '2026-07-01T00:00:00.000Z')",
+    );
+
+    runMigrations(db, { migrations: [addBoardRepo] });
+
+    const row = db
+      .query<{ key: string; repo: string | null }, []>('SELECT key, repo FROM boards')
+      .get();
+    expect(row?.key).toBe('rocky');
+    expect(row?.repo).toBeNull();
 
     db.close();
     rmSync(dir, { recursive: true, force: true });

@@ -28,6 +28,8 @@ export interface Board {
   id: string;
   key: string;
   title: string;
+  /** `owner/name` — GitHub 이슈 생성 대상. 설정 전에는 undefined. */
+  repo?: string;
   createdAt: string;
   archivedAt?: string;
 }
@@ -251,6 +253,7 @@ interface BoardRow {
   id: string;
   key: string;
   title: string;
+  repo: string | null;
   created_at: string;
   archived_at: string | null;
 }
@@ -288,6 +291,7 @@ CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
   key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  repo TEXT,
   created_at TEXT NOT NULL,
   archived_at TEXT
 );
@@ -584,6 +588,36 @@ export class TodoStore {
       .query<{ key: string }, [string]>('SELECT key FROM boards WHERE id = ?')
       .get(boardId);
     return row?.key;
+  }
+
+  /** boardId 로 보드 한 건. 이슈 라우트가 todo → 보드 → repo 를 따라갈 때 쓴다. */
+  boardById(boardId: string): Board | undefined {
+    const row = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE id = ?').get(boardId);
+    return row ? toBoard(row) : undefined;
+  }
+
+  /**
+   * 보드의 GitHub 레포(`owner/name`)를 설정한다.
+   * @throws 없는 보드면 — 여기서 보드를 만들지 않는다. 오타난 key 로 빈 보드가 생기는
+   *   편이 조용한 사고가 된다(`ensureSection` 과 같은 판단).
+   */
+  setBoardRepo(key: string, repo: string, actor: string): Board {
+    const existing = this.db
+      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
+      .get(key);
+    if (!existing) {
+      throw new Error(`board not found: ${key}`);
+    }
+    this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(repo, existing.id);
+    this.recordHistory(
+      'board',
+      existing.id,
+      actor,
+      'update',
+      { repo: [existing.repo ?? null, repo] },
+      existing.id,
+    );
+    return { ...toBoard(existing), repo };
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────
@@ -1281,6 +1315,7 @@ function toBoard(row: BoardRow): Board {
     id: row.id,
     key: row.key,
     title: row.title,
+    repo: row.repo ?? undefined,
     createdAt: row.created_at,
     archivedAt: row.archived_at ?? undefined,
   };

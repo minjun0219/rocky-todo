@@ -37,8 +37,28 @@ const addNumbers: Migration = (db) => {
   db.run('CREATE UNIQUE INDEX idx_notes_number_global ON notes(number) WHERE board_id IS NULL');
 };
 
+/**
+ * 마이그레이션 2: 보드에 GitHub 레포(`owner/name`)를 붙인다.
+ *
+ * 웹 UI 의 "이슈 만들기" 는 데몬 안에서 실행되는데 데몬에는 cwd 개념이 없어, 보드 key
+ * (= git remote basename) 만으로는 owner 를 알 수 없다. 기존 행에는 NULL 이 남고
+ * CLI/웹 UI 가 나중에 채운다.
+ *
+ * `SCHEMA` 는 신규 DB 를 이미 `repo` 컬럼과 함께 만드는데(양쪽이 같은 컬럼 집합이어야
+ * 하므로), 그런 신규 DB 도 `user_version` 은 0 이라 이 마이그레이션이 실행된다 —
+ * `ALTER TABLE` 을 무조건 실행하면 "duplicate column" 으로 데몬이 기동조차 못 한다.
+ * 그래서 실행 전 컬럼 존재를 확인해 이미 있으면 조용히 넘어간다.
+ */
+export const addBoardRepo: Migration = (db) => {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(boards)').all();
+  if (columns.some((c) => c.name === 'repo')) {
+    return;
+  }
+  db.run('ALTER TABLE boards ADD COLUMN repo TEXT');
+};
+
 /** 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다. */
-export const MIGRATIONS: Migration[] = [addNumbers];
+export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo];
 
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */

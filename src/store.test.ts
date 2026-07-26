@@ -94,6 +94,25 @@ describe('boards', () => {
     const todo = store.createTodo({ board: 'my repo', title: '레거시 보드 작업' }, 'tester');
     expect(todo.boardId).toBe('legacy-board-id');
   });
+
+  test('setBoardRepo stores the slug and it survives a reload', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    expect(board.repo).toBeUndefined();
+
+    const updated = store.setBoardRepo('rocky', 'minjun0219/rocky', 'tester');
+    expect(updated.repo).toBe('minjun0219/rocky');
+    expect(store.boardById(board.id)?.repo).toBe('minjun0219/rocky');
+    expect(store.listBoards().find((b) => b.key === 'rocky')?.repo).toBe('minjun0219/rocky');
+  });
+
+  test('setBoardRepo does not create a board', () => {
+    expect(() => store.setBoardRepo('nosuchboard', 'o/n', 'tester')).toThrow(/not found/);
+    expect(store.listBoards()).toHaveLength(0);
+  });
+
+  test('boardById returns undefined for an unknown id', () => {
+    expect(store.boardById('nosuchid')).toBeUndefined();
+  });
 });
 
 describe('todos', () => {
