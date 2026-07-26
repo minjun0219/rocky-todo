@@ -428,8 +428,8 @@ export class TodoStore {
    * key 로 보드를 이미 만들어놨을 수 있고(직접 `POST /api/boards` 또는 MCP `board` 인자로
    * 도달 가능), 업그레이드 후 그 보드에 todo/note 를 하나 추가하기만 해도 여기서 하드
    * 실패하면 안 된다 — 보드와 기존 항목은 멀쩡한데. 새 malformed 보드가 생기는 것만 막는다.
-   * @throws key 가 비어 있거나 공백/`#` 를 포함하는 **새** 보드를 만들려 하면 — 어느 문자가
-   * 문제인지 명시한다. 이미 존재하는 보드는 이 검증을 건너뛴다.
+   * @throws key 가 비어 있거나 공백/`#` 를 포함하는 **새** 보드를 만들려 하면 — 어느
+   * 문자가 문제인지 명시한다. 이미 존재하는 보드는 이 검증을 건너뛴다.
    */
   ensureBoard(key: string, options: { title?: string; actor: string }): Board {
     const existing = this.db

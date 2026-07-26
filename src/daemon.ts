@@ -13,6 +13,7 @@ import { ensureTailscaleServe } from './tailscale';
  *
  * 하나의 Bun fullstack 서버가 네 표면을 서빙한다:
  *   /            React 웹 UI (HTML import 자동 번들 — dist 없음)
+ *   /*           같은 웹 UI — 퍼머링크(`/rocky/12`) 새로고침용 fallback
  *   /api/*       REST (CLI + 웹 UI 공용)
  *   /api/events  SSE (웹 UI 실시간 갱신)
  *   /mcp         MCP streamable HTTP (Claude Code / opencode / Codex)
@@ -67,6 +68,10 @@ export async function startDaemon(): Promise<void> {
       '/': ui,
       '/mcp': (req) => mcp(req),
       '/api/*': (req) => api.fetch(req),
+      // 웹 UI 퍼머링크(`/rocky/12`)는 클라이언트 라우팅이라 서버에 그 경로가 없다.
+      // 이 fallback 이 없으면 새로고침이 아래 `fetch`(REST) 로 떨어져 404 가 된다.
+      // Bun 은 더 구체적인 패턴을 먼저 매칭하므로 `/api/*`·`/mcp` 는 영향받지 않는다.
+      '/*': ui,
     },
     fetch: (req) => api.fetch(req),
   });

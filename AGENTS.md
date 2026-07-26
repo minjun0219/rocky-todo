@@ -35,7 +35,7 @@ rocky-todo/
 ├── tsconfig.json / biome.json
 ├── bin/rocky-todo                  # #!/usr/bin/env bun → src/cli.ts 의 runCli
 ├── src/
-│   ├── daemon.ts                   # Bun fullstack 진입 — 단일 인스턴스 가드 + / + /api/* + /mcp
+│   ├── daemon.ts                   # Bun fullstack 진입 — 단일 인스턴스 가드 + / + /api/* + /mcp + '/*' fallback(퍼머링크)
 │   ├── server.ts                   # buildTodoServer — REST 라우트 + SSE 허브 (DI)
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
 │   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 댓글 + 아카이브 + history + change 이벤트
@@ -47,7 +47,7 @@ rocky-todo/
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
-│   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + components/
+│   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
 │   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
 ├── hooks/
 │   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo

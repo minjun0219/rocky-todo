@@ -5,6 +5,7 @@ import { NotesRail } from './components/NotesRail';
 import { Sidebar } from './components/Sidebar';
 import { TodoPane } from './components/TodoPane';
 import { TopBar } from './components/TopBar';
+import { parseRoute } from './route';
 import { useUiStore } from './store';
 
 /**
@@ -17,7 +18,16 @@ function App() {
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    void refetch();
+    // 초기 목록을 받은 뒤에야 URL 의 번호를 todo id 로 해석할 수 있다.
+    void refetch().then(() =>
+      useUiStore.getState().applyRoute(parseRoute(window.location.pathname)),
+    );
+
+    const onPopState = () => {
+      void useUiStore.getState().applyRoute(parseRoute(window.location.pathname));
+    };
+    window.addEventListener('popstate', onPopState);
+
     const source = new EventSource('/api/events');
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
@@ -29,6 +39,7 @@ function App() {
     // doing 경과 표시 갱신용 주기 리렌더
     const tick = setInterval(() => void refetch(), 60_000);
     return () => {
+      window.removeEventListener('popstate', onPopState);
       source.close();
       clearTimeout(debounce.current);
       clearInterval(tick);
