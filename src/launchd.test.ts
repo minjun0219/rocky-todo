@@ -11,11 +11,23 @@ describe('plistContent', () => {
   // 이름만으로 spawn 하므로 설치 시점 PATH 를 굽고, 뒤에 흔한 설치 위치를 이어 붙인다.
   const FALLBACK = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 
+  // PATH 를 알려진 값으로 고정하고 검증한다 — 실행 환경의 PATH 를 그대로 기대값에 쓰면
+  // 그 값에 `&` 같은 문자가 섞인 머신에서(이스케이프가 적용되어) 플래키하게 깨진다.
   test('EnvironmentVariables 로 설치 시점 PATH 를 굽는다', () => {
-    const xml = plistContent();
-    expect(xml).toContain('<key>EnvironmentVariables</key>');
-    expect(xml).toContain('<key>PATH</key>');
-    expect(xml).toContain(`<string>${process.env.PATH}:${FALLBACK}</string>`);
+    const original = process.env.PATH;
+    process.env.PATH = '/opt/homebrew/bin:/usr/bin';
+    try {
+      const xml = plistContent();
+      expect(xml).toContain('<key>EnvironmentVariables</key>');
+      expect(xml).toContain('<key>PATH</key>');
+      expect(xml).toContain(`<string>/opt/homebrew/bin:/usr/bin:${FALLBACK}</string>`);
+    } finally {
+      if (original === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = original;
+      }
+    }
   });
 
   test('PATH 가 비어 있어도(테스트 환경 등) 흔한 설치 위치로 폴백한다', () => {

@@ -45,7 +45,6 @@ rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
-rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo handoff REF [--session NAME] [--message "본문"]   # 실행 중인 세션에 작업 요청
 rocky-todo handoff REF --cancel                              # 대기 중인 요청 취소
 rocky-todo sessions                                          # 실행 중인 세션 목록 (* = 이 보드)

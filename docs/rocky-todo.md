@@ -227,18 +227,18 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - 핸드오프 "보내기"(`POST /api/todos/:ref/handoff`)와 세션 목록(`GET /api/sessions`)은
   노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기).
   `claim`(`POST /api/handoffs/claim`)은 훅 전용이라 루프백(127.0.0.1/::1) 요청만 받는다 —
-  훅은 항상 로컬에서 붙으니 기능 손실은 없다. **단, 이 제한은 채널마다 성질이 다르다:**
+  훅은 항상 로컬에서 붙으니 기능 손실은 없다. 판정은 이슈 생성과 같은 `isLocalRequest`
+  를 쓴다 — **소스 주소가 루프백이고 동시에 중계 헤더가 없어야** 로컬로 본다. 주소만
+  보면 부족하기 때문이다:
   - `lan` 은 데몬이 `0.0.0.0` 에 직접 바인딩하므로 원격 요청의 소스 주소가 실제 LAN IP 로
-    보인다 — 이 경우 claim 은 실제로 원격에서 404 로 막힌다.
+    보인다 — 주소만으로 걸러진다.
   - `tailscale-serve` 는 데몬이 계속 127.0.0.1 에만 바인딩하고 tailscaled 의 로컬 프록시가
     테일넷 요청을 다시 `127.0.0.1:<port>` 로 다이얼해 전달한다(위 표의 "바인딩" 참고).
-    그래서 어느 테일넷 기기의 요청이든 이 가드가 보는 소스 주소는 127.0.0.1 이고, claim
-    은 원격에서도 그대로 열려 있다 — **`tailscale-serve` 를 쓰면 테일넷에 접근할 수 있는
-    기기는 claim 도 호출할 수 있다**(남의 핸드오프 큐를 조용히 소진시킬 수 있다는 뜻).
-    테일넷 로그인 자체가 사실상의 인증 경계라 신뢰 안 하는 기기가 테일넷에 없다면 실질
-    위험은 낮지만, 앱 계층에는 이를 구분하는 별도 방어가 없다. (후속 과제: tailscale
-    serve 가 주입하는 `Tailscale-User-*` 헤더로 발신자를 구분하는 방법이 있으나, 이
-    환경에서 그 헤더가 스푸핑되지 않는지 실측하지 못해 아직 반영하지 않았다.)
+    그래서 소스 주소는 항상 127.0.0.1 이지만, tailscale serve 가 붙이는
+    `Tailscale-User-*` 헤더가 남으므로 **이 요청도 404 로 막힌다.**
+
+  헤더는 위조로 "있게" 만들 수는 있어도 "없게" 만들 수는 없다 — 위조는 요청을 덜
+  신뢰하는 방향으로만 작용하므로 이 판정을 우회하는 데 쓸 수 없다.
 - env `ROCKY_TODO_EXPOSE`(콤마 구분)가 설정되면 config 를 통째로 덮어쓴다 — `off` 로 강제 차단.
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.
@@ -261,7 +261,6 @@ rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
 rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
-rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
 rocky-todo sessions
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
