@@ -49,13 +49,16 @@ routes: {
 
 Bun 은 더 구체적인 패턴을 먼저 매칭하므로 `/api/*` 와 `/mcp` 는 영향받지 않는다.
 
-**예약어.** 보드 키 `api` / `mcp` 를 `ensureBoard`(`src/store.ts`)에서 거부한다 — 이미
-공백과 `#` 를 거부하는 그 자리다. 보드 키는 레포 이름에서 유추되므로 `api` 라는 레포는
-현실적으로 존재할 수 있고, 그 경우 `/api` 가 라우트와 충돌한다.
+**예약어.** 보드 키 `api` / `mcp` 는 `ensureBoard`(`src/store.ts`)에서 거부하지 **않는다**.
+보드 키는 레포 이름에서 유추되므로(`boardKeyFrom`, `src/actor.ts`) `api` 라는 레포는
+현실적으로 존재할 수 있고, 거부하면 그 레포에서 `rocky-todo add`·MCP
+`todo_write`/`note_write` 가 첫 사용부터 에러가 된다 — board key 검증(공백·`#`)과 달리
+이 키들은 참조 문법을 깨지 않으므로 거부할 근거가 없다.
 
-검증 도입 전에 만들어진 예약어 보드는 조회로 계속 살아남는다(공백 키 보드가 그랬듯). 그런
-보드는 **선택은 되지만 URL 은 `/` 로 둔다** — `refOf` 가 malformed board key 에서 raw id 로
-폴백하는 것과 같은 판단이다: 되읽을 수 없는 주소를 내보내느니 덜 예쁜 쪽을 택한다.
+대신 **선택은 되지만 URL 은 `/` 로 둔다** — `refOf` 가 malformed board key 에서 raw id 로
+폴백하는 것과 같은 판단이다: 되읽을 수 없는(REST 라우트와 충돌하는) 주소를 내보내느니
+덜 예쁜 쪽을 택한다. `RESERVED_BOARD_KEYS`(`src/ui/route.ts`)는 `buildPath` 가 이 폴백에
+쓰는 목록으로만 남는다.
 
 ### 3. 라우팅 — 새 의존성 없이
 
@@ -99,8 +102,9 @@ export function buildPath(route: Route): string;
 `buildPath` 규칙:
 - board key 를 `encodeURIComponent` 로 감싼다
 - board 가 `'all'` 이면 `todoNumber` 가 있어도 `/` 를 낸다 — 보드 없는 todo 경로는 문법에 없다
-- **예약어 board key(`api`/`mcp`)면 `/` 를 낸다** — §2 의 레거시 보드가 이 경로로 처리된다.
-  주소가 덜 정확해지지만 REST 라우트와 충돌하는 링크를 내보내지 않는다
+- **예약어 board key(`api`/`mcp`)면 `/` 를 낸다** — §2 에서 결정한 대로 이 키의 보드도
+  정상 생성·선택되지만, 주소가 덜 정확해지는 대가로 REST 라우트와 충돌하는 링크를
+  내보내지 않는다
 
 ### 4. 스토어 배선
 
@@ -146,7 +150,7 @@ export function buildPath(route: Route): string;
 | 파일 | 검증 |
 | --- | --- |
 | `src/ui/route.test.ts`(신규) | `parseRoute`/`buildPath` 왕복, `/`, 없는 꼬리, 숫자 아닌 둘째 세그먼트, 트레일링 슬래시, 인코딩된 키 |
-| `src/store.test.ts` | `ensureBoard` 가 `api`/`mcp` 키를 거부 |
+| `src/store.test.ts` | `ensureBoard` 가 `api`/`mcp` 키를 그대로 받아들이고, `buildPath({ board: 'api' })` 는 `/` |
 
 라우팅 배선(History API·popstate)은 컴포넌트 테스트 하네스가 없어 순수 함수로 최대한 밀어낸
 뒤 브라우저에서 확인한다.
@@ -161,6 +165,8 @@ export function buildPath(route: Route): string;
 - **`'/*': ui` 가 오타난 API 경로까지 HTML 로 준다** — `/api/todoss` 는 `/api/*` 에 잡혀 여전히
   404 지만, `/todos` 같은 경로는 이제 HTML 을 받는다. 보드로 해석되지 않으면 전체 보기로
   폴백하므로 사용자에게는 "빈 보드" 가 아니라 정상 화면이 보인다. 허용 가능한 대가다.
-- **예약어 추가는 기존 데이터를 깨지 않는다** — 검증은 신규 생성에만 걸린다.
+- **`api`/`mcp` 를 거부하지 않기로 한 결정은 자동 유추 경로(레포 이름 → board key)를
+  깨뜨리지 않기 위해서다** — 대안(자동 유추 시 이름을 망글링)은 이 레포가 조용한 정규화를
+  하지 않는다는 원칙과 충돌한다.
 - **뒤로가기 = 드로어 닫기** 는 취향이 갈릴 수 있으나, 여는 동작이 히스토리를 만든 이상
   대칭이 맞는 쪽이다.

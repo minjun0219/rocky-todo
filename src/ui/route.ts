@@ -23,8 +23,10 @@ export interface Route {
 }
 
 /**
- * 경로 첫 세그먼트로 쓸 수 없는 board key — 데몬의 REST/MCP 라우트와 충돌한다.
- * `src/store.ts` 의 `ensureBoard` 가 같은 목록으로 새 보드 생성을 막는다.
+ * 경로 첫 세그먼트로 **가리킬 수 없는** board key — 데몬의 REST/MCP 라우트와 충돌한다.
+ * 이 키의 보드도 `ensureBoard`(`src/store.ts`)로 정상 생성되고 동작한다 — 다만 URL 로
+ * 가리킬 방법이 없어(`/api` 는 `/api/*` 라우트에 먹힌다) `buildPath` 가 이 키를 만나면
+ * 전체 보기와 같은 `/` 를 낸다.
  */
 export const RESERVED_BOARD_KEYS: readonly string[] = ['api', 'mcp'];
 
@@ -58,9 +60,9 @@ export function parseRoute(pathname: string): Route {
 /**
  * `{ board: 'rocky', todoNumber: 12 }` → `/rocky/12`.
  *
- * 전체 보기와 예약어 board key 는 `/` 를 낸다. 예약어 폴백은 검증 도입 전에 만들어진
- * `api` 보드를 위한 것이다 — 그런 보드도 선택은 되지만, 되읽을 수 없는(REST 라우트와
- * 충돌하는) 주소를 내보내느니 덜 정확한 `/` 를 택한다.
+ * 전체 보기와 예약어 board key 는 `/` 를 낸다. `api`/`mcp` 보드는 정상적으로 존재하고
+ * 선택도 되지만, 되읽을 수 없는(REST 라우트와 충돌하는) 주소를 내보내느니 덜 정확한
+ * `/` 를 택한다.
  */
 export function buildPath(route: Route): string {
   if (route.board === 'all' || RESERVED_BOARD_KEYS.includes(route.board)) {
@@ -86,8 +88,10 @@ export function routeForTodo(
  * URL 의 번호를 todo id 로 되돌린다 — 이미 로드된 목록에서 찾으므로 새 REST 호출이 없다.
  *
  * 번호는 보드 안에서만 유일하므로 board 스코프가 반드시 필요하다. 전체 보기(`'all'`)에는
- * 스코프가 없어 항상 `undefined` 다 — `buildPath` 도 전체 보기에 번호를 싣지 않으므로
- * 이 조합은 URL 에서 나올 수 없고, 방어적으로만 처리한다.
+ * 스코프가 없어 항상 `undefined` 다 — `buildPath` 는 전체 보기에 번호를 싣지 않지만,
+ * `parseRoute('/all/12')` 처럼 손으로 친 주소는 `{ board: 'all', todoNumber: 12 }` 를
+ * 만들어낼 수 있어 이 조합이 URL 에서 실제로 나올 수 있다. 그때 `undefined` 를 돌려주는
+ * 것이 올바른 처리다 — 스코프 없이 번호만으로 todo 를 특정할 수 없기 때문이다.
  */
 export function findTodoIdByNumber(
   todos: readonly { id: string; boardId: string; number: number }[],

@@ -103,8 +103,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   detail: null,
 
   setSelected: (selected) => {
-    set({ selected });
-    window.history.pushState(null, '', buildPath({ board: selected }));
+    // 같은 보드를 다시 고른 클릭도 refetch 는 그대로 수행한다(새로고침 용도로 쓰인다) —
+    // 다만 선택이 실제로 바뀌지 않았으면 pushState 는 건너뛴다. 아니면 전체/같은 보드를
+    // 다섯 번 눌렀을 때 동일한 히스토리 항목이 다섯 개 쌓여 뒤로가기를 다섯 번 눌러야
+    // 벗어나게 된다.
+    if (selected !== get().selected) {
+      set({ selected });
+      window.history.pushState(null, '', buildPath({ board: selected }));
+    }
     void get().refetch();
   },
   setShowArchived: (showArchived) => {
@@ -147,18 +153,21 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   openTodoDetail: async (id, options) => {
-    const { actor, boards } = get();
+    const { actor } = get();
     const body = await api<{ todo: TodoView; history: HistoryEntry[] }>(`/api/todos/${id}`, actor);
     set({ detail: { kind: 'todo', todo: body.todo, history: body.history } });
     if (options?.push === false) {
       return;
     }
+    // boards 는 await 이후 다시 읽는다 — await 도중 SSE 로 새 보드가 들어와 배열이 바뀔 수
+    // 있고, 낡은 배열을 쓰면 routeForTodo 가 boardId 를 못 찾아 { board: 'all' } 로 잘못
+    // 폴백한다(상세는 열려 있는데 주소는 전체 보기가 되는 불일치).
     // 상세를 연 것이 히스토리 항목을 만든다 — closeDetail 이 이 표식을 보고 back() 할지
     // 정한다(퍼머링크로 바로 진입한 경우엔 back() 이 앱 밖으로 나가버린다).
     window.history.pushState(
       { rockyTodoDetail: true },
       '',
-      buildPath(routeForTodo(body.todo, boards)),
+      buildPath(routeForTodo(body.todo, get().boards)),
     );
   },
 
@@ -207,6 +216,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     if (route.todoNumber === undefined) {
       set({ detail: null });
+      // `/demo/abc` 처럼 해석되지 않은 꼬리가 주소에 남지 않게 정규화한다.
+      // push 가 아니라 replace 인 이유: 히스토리에 죽은 항목을 남기지 않는다.
+      const canonical = buildPath({ board });
+      if (window.location.pathname !== canonical) {
+        window.history.replaceState(null, '', canonical);
+      }
       return;
     }
     const id = findTodoIdByNumber(get().todos, get().boards, board, route.todoNumber);

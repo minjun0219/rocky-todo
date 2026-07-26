@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TodoStore } from './store';
+import { buildPath } from './ui/route';
 
 let dir: string;
 let store: TodoStore;
@@ -48,29 +49,21 @@ describe('boards', () => {
     expect(() => store.ensureBoard('', { actor: 'tester' })).toThrow(/empty/);
   });
 
-  // finding: 웹 UI 퍼머링크가 board key 를 경로 첫 세그먼트로 쓴다(`/rocky/12`).
-  // `api`/`mcp` 는 데몬의 REST/MCP 라우트라 그 키의 보드가 생기면 링크가 서버 라우트에 먹힌다.
-  test('ensureBoard rejects a key reserved by the daemon routes', () => {
-    expect(() => store.ensureBoard('api', { actor: 'tester' })).toThrow(/reserved/);
-    expect(() => store.ensureBoard('mcp', { actor: 'tester' })).toThrow(/reserved/);
+  // finding: 이전 버전은 `ensureBoard` 가 `api`/`mcp` 를 거부했는데, 이 키는 `boardKeyFrom`
+  // (`src/actor.ts`)이 레포 이름에서 그대로 유추할 수 있어(레포 이름이 `api` 인 경우) 그런
+  // 레포에서는 `rocky-todo add`·MCP `todo_write`/`note_write` 가 첫 사용부터 에러였다.
+  // 지금은 거부하지 않는다 — 이 키의 보드도 정상적으로 만들어지고 동작한다. 다만
+  // `buildPath`(`src/ui/route.ts`)는 URL 이 데몬 라우트와 겹치는 걸 피하려 이 키를 만나면
+  // `/` 를 낸다 — "만들어지되 링크되지 않는다"가 새 계약이다.
+  test('ensureBoard accepts a key that collides with a daemon route (api/mcp)', () => {
+    const api = store.ensureBoard('api', { actor: 'tester' });
+    const mcp = store.ensureBoard('mcp', { actor: 'tester' });
+    expect(api.key).toBe('api');
+    expect(mcp.key).toBe('mcp');
   });
 
-  test('a key that merely contains a reserved word is fine', () => {
-    const board = store.ensureBoard('api-gateway', { actor: 'tester' });
-    expect(board.key).toBe('api-gateway');
-  });
-
-  // 검증은 새 보드 CREATE 에만 걸린다 — 구버전 데몬이 만들어둔 보드는 계속 조회돼야 한다.
-  test('a pre-existing reserved-key board is returned unchanged', () => {
-    const db = new Database(join(dir, 'todo.db'));
-    db.run(
-      "INSERT INTO boards (id, key, title, created_at) VALUES ('legacy01', 'api', 'api', '2026-07-01T00:00:00.000Z')",
-    );
-    db.close();
-
-    const board = store.ensureBoard('api', { actor: 'tester' });
-    expect(board.id).toBe('legacy01');
-    expect(board.key).toBe('api');
+  test('buildPath still collapses that board to the root, since it cannot be linked to', () => {
+    expect(buildPath({ board: 'api' })).toBe('/');
   });
 
   test('ensureBoard still accepts normal keys', () => {

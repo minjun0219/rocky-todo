@@ -4,7 +4,9 @@
 
 **Goal:** 웹 UI 가 보고 있는 화면(보드 선택 + 열린 todo 상세)을 주소에 담아, 새로고침해도 유지되고 링크로 건넬 수 있게 한다.
 
-**Architecture:** `/{board}/{number}` 경로 문법을 쓴다. 데몬에 `'/*': ui` fallback 라우트를 더해 새로고침이 404 로 끝나지 않게 하고, 보드 키 `api`/`mcp` 를 예약어로 막는다. 라우터 라이브러리는 넣지 않는다 — History API 를 직접 쓰되 파싱·조립·번호해석을 `src/ui/route.ts` 의 순수 함수로 빼서 단위 테스트한다.
+**Architecture:** `/{board}/{number}` 경로 문법을 쓴다. 데몬에 `'/*': ui` fallback 라우트를 더해 새로고침이 404 로 끝나지 않게 한다. 라우터 라이브러리는 넣지 않는다 — History API 를 직접 쓰되 파싱·조립·번호해석을 `src/ui/route.ts` 의 순수 함수로 빼서 단위 테스트한다.
+>
+> **리뷰 이후 변경:** Task 2 가 도입한 `ensureBoard` 의 `api`/`mcp` 거부는 최종 프리머지 리뷰에서 되돌렸다 — board key 는 레포 이름에서 자동 유추되는데(`boardKeyFrom`), 거부하면 그 이름의 레포에서 첫 사용부터 에러가 났다. 그 키의 보드도 정상 생성되고, `buildPath`(`src/ui/route.ts`)만 URL 을 `/` 로 접는다. 아래 Task 2 본문은 그 시점의 계획대로 남겨 두고 이 노트로 최종 상태를 명시한다.
 
 **Tech Stack:** Bun + TypeScript(ESM) · `bun:sqlite` · `bun:test` · React 19 + zustand(웹 UI) · Biome. 새 의존성 없음.
 
@@ -26,8 +28,8 @@
 | --- | --- | --- |
 | `src/ui/route.ts` | **신규.** URL ↔ 화면 상태 변환의 단일 소유자. 순수·DOM 무의존이라 단위 테스트된다 | 1 |
 | `src/ui/route.test.ts` | **신규.** route.ts 계약 테스트 | 1 |
-| `src/store.ts` | `ensureBoard` 의 예약어 거부 | 2 |
-| `src/store.test.ts` | 예약어 거부 테스트 | 2 |
+| `src/store.ts` | `ensureBoard` 의 예약어 거부 (리뷰 이후 되돌림 — 위 노트 참고) | 2 |
+| `src/store.test.ts` | 예약어 거부 테스트 (리뷰 이후 계약 변경 — 위 노트 참고) | 2 |
 | `src/daemon.ts` | `'/*': ui` fallback 라우트 | 3 |
 | `src/ui/store.ts` | URL 쓰기(pushState/replaceState) + `applyRoute` | 4 |
 | `src/ui/main.tsx` | `popstate` 구독 + 부팅 시 초기 라우트 적용 | 4 |
@@ -761,7 +763,8 @@ git commit -m "feat(ui): 보드·작업 상태를 URL 에 반영하고 복원한
 ```
 웹 UI 주소가 보고 있는 화면을 담는다 — `/`(전체) · `/rocky`(보드) · `/rocky/12`(그 todo 상세).
 새로고침해도 유지되고 링크로 공유할 수 있다. 뒤로가기가 드로어를 닫는다.
-board key `api` / `mcp` 는 데몬 라우트와 겹쳐 쓸 수 없다.
+board key `api` / `mcp` 도 보드로 만들고 쓸 수 있지만, 데몬 라우트와 겹쳐 URL 로 가리킬
+수 없어 주소는 `/` 로 남는다.
 ```
 
 없는 기능을 쓰지 않는다 — 노트(메모) 상세와 `보관됨 표시` 토글은 URL 에 담기지 **않는다**.
