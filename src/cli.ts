@@ -22,7 +22,7 @@ import { DETAIL_HISTORY_EXCLUDED, linkLabel } from './ui/lib';
 
 // ── 인자 파싱 (순수) ─────────────────────────────────────────────────────────
 
-const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'cancel', 'help']);
+const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'cancel', 'help', 'note']);
 const VALUE_FLAGS = new Set([
   'board',
   'section',
@@ -35,16 +35,9 @@ const VALUE_FLAGS = new Set([
   'content',
   'limit',
   'session',
+  'message',
 ]);
 const LIST_FLAGS = new Set(['label', 'link']);
-// `--note` 는 두 자리에서 쓰인다: `history REF --note`(값 없는 boolean — 전역/보드 note
-// 를 확정) 와 `handoff REF --note "본문"`(문자열 값 — 핸드오프에 실을 메모). 하나의 이름을
-// BOOLEAN_FLAGS 와 VALUE_FLAGS 양쪽에 넣어도 위 분기가 boolean 을 먼저 잡아 값을 절대
-// 읽지 못한다(순서상 boolean 체크가 항상 이긴다) — 그래서 별도 카테고리로 뺀다: 다음
-// 토큰이 있고 그게 `--`로 시작하지 않으면 값으로 소비하고, 아니면(끝이거나 다음이 다른
-// 플래그거나) 기존처럼 boolean true 로 둔다. `history --note` 단독 사용은 그대로 boolean
-// 이라 기존 동작을 깨지 않는다.
-const OPTIONAL_VALUE_FLAGS = new Set(['note']);
 
 export interface ParsedFlags {
   positionals: string[];
@@ -61,16 +54,6 @@ export function parseFlags(argv: string[]): ParsedFlags {
       continue;
     }
     const name = arg.slice(2);
-    if (OPTIONAL_VALUE_FLAGS.has(name)) {
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
-        flags[name] = next;
-        i++;
-      } else {
-        flags[name] = true;
-      }
-      continue;
-    }
     if (BOOLEAN_FLAGS.has(name)) {
       flags[name] = true;
       continue;
@@ -318,7 +301,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
   rocky-todo comment REF "본문"                 todo 에 댓글 (에이전트/사람 공용 타임라인)
-  rocky-todo handoff REF [--session NAME] [--note "본문"]  실행 중인 세션에 작업 요청 보내기
+  rocky-todo handoff REF [--session NAME] [--message "본문"]  실행 중인 세션에 작업 요청 보내기
   rocky-todo handoff REF --cancel               대기 중인 요청 취소
   rocky-todo sessions                           실행 중인 Claude Code 세션 (* = 이 보드)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
@@ -555,7 +538,7 @@ export async function runCli(): Promise<void> {
       const id = rest[0];
       if (!id) {
         throw new Error(
-          'usage: rocky-todo handoff REF [--session NAME] [--note "본문"] [--cancel]',
+          'usage: rocky-todo handoff REF [--session NAME] [--message "본문"] [--cancel]',
         );
       }
       if (flags.cancel === true) {
@@ -593,7 +576,7 @@ export async function runCli(): Promise<void> {
       }
       const handoff = await request<Handoff>(ctx, 'POST', todoRefPath(id, '/handoff', board), {
         sessionId,
-        note: str(flags.note),
+        note: str(flags.message),
       });
       print(handoff, () => `✓ ${id} → ${handoff.sessionName ?? handoff.sessionId} 에게 보냄`);
       return;

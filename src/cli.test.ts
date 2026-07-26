@@ -59,22 +59,27 @@ describe('parseFlags', () => {
     expect(parsed.flags.cancel).toBe(true);
   });
 
-  // `--note` 는 history(값 없는 boolean)와 handoff(문자열 값) 양쪽에서 같은 이름을 쓴다.
-  // 다음 토큰이 있고 플래그가 아니면 값으로, 아니면 boolean true 로 떨어져야 두 자리 다 깨지지 않는다.
-  test('--note 단독이면 boolean true (history 용법)', () => {
+  // handoff 의 메모는 `--message` 다 (VALUE_FLAGS) — history 의 `--note`(순수 boolean) 와
+  // 이름이 겹치지 않아 파서에 특수 카테고리가 필요 없다.
+  test('handoff 의 --message 는 문자열 값으로 읽힌다', () => {
+    const parsed = parseFlags(['handoff', '#1', '--message', '진행 상황 공유']);
+    expect(parsed.flags.message).toBe('진행 상황 공유');
+  });
+
+  test('history 의 --note 는 순수 boolean 이다', () => {
     const parsed = parseFlags(['history', '#1', '--note']);
     expect(parsed.flags.note).toBe(true);
   });
 
-  test('--note 뒤에 값이 오면 문자열로 읽는다 (handoff 용법)', () => {
-    const parsed = parseFlags(['handoff', '#1', '--note', '진행 상황 공유']);
-    expect(parsed.flags.note).toBe('진행 상황 공유');
-  });
-
-  test('--note 뒤가 다른 플래그면 값을 삼키지 않고 boolean 으로 남는다', () => {
-    const parsed = parseFlags(['handoff', '#1', '--note', '--session', 'x']);
+  // 회귀 가드: `--note` 가 한때 "다음 토큰이 플래그가 아니면 값으로 소비" 하는
+  // OPTIONAL_VALUE_FLAGS 로 취급된 적이 있었다 — 그때는 `--note` 뒤에 오는 REF 를
+  // 값으로 삼켜 positionals 에서 REF 가 사라졌다(`history --note rocky#12` 가
+  // `usage: rocky-todo history REF ...` 로 죽는 회귀). `--note` 는 순서와 무관하게
+  // 항상 boolean 이어야 하고, REF 는 어느 위치에 있든 positionals 에 남아야 한다.
+  test('--note 가 REF 보다 앞에 와도 boolean 이고 REF 는 positionals 에 남는다', () => {
+    const parsed = parseFlags(['history', '--note', 'rocky#12']);
     expect(parsed.flags.note).toBe(true);
-    expect(parsed.flags.session).toBe('x');
+    expect(parsed.positionals).toContain('rocky#12');
   });
 });
 
