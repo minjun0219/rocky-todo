@@ -35,7 +35,10 @@ function App() {
     // 끊겨 있던 동안의 변경은 오지 않으므로, SSE 재연결을 기다리지 않고 즉시 다시 읽는다.
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
-        void refetch();
+        // LAN 밖에서 포그라운드로 돌아오는 게 가장 흔한 실패 경로 — refetch 가 reject 하면
+        // 처리되지 않은 rejection 으로 남고 사용자에게는 아무 신호도 없다. 연결 배지를
+        // 내려서 현실(끊김)을 보여주고, 이후 SSE 재연결이 다시 올려준다.
+        void refetch().catch(() => setConnected(false));
       }
     };
     document.addEventListener('visibilitychange', onVisible);

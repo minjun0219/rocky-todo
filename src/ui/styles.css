@@ -235,6 +235,9 @@ textarea {
   top: 0;
   z-index: 1;
   background: var(--bg);
+  /* 간격을 margin 대신 padding 으로 — margin 은 이 폼에 border/overflow 가 없어 밖으로
+     collapse 돼 버려, 스티키 폼의 칠해진 배경이 시각적 간격보다 짧게 끝난다. */
+  padding-bottom: 18px;
 }
 
 .quick-add-input {
@@ -244,7 +247,7 @@ textarea {
   border-radius: 8px;
   padding: 9px 14px;
   color: var(--text);
-  margin-bottom: 18px;
+  margin-bottom: 0;
 }
 
 .quick-add-input::placeholder {
@@ -520,8 +523,11 @@ textarea {
 
 /* ── drawer ─────────────────────────────────────── */
 
-/* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. 모바일에서 `.layout` 이
-   `overflow-y: auto` 라 드로어 위에서 스크롤하면 배경이 함께 움직인다. */
+/* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. iOS 는 `html, body` 를 100%(큰
+   뷰포트) 로 두고 `.app` 은 100dvh(작은 뷰포트) 라, 그 차이(URL 바 높이만큼) 만큼 document
+   자체가 스크롤 가능해진다 — `.drawer-backdrop` 은 fixed 라 `.layout` 을 거치지 않고 이
+   document 스크롤로 바로 새므로, body 의 overflow 를 hidden 으로 눌러 뷰포트 스크롤 자체를
+   막는다. */
 body.is-drawer-open {
   overflow: hidden;
 }
@@ -541,6 +547,9 @@ body.is-drawer-open {
   border-left: 1px solid var(--line);
   height: 100%;
   overflow-y: auto;
+  /* 드로어 안에서 끝까지 스크롤한 뒤 계속 스와이프하면 스크롤이 밖(backdrop 뒤 document)으로
+     새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
+  overscroll-behavior: contain;
   padding: 20px 22px;
   position: relative;
 }
@@ -752,9 +761,11 @@ body.is-drawer-open {
   .board-item {
     white-space: nowrap;
     flex-shrink: 0;
+    min-height: 44px;
   }
   .archived-toggle {
     white-space: nowrap;
+    min-height: 44px;
   }
   .todo-pane {
     padding: 14px 14px 6px;
@@ -769,6 +780,9 @@ body.is-drawer-open {
   .todo-title {
     white-space: normal;
     overflow-wrap: anywhere;
+    /* min-height 대신 stretch — 버튼이 (줄바꿈된) flex 줄의 전체 높이를 채우게 해
+       행의 빈 공간도 클릭 가능해진다. min-height 를 쓰면 반대로 행이 늘어난다. */
+    align-self: stretch;
   }
   /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
      rocky-todo#1 에서 마무리했다(그 전에는 건드리는 컨트롤마다 그때그때 더해 왔다). */
@@ -780,9 +794,6 @@ body.is-drawer-open {
     min-height: 44px;
     /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
     margin: -8px 0 -8px -8px;
-  }
-  .todo-row {
-    min-height: 44px;
   }
   .todo-ref {
     min-height: 44px;
@@ -806,12 +817,11 @@ body.is-drawer-open {
     min-height: 44px;
     padding: 0 8px;
   }
-  .comment-badge {
-    min-height: 44px;
-  }
-  .archived-toggle {
-    min-height: 44px;
-  }
+  /* `.comment-badge` 는 여기서 제외한다 — `.todo-row` 가 줄바꿈되면 메타 칩과 같은 두 번째
+     줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로 늘어나 버린다. 배지의 동작
+     (드로어 열기)은 이미 44px 바닥을 가진 `.todo-title`/`.todo-ref` 로도 도달할 수 있다.
+     칩 자체를 접어 줄바꿈을 없애는 건 별도 백로그(rocky-todo#19) — 그때 여기 바닥을
+     되살린다. */
   /* `.drawer-btn` 은 버튼뿐 아니라 `<a>`("이슈 열기 ↗")에도 쓰인다. `<a>` 는 인라인이라
      min-height 가 먹지 않으므로 display 를 함께 준다. */
   .drawer-btn {
