@@ -48,6 +48,31 @@ describe('boards', () => {
     expect(() => store.ensureBoard('', { actor: 'tester' })).toThrow(/empty/);
   });
 
+  // finding: 웹 UI 퍼머링크가 board key 를 경로 첫 세그먼트로 쓴다(`/rocky/12`).
+  // `api`/`mcp` 는 데몬의 REST/MCP 라우트라 그 키의 보드가 생기면 링크가 서버 라우트에 먹힌다.
+  test('ensureBoard rejects a key reserved by the daemon routes', () => {
+    expect(() => store.ensureBoard('api', { actor: 'tester' })).toThrow(/reserved/);
+    expect(() => store.ensureBoard('mcp', { actor: 'tester' })).toThrow(/reserved/);
+  });
+
+  test('a key that merely contains a reserved word is fine', () => {
+    const board = store.ensureBoard('api-gateway', { actor: 'tester' });
+    expect(board.key).toBe('api-gateway');
+  });
+
+  // 검증은 새 보드 CREATE 에만 걸린다 — 구버전 데몬이 만들어둔 보드는 계속 조회돼야 한다.
+  test('a pre-existing reserved-key board is returned unchanged', () => {
+    const db = new Database(join(dir, 'todo.db'));
+    db.run(
+      "INSERT INTO boards (id, key, title, created_at) VALUES ('legacy01', 'api', 'api', '2026-07-01T00:00:00.000Z')",
+    );
+    db.close();
+
+    const board = store.ensureBoard('api', { actor: 'tester' });
+    expect(board.id).toBe('legacy01');
+    expect(board.key).toBe('api');
+  });
+
   test('ensureBoard still accepts normal keys', () => {
     for (const key of ['rocky', 'MyProject', '_private', 'a-b']) {
       const board = store.ensureBoard(key, { actor: 'tester' });
