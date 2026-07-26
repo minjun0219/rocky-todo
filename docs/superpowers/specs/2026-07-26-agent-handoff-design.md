@@ -31,7 +31,7 @@ Claude Code 2.1.220 의 훅은 전부 **세션 안에서 일어난 일에 반응
                                                                  │
                                                           handoffs (pending)
                                                                  │
-[세션의 Stop 훅] ──GET /api/handoffs/next?sessionId=…──────────> claim (→ delivered)
+[세션의 Stop 훅] ──POST /api/handoffs/claim {sessionId}────────> claim (→ delivered)
        │
        └─> {"decision":"block","reason":"…"} → 세션이 그 자리에서 착수
 ```
@@ -71,7 +71,7 @@ export function matchBoard(sessions: AgentSession[], boardKey: string): AgentSes
 git remote 를 읽어 정확히 판정할 수도 있지만 세션마다 프로세스를 띄워야 하고, 어차피 애매하면
 묻는 설계라 얻는 게 없다.
 
-## 데이터 모델 — 마이그레이션 `user_version` 2
+## 데이터 모델 — 마이그레이션 `user_version` 3
 
 ```sql
 CREATE TABLE IF NOT EXISTS handoffs (
@@ -196,7 +196,7 @@ todo 본문은 복사하지 않는다. 세션이 `todo_list` 로 직접 읽으�
 
 ```
 rocky-todo sessions                                  # 활성 세션 목록
-rocky-todo handoff REF [--session NAME] [--note "…"] # 보내기
+rocky-todo handoff REF [--session NAME] [--message "…"] # 보내기
 rocky-todo handoff REF --cancel                      # 취소
 ```
 

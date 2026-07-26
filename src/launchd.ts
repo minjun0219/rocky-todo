@@ -30,17 +30,25 @@ function daemonEntryPath(): string {
 }
 
 /**
- * launchd 유저 에이전트는 기본 PATH(`/usr/bin:/bin:/usr/sbin:/sbin`)만 물려받는다 —
- * 로그인 셸의 PATH 를 상속하지 않는다. `process.execPath` 를 통짜 경로로 박아두는 것과
- * 같은 이유의 함정: SessionStart 훅이 띄운 데몬은 셸 PATH 를 그대로 상속해 잘 도는데,
- * `daemon install` 로 상주시킨 데몬은 `claude` 를 못 찾아 핸드오프 기능 전체가
- * `available:false` 로 죽는다(`claude` 는 보통 `/opt/homebrew/bin`, `~/.local/bin`
- * 등에 있다) — 같은 기능이 기동 경로에 따라 되고 안 되는 상태가 된다. 그래서 설치
- * 시점의 `process.env.PATH` 를 그대로 plist 에 구워 넣는다: 지금 이 셸에서 `claude` 가
- * 보이면(`command -v claude`) launchd 데몬도 보게 만드는 게 가장 정확하다.
+ * launchd 가 잡에 물려주는 PATH 는 최소치(`/usr/bin:/bin:/usr/sbin:/sbin`)라 Homebrew 등
+ * 사용자 설치 위치가 빠진다. `bun` 은 그래서 `process.execPath` 로 절대경로를 쓴다(아래
+ * ProgramArguments). 하지만 데몬이 이름만으로 spawn 하는 외부 CLI 가 둘 있다:
+ * `src/github.ts` 의 `gh`(finding D — 최소 PATH 아래서 "gh CLI 를 찾을 수 없다"는 잘못된
+ * 메시지가 뜬다)와 `src/sessions.ts` 의 `claude`(못 찾으면 핸드오프 기능 전체가
+ * `available:false` 로 죽는다). 둘 다 같은 함정이고, SessionStart 훅이 띄운 데몬은 셸
+ * PATH 를 상속해 잘 도는데 `daemon install` 로 상주시킨 데몬만 안 되는 상태를 만든다.
+ */
+const PLIST_PATH_FALLBACK = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+
+/**
+ * plist 에 구울 PATH — **설치 시점의 `process.env.PATH` 를 우선**한다. 지금 이 셸에서
+ * `gh`/`claude` 가 보이면(`command -v`) launchd 데몬도 보게 만드는 게 가장 정확하다.
+ * 뒤에 흔한 설치 위치를 이어 붙여, PATH 가 비었거나 비표준 셸에서 설치한 경우도 받친다
+ * (중복 항목은 PATH 해석에 무해하다).
  */
 function pathForPlist(): string {
-  return process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin';
+  const inherited = process.env.PATH;
+  return inherited ? `${inherited}:${PLIST_PATH_FALLBACK}` : PLIST_PATH_FALLBACK;
 }
 
 /**
@@ -86,12 +94,12 @@ export function plistContent(overrides?: PlistValues): string {
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${escapeXml(logPath)}</string>
-  <key>StandardErrorPath</key><string>${escapeXml(logPath)}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>${escapeXml(path)}</string>
   </dict>
+  <key>StandardOutPath</key><string>${escapeXml(logPath)}</string>
+  <key>StandardErrorPath</key><string>${escapeXml(logPath)}</string>
 </dict>
 </plist>
 `;

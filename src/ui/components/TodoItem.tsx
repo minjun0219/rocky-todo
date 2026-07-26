@@ -41,13 +41,16 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       className={`todo-row ${done ? 'is-done' : ''} ${todo.archivedAt ? 'is-archived' : ''}`}
       style={{ paddingLeft: `${depth * 22}px` }}
     >
-      <input
-        type="checkbox"
-        className="todo-check"
-        checked={done}
-        title={done ? '다시 열기' : '완료'}
-        onChange={() => void setTodoStatus(todo.id, done ? 'reopen' : 'done')}
-      />
+      <label className="todo-check-hit">
+        <input
+          type="checkbox"
+          className="todo-check"
+          checked={done}
+          title={done ? '다시 열기' : '완료'}
+          aria-label={done ? '다시 열기' : '완료'}
+          onChange={() => void setTodoStatus(todo.id, done ? 'reopen' : 'done')}
+        />
+      </label>
       <button
         type="button"
         className="todo-ref"

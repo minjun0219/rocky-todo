@@ -127,6 +127,14 @@ describe('cursor store', () => {
       expect(Object.keys(raw).length).toBeLessThanOrEqual(100);
       expect(readCursor(file, 'sess-119')).toBe(119);
       expect(readCursor(file, 'sess-0')).toBeUndefined();
+
+      // 개수만 보면 "어느 100개가 남았는지"를 놓친다 — `at` 이 밀리초라 세션들이 같은
+      // 값을 갖기 쉽고, 그때 잘려나가는 구간이 오래된 쪽이 아니라 임의의 밴드가 되던
+      // 버그가 있었다(0–11 과 16–23 이 빠지고 12–15 는 남았다). 남은 집합이 정확히
+      // 최신 100개인지까지 못 박는다 — 이 단정이 없어서 위 두 줄만으로는 실행마다
+      // 통과/실패가 갈렸다.
+      const survivors = Array.from({ length: 120 }, (_, i) => i).filter((i) => `sess-${i}` in raw);
+      expect(survivors).toEqual(Array.from({ length: 100 }, (_, i) => i + 20));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

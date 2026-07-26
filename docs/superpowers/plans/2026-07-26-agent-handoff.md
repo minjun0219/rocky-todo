@@ -472,7 +472,7 @@ In `src/migrations.ts`, add before the `MIGRATIONS` export:
 
 ```ts
 /**
- * 마이그레이션 2: 핸드오프 큐 테이블.
+ * 마이그레이션 3: 핸드오프 큐 테이블.
  *
  * 신규 DB 는 `SCHEMA` 로 이 테이블을 갖고 태어나므로 `IF NOT EXISTS` 가드가 필요하다 —
  * 마이그레이션은 신규/기존 DB 양쪽에서 실행된다.

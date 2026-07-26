@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
+import { assertBoardHasRepo, createIssueForTodo, findIssueLink, type RunCommand } from './github';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './store';
 
@@ -16,6 +18,15 @@ import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './st
 
 export interface TodoMcpOptions {
   store: TodoStore;
+  /** 외부 명령 실행자 — 테스트가 fake 를 넣는다. 생략하면 실제 `gh` 를 부른다. */
+  run?: RunCommand;
+  /**
+   * 이 요청이 이슈 생성(= 사용자의 `gh` 인증으로 외부 발행)을 해도 되는 출처인지.
+   * `createMcpFetchHandler` 가 요청마다 `isLocalRequest` 로 판정해 넣는다 — MCP 도구
+   * 핸들러는 Request 를 볼 수 없어 boolean 으로 미리 접어 내려보낸다.
+   * 생략하면 거부다(fail-closed) — 근거 없이 외부 발행을 허용하지 않는다.
+   */
+  allowIssueCreate?: boolean;
 }
 
 function jsonResult(value: unknown) {
@@ -64,7 +75,7 @@ function resolveBoardId(
 
 /** 5개 도구가 등록된 McpServer 를 만든다 — transport 바인딩은 호출자 몫. */
 export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
-  const { store } = options;
+  const { store, run, allowIssueCreate = false } = options;
   const server = new McpServer({ name: 'rocky-todo', version: pkg.version });
 
   server.registerTool(
@@ -120,7 +131,7 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_write',
     {
       description:
-        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다. 진행 상황·중간 보고·사용자에게 묻고 싶은 것은 description 을 덮어쓰지 말고 comment 로 남긴다 — description 은 "이 할 일이 무엇인가"의 자리이고, comment 는 사용자와 주고받는 타임라인이다.',
+        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다. 진행 상황·중간 보고·사용자에게 묻고 싶은 것은 description 을 덮어쓰지 말고 comment 로 남긴다 — description 은 "이 할 일이 무엇인가"의 자리이고, comment 는 사용자와 주고받는 타임라인이다. createIssue: true 를 주면 이 todo 를 GitHub 이슈로 올리고 그 URL 을 links 에 붙인다 (보드에 repo 가 설정돼 있어야 한다).',
       inputSchema: {
         id: z
           .string()
@@ -148,10 +159,16 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
           .describe(
             'append a comment to this todo — progress notes, findings, questions to the user. Use this instead of rewriting description',
           ),
+        createIssue: z
+          .boolean()
+          .optional()
+          .describe(
+            "true → also open a GitHub issue for this todo and attach its URL to links. Requires the board to have a repo set (rocky-todo board repo OWNER/NAME), and only works when this MCP request reaches the daemon locally over loopback — it borrows the daemon user's gh credentials, so exposed surfaces are refused. This is an irreversible external publication, not a local board write: the issue is created immediately with no undo, the target repository may be public, and the todo title and description are published verbatim as the issue title/body. Ask the user for confirmation before setting this to true.",
+          ),
         actor: actorSchema,
       },
     },
-    async ({ id, board, title, comment, actor, ...rest }) => {
+    async ({ id, board, title, comment, createIssue: wantIssue, actor, ...rest }) => {
       const who = actor ?? 'agent';
       // create/patch 를 먼저 실행하고 나서 comment 검증에 걸리면, 이미 만들어진/바뀐
       // todo 는 그대로 남고 에러만 돌아간다 — 호출자가 재시도하면 중복 생성(create)
@@ -162,13 +179,28 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
       if (comment !== undefined && comment.trim() === '') {
         throw new Error('comment body is required');
       }
+      // 출처 거부는 모든 write 앞이다 — 어차피 발행이 안 될 호출이 patch/create 만
+      // 적용해놓고 실패하면, 호출자는 "이슈는 안 만들어졌는데 todo 는 바뀐" 상태를
+      // 되짚어야 한다. 인가는 부수효과 전에 끊는다.
+      if (wantIssue && !allowIssueCreate) {
+        throw new Error(NON_LOCAL_ISSUE_MESSAGE);
+      }
       if (id) {
         const currentBoardId = resolveBoardId(store, board, id);
-        // comment 만 온 호출은 updateTodo 를 건너뛴다 — 아무것도 안 바뀐 `update`
-        // 히스토리 줄이 댓글마다 하나씩 따라붙어 타임라인을 어지럽히지 않게.
+        // 이미 이슈가 있으면 write 전에 끊는다 — 흔한 재시도에서 patch 만 적용되고
+        // 에러가 나는 부분 반영을 막는다. gh 실행 자체의 실패는 미리 알 수 없어
+        // patch 뒤에 남지만, 그때는 patch 가 정당하게 적용된 상태다.
+        if (wantIssue) {
+          const current = store.getTodo(id, currentBoardId);
+          if (current && findIssueLink(current.links)) {
+            throw new Error(`todo already has a GitHub issue: ${findIssueLink(current.links)}`);
+          }
+        }
+        // comment/createIssue 만 온 호출은 updateTodo 를 건너뛴다 — 아무것도 안 바뀐
+        // `update` 히스토리 줄이 따라붙어 타임라인을 어지럽히지 않게.
         const hasPatch =
           title !== undefined || Object.values(rest).some((value) => value !== undefined);
-        const todo = hasPatch
+        let todo = hasPatch
           ? store.updateTodo(id, { title, ...rest }, who, currentBoardId)
           : store.getTodo(id, currentBoardId);
         if (!todo) {
@@ -180,14 +212,27 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
         if (comment !== undefined) {
           store.addComment(todo.id, comment, who);
         }
+        if (wantIssue) {
+          todo = createIssueForTodo(store, todo.id, { actor: who, run }).todo;
+        }
         return jsonResult(withRef(store, todo));
       }
       if (!board || !title) {
         throw new Error('board and title are required to create a todo');
       }
-      const created = store.createTodo({ board, title, ...rest }, who);
+      // 이슈 생성의 전제(보드 repo)는 createTodo 보다 먼저 검증한다 — 뒤에서 던지면
+      // 만들어진 todo 는 남는데 호출자는 그 id 를 못 받아, 재시도가 중복 todo 를 쌓는다.
+      // `gh` 실행 자체의 실패는 미리 알 수 없어 여전히 todo 를 남기지만, 그건 "todo 는
+      // 정당하게 만들어졌고 발행만 실패" 라 재시도 대상이 이슈 생성뿐이다.
+      if (wantIssue) {
+        assertBoardHasRepo(store, board);
+      }
+      let created = store.createTodo({ board, title, ...rest }, who);
       if (comment !== undefined) {
         store.addComment(created.id, comment, who);
+      }
+      if (wantIssue) {
+        created = createIssueForTodo(store, created.id, { actor: who, run }).todo;
       }
       return jsonResult(withRef(store, created));
     },
@@ -317,12 +362,22 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
 /**
  * `/mcp` 용 fetch 핸들러 — stateless 모드로 요청마다 서버+transport 를 새로 만든다.
  * 로컬 단일 사용자 데몬이라 세션 관리가 불필요하고, 요청 간 상태는 전부 store 에 있다.
+ *
+ * 요청마다 서버를 새로 만드는 성질을 그대로 활용해, 그 요청의 출처 판정을
+ * `allowIssueCreate` 로 접어 도구에 내려보낸다 — REST 의 403 가드와 같은 판별
+ * (`isLocalRequest`)을 공유하므로 두 표면이 갈리지 않는다.
+ *
+ * @param peerAddress 요청 소켓의 주소 — `daemon.ts` 가 `server.requestIP(req)` 에서
+ *   넘긴다. 생략하면 이슈 생성은 거부된다(fail-closed).
  */
 export function createMcpFetchHandler(
   options: TodoMcpOptions,
-): (req: Request) => Promise<Response> {
-  return async (req: Request): Promise<Response> => {
-    const server = buildTodoMcpServer(options);
+): (req: Request, peerAddress?: string) => Promise<Response> {
+  return async (req: Request, peerAddress?: string): Promise<Response> => {
+    const server = buildTodoMcpServer({
+      ...options,
+      allowIssueCreate: isLocalRequest(req, peerAddress),
+    });
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

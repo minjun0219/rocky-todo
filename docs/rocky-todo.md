@@ -54,6 +54,10 @@ rocky-todo daemon status      # 기동 여부 + launchd 상태
 rocky-todo daemon uninstall
 ```
 
+> **이미 `daemon install` 을 해둔 환경**은 plist 가 자동 갱신되지 않는다 — GitHub 이슈
+> 기능(`gh` PATH 인식)을 쓰려면 `rocky-todo daemon uninstall && rocky-todo daemon install`
+> 로 한 번 다시 깐다.
+
 레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
 
 > **PATH 회귀 수정 (재설치 필요)**: 이전 버전으로 `daemon install` 을 이미 해뒀다면
@@ -139,6 +143,34 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
   읽음 커서는 `localStorage` 에만 있다 — 단일 사용자 로컬 데몬이라 서버측 읽음 상태는 두지
   않았다(다른 기기/브라우저에서는 다시 안 읽은 것으로 보인다).
 
+## GitHub 이슈로 만들기
+
+todo 하나를 GitHub 이슈로 올릴 수 있다 — 웹 UI 상세 드로어의 `GitHub 이슈 만들기` 버튼,
+CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssue: true }`
+셋 다 같은 경로를 탄다(새 MCP 도구가 아니라 기존 `todo_write` 의 필드다 — 도구는 여전히
+5개). 만들어진 이슈 URL 은 그 todo 의 링크에 자동으로 붙고(제목은 `#<이슈번호>`), 기존
+`updateTodo` 를 거치므로 히스토리·SSE·훅 주입에 그대로 실린다.
+
+- **인증**: `gh` CLI 를 빌린다 — 토큰을 저장하지 않는다. `gh` 가 없거나 로그인 전이면 그
+  사유를 그대로 보여준다(웹 UI 는 `role="alert"` 로 즉시 읽힌다).
+- **보드마다 GitHub 레포(`owner/name`)를 알아야 한다** — 보드는 원래 key(=git remote
+  basename)만 알아서 owner 를 모른다. 채우는 경로 셋:
+  - `rocky-todo board repo [OWNER/NAME]` — 인자 없으면 cwd 의 git remote 에서 유추
+  - `rocky-todo issue REF` 는 보드에 repo 가 없으면 cwd 에서 유추해 진행한다 — 저장은
+    서버가 `gh` 성공 후 todo 의 실제 보드에 한다(CLI 는 더 이상 미리 PATCH 하지 않는다)
+  - 웹 UI 는 버튼을 처음 누를 때 `OWNER/NAME` 입력을 받는다 — 이것도 `gh` 성공 후에만
+    보드에 저장되고, 실패하면(오타 슬러그 등) 입력이 값을 유지한 채 다시 열린다
+- 이미 이슈 링크가 있는 todo 는 다시 만들지 않는다. **역방향 동기화는 없다** — 이슈를
+  닫아도 todo 는 자동으로 완료되지 않고, 이슈 본문/제목이 사후에 바뀌어도 todo 에는
+  반영되지 않는다.
+- **로컬(루프백) 요청만 이슈를 만들 수 있다.** `gh` 인증을 빌리기 때문이다 — 보드를 노출하는
+  것(`todo.expose`)과 GitHub 계정 권한을 노출하는 것은 다른 얘기라, 노출 설정과 무관하게
+  이 표면만 잠긴다. 노출된 주소로 접속한 브라우저는 버튼 대신 그 이유를 보고(이미 만들어진
+  이슈로 가는 링크는 그대로 열린다), REST 는 403, MCP `todo_write` 는 도구 에러가 된다.
+  `tailscale serve` 를 거친 접속도 마찬가지다 — 프록시가 루프백으로 중계하지만 중계 흔적
+  (`X-Forwarded-*` / `Tailscale-User-*`)으로 구분한다. 폰에서 보드를 보다 이슈를 만들려면
+  그 머신에서 CLI(`rocky-todo issue REF`)를 쓰거나 에이전트에게 시킨다.
+
 ## 사람→에이전트 자동 전달 (UserPromptSubmit 훅, Claude Code 전용)
 
 에이전트→웹 방향은 SSE 로 실시간이고, 반대 방향은 **훅**이 닫는다: 사용자가 프롬프트를
@@ -211,6 +243,8 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
+- 노출되는 것은 **보드**다. GitHub 이슈 생성은 어느 채널로도 열리지 않는다 — 로컬 요청
+  전용이다 ([GitHub 이슈로 만들기](#github-이슈로-만들기) 참고).
 - 데몬 설정 변경 후에는 재시작해야 반영된다: `rocky-todo daemon stop && rocky-todo daemon start`.
 - 플러그인 업데이트는 다음 세션 시작 때 자동 반영된다 — SessionStart 훅이 실행 중인 데몬의
   버전을 확인해 구버전이면 내리고 새 버전으로 재기동한다 (보드 데이터는 `~/.config/rocky/todo`
@@ -224,7 +258,9 @@ rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
+rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
+rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
 rocky-todo history REF [--global|--note] · board ls|add · section ls · open
 rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
 rocky-todo sessions

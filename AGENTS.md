@@ -18,7 +18,10 @@ AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo �
 (`hooks/notify-todo.ts`)이 보드의 사람 변경을 세션에 주입한다(fail-open, Claude Code 전용).
 계층(parentId)+섹션+보드(키=레포 이름), priority p1–p4/라벨/마감/링크(GitHub·Todoist URL),
 doing 표시(start→actor+since), 전 mutation 히스토리 자동 기록,
-댓글(todo 별 타임라인 — description 대신 진행 보고를 남기는 자리), **삭제 없음(아카이브만)**.
+댓글(todo 별 타임라인 — description 대신 진행 보고를 남기는 자리),
+GitHub 이슈 생성(웹 UI 버튼/CLI `issue`/MCP `todo_write.createIssue` — `gh` CLI 를 빌려 토큰
+미저장, 이슈 URL 을 links 에 자동 첨부, 보드마다 `owner/name` repo 필요, **로컬 요청 전용** —
+아래 참고), **삭제 없음(아카이브만)**.
 설정은 user `rocky.json` 의 `todo` 블록만 읽는다(`src/rocky-config.ts` 경량 로더 — rocky 본체의
 `../core` 에 의존하지 않는다). project rocky.json 은 무시(전역 단일 인스턴스). 노출은 opt-in
 (`todo.expose`: `lan` / `tailscale-serve`, 기본 루프백).
@@ -49,6 +52,8 @@ rocky-todo/
 │   ├── sessions.ts                 # claude agents --json 래퍼 (활성 세션 목록 + 보드 매칭)
 │   ├── handoff.ts                  # 핸드오프 주입문 생성 (순수)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
+│   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
+│   ├── local-request.ts            # 요청 출처 판별(루프백 + 프록시 헤더 없음) — 이슈 생성 게이트
 │   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
 │   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
 ├── hooks/
@@ -80,6 +85,17 @@ rocky-todo/
 - **첫 세션 순서 미보장**: SessionStart 데몬 기동 ↔ http MCP 초기화 순서는 보장 안 됨. 첫 세션
   MCP `failed` 는 `/mcp` retry / 다음 세션 / launchd 로 해소 — 감안 사항.
 - **전역 단일 인스턴스**: 포트가 락. project rocky.json 무시, user rocky.json 의 todo 블록만.
+- **이슈 생성은 로컬 요청 전용**: 보드는 무인증이고 `todo.expose` 로 노출하는 대상이지만,
+  이슈 생성은 데몬 사용자의 `gh` 인증을 빌려 외부에 되돌릴 수 없는 글을 쓴다 — 보드 쓰기
+  권한이 GitHub 쓰기 권한으로 확대되는 지점이라 노출 설정과 무관하게 막는다. 판별은
+  `src/local-request.ts` 의 `isLocalRequest` 하나이고, REST(403)와 `/mcp`(도구 에러)가
+  같이 쓴다. **peer 주소만으로는 부족하다** — `tailscale serve` 는 tailnet 요청을 루프백으로
+  프록시하므로 원격도 `127.0.0.1` 로 보인다. 그래서 루프백 주소 **+ 프록시 헤더 없음**
+  (`x-forwarded-*` / `forwarded` / `tailscale-user-*`)을 함께 본다. 헤더 위조는 요청을 덜
+  신뢰하게만 만들 수 있어 우회 수단이 못 된다. peer 주소는 `daemon.ts` 가
+  `server.requestIP(req)` 로 넘기고, 안 넘어오면 거부다(fail-closed). 웹 UI 는
+  `/api/health` 의 `issueCreateAllowed` 를 부팅에 한 번 보고 버튼 대신 이유를 보여준다 —
+  힌트일 뿐 강제는 서버가 한다.
 - **번호 참조(ref)**: todo/note 는 랜덤 id(`921gvwnr`, PK 로 유지) 외에 보드별 순번을 갖는다.
   id 를 받는 자리는 어디서든 `rocky#12`(보드 접두사) → `#12`/`12`(현재 보드 컨텍스트 안의
   번호) → id 정확 일치 → id 유일 prefix 순으로 시도해 해석한다(`resolveRef` in `src/store.ts`).

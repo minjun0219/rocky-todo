@@ -3,9 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  boardKeyFromMissingRepoError,
+  boardRepoPath,
   formatSessions,
   formatTodoLine,
   formatTodoShow,
+  isMissingRepoError,
   noteRefPath,
   parseFlags,
   resolveHistoryEntity,
@@ -157,7 +160,11 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
     dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-ref-'));
     store = new TodoStore({ dbPath: join(dir, 'todo.db') });
     const api = buildTodoServer({ store });
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
     if (server.port === undefined) {
       throw new Error('Bun.serve did not assign a port');
     }
@@ -463,7 +470,11 @@ describe('comment command paths', () => {
     dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-comment-'));
     store = new TodoStore({ dbPath: join(dir, 'todo.db') });
     const api = buildTodoServer({ store });
-    server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (req) => api.fetch(req) });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
     if (server.port === undefined) {
       throw new Error('Bun.serve did not assign a port');
     }
@@ -568,5 +579,118 @@ describe('bin/rocky-todo entry', () => {
     expect(stderr).toBe('');
     expect(proc.exitCode).toBe(0);
     expect(proc.stdout.toString()).toContain('rocky-todo');
+  });
+});
+
+describe('issue command paths', () => {
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-issue-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({ store });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('todoRefPath builds the issue endpoint', () => {
+    expect(todoRefPath('rocky#3', '/issue', 'rocky')).toBe(
+      '/api/todos/rocky%233/issue?board=rocky',
+    );
+  });
+
+  test('boardRepoPath encodes the board key', () => {
+    expect(boardRepoPath('my.board')).toBe('/api/boards/my.board');
+  });
+
+  test('setting a board repo through the CLI path round-trips', async () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const board = await request<{ repo: string }>(ctx, 'PATCH', boardRepoPath('rocky'), {
+      repo: 'o/n',
+    });
+    expect(board.repo).toBe('o/n');
+  });
+
+  test('the issue endpoint answers 400 when the board has no repo', async () => {
+    store.ensureBoard('rocky', { actor: 'tester' });
+    const todo = store.createTodo({ board: 'rocky', title: '작업' }, 'tester');
+    await expect(request(ctx, 'POST', todoRefPath(todo.id, '/issue', 'rocky'))).rejects.toThrow(
+      /repo/,
+    );
+  });
+});
+
+describe('isMissingRepoError', () => {
+  // 각 케이스는 예전의 느슨한 `/repo/.test(message)` 판정이 오답을 내는 경우들이다 —
+  // 그래야 이 테스트가 실제로 판별력을 갖는다는 증거가 된다 (finding A/B).
+  test('matches the server message for an unset board repo', () => {
+    expect(
+      isMissingRepoError(
+        'board has no GitHub repo: rocky — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe(true);
+  });
+
+  test('does not match a 409 whose issue url contains "repo"', () => {
+    expect(
+      isMissingRepoError(
+        'todo already has a GitHub issue: https://github.com/org/my-repo/issues/12',
+      ),
+    ).toBe(false);
+  });
+
+  test('does not match a gh auth failure that names the repo scope', () => {
+    expect(isMissingRepoError("error: your token has not been granted the 'repo' scope")).toBe(
+      false,
+    );
+    expect(isMissingRepoError('gh auth refresh -s repo')).toBe(false);
+  });
+
+  test('does not match unrelated failures', () => {
+    expect(isMissingRepoError('todo not found: abc')).toBe(false);
+    expect(isMissingRepoError('')).toBe(false);
+  });
+});
+
+describe('boardKeyFromMissingRepoError', () => {
+  test('extracts the board key from the server message', () => {
+    expect(
+      boardKeyFromMissingRepoError(
+        'board has no GitHub repo: rocky-todo — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe('rocky-todo');
+  });
+
+  test('extracts a key containing a hyphen and a dot', () => {
+    expect(
+      boardKeyFromMissingRepoError(
+        'board has no GitHub repo: my-board.v2 — 먼저 설정한다 (rocky-todo board repo OWNER/NAME)',
+      ),
+    ).toBe('my-board.v2');
+  });
+
+  test('returns undefined for messages that are not that error', () => {
+    expect(boardKeyFromMissingRepoError('todo not found: abc')).toBeUndefined();
+    expect(boardKeyFromMissingRepoError('')).toBeUndefined();
+  });
+
+  test('returns undefined when the prefix matches but the separator is missing', () => {
+    expect(boardKeyFromMissingRepoError('board has no GitHub repo: rocky')).toBeUndefined();
   });
 });

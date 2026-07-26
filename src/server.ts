@@ -1,4 +1,12 @@
 import pkg from '../package.json' with { type: 'json' };
+import {
+  createIssueForTodo,
+  findIssueLink,
+  IssueAlreadyExistsError,
+  isRepoSlug,
+  type RunCommand,
+} from './github';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import { createCachedListSessions, matchBoard, type SessionsResult } from './sessions';
 import {
@@ -19,6 +27,8 @@ import {
 
 export interface TodoServerOptions {
   store: TodoStore;
+  /** 외부 명령 실행자 — 테스트가 fake 를 넣는다. 생략하면 실제 `gh` 를 부른다. */
+  run?: RunCommand;
   /**
    * 활성 세션 조회 — 테스트에서 주입한다. 기본은 `claude agents --json` 을 TTL 3초로
    * 메모이즈한 버전(`createCachedListSessions`) — 주입된 함수는 캐시를 거치지 않는다
@@ -41,7 +51,12 @@ export interface TodoServerOptions {
 export type { NoteView, TodoView } from './refs';
 
 export interface TodoServer {
-  fetch: (req: Request) => Promise<Response>;
+  /**
+   * @param peerAddress 요청을 보낸 소켓의 주소 — `daemon.ts` 가 `server.requestIP(req)`
+   *   에서 넘긴다. 이슈 생성 라우트가 출처를 판별하는 데만 쓴다(`isLocalRequest`).
+   *   생략하면 루프백이 아닌 것으로 취급된다 — 근거 없음은 거부다(fail-closed).
+   */
+  fetch: (req: Request, peerAddress?: string) => Promise<Response>;
 }
 
 const STATUS_ACTIONS: ReadonlySet<string> = new Set([
@@ -64,6 +79,14 @@ function errorResponse(message: string, status: number): Response {
   return json({ error: message }, status);
 }
 
+/**
+ * 이슈 중복 응답 — 사전 검사와 orchestrator 경유 두 경로가 **같은 본문**을 내도록 한 곳에 둔다.
+ * `url` 을 함께 싣는 건 웹 UI 가 "이미 있음"을 그 이슈로 보내는 데 쓰기 때문이다.
+ */
+function alreadyHasIssue(url: string): Response {
+  return json({ error: `todo already has a GitHub issue: ${url}`, url }, 409);
+}
+
 async function readBody(req: Request): Promise<Record<string, unknown>> {
   try {
     const body = (await req.json()) as unknown;
@@ -76,6 +99,30 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * 몸통이 아예 없어도 되는 라우트용 — CLI/웹 UI 가 `{ repo }` 없이 POST 하는 경우가
+ * 흔하다(`src/cli.ts` 의 `issue` 명령 기본 경로, `src/ui/store.ts` 의 `createIssue`).
+ * `readBody` 는 빈 본문에서 JSON 파싱이 던지는 걸 그대로 "invalid JSON body" 로
+ * 바꿔버려 이 경우를 구분 못 한다 — 빈 문자열이면 undefined 를 돌려주고, 있으면
+ * `readBody` 와 같은 파싱/모양 검증을 적용한다.
+ */
+async function readOptionalBody(req: Request): Promise<Record<string, unknown> | undefined> {
+  const text = await req.text();
+  if (text.trim() === '') {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('invalid JSON body');
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('body must be a JSON object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 /** not found 류 스토어 에러를 HTTP status 로 번역한다. */
 function toHttpError(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error);
@@ -86,7 +133,7 @@ function toHttpError(error: unknown): Response {
 }
 
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
-  const { store } = options;
+  const { store, run } = options;
   const sessionsOf = options.sessions ?? createCachedListSessions();
   const isLoopbackOf = options.isLoopback ?? (() => true);
 
@@ -126,18 +173,27 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
   // boardId 가 있는데 board 를 못 찾으면 refs.ts 의 refOf 가 던진다 — 아래 catch →
   // toHttpError 경유로 400 이 된다 (조용히 위조 글로벌 참조를 만들지 않기 위함).
 
-  const fetch = async (req: Request): Promise<Response> => {
+  const fetch = async (req: Request, peerAddress?: string): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
     const method = req.method.toUpperCase();
     const actor = req.headers.get('x-rocky-actor') ?? 'unknown';
+    const local = isLocalRequest(req, peerAddress);
 
     try {
       // ── health ──
       if (method === 'GET' && path === '/api/health') {
         // version 은 "지금 돌고 있는 코드"의 버전이다 — 플러그인 캐시가 버전 디렉터리라
         // 데몬이 구버전 경로에서 계속 살아있을 수 있어, 호출자가 stale 을 판별할 근거가 된다.
-        return json({ ok: true, name: 'rocky-todo', version: pkg.version, pid: process.pid });
+        // issueCreateAllowed 는 이 요청과 같은 출처에서 이슈 생성이 가능한지다 — 웹 UI 가
+        // 없는 버튼을 그리지 않도록 미리 보는 힌트일 뿐, 강제는 이슈 라우트 자신이 한다.
+        return json({
+          ok: true,
+          name: 'rocky-todo',
+          version: pkg.version,
+          pid: process.pid,
+          issueCreateAllowed: local,
+        });
       }
 
       // ── SSE ──
@@ -160,6 +216,17 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             actor,
           }),
           201,
+        );
+      }
+
+      const boardDetail = path.match(/^\/api\/boards\/([^/]+)$/);
+      if (boardDetail?.[1] && method === 'PATCH') {
+        const body = await readBody(req);
+        if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
+          return errorResponse('repo must look like OWNER/NAME', 400);
+        }
+        return json(
+          store.setBoardRepo(decodeURIComponent(boardDetail[1]), body.repo.trim(), actor),
         );
       }
 
@@ -272,6 +339,57 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         return json(
           withRef(store, store.setTodoStatus(ref, action as StatusAction, actor, currentBoardId)),
         );
+      }
+
+      const todoIssue = path.match(/^\/api\/todos\/([^/]+)\/issue$/);
+      if (todoIssue?.[1] && method === 'POST') {
+        // 출처 검사가 가장 먼저다 — 인가 판정이므로 todo 존재 여부보다 앞서야 하고,
+        // 그래야 노출된 표면에 어떤 ref 가 있는지도 흘리지 않는다. 노출(`todo.expose`)은
+        // 보드에 대한 것이고, 데몬 사용자의 gh 인증까지 노출하는 것이 아니다.
+        if (!local) {
+          return errorResponse(NON_LOCAL_ISSUE_MESSAGE, 403);
+        }
+        const ref = decodeURIComponent(todoIssue[1]);
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        // 중복은 409 로 구분한다 — 400(설정/실행 실패)과 원인이 전혀 다르고, 웹 UI 가
+        // "이미 있음"을 별도로 다뤄야 한다. 판별은 `findIssueLink` 하나를 공유한다.
+        const existing = findIssueLink(todo.links);
+        if (existing) {
+          return alreadyHasIssue(existing);
+        }
+        // repo 는 옵션 — 클라이언트가 어느 보드가 todo 를 소유하는지 추측해 PATCH 하던
+        // 옛 경로(findings A/C)를 없앤 자리다. body 자체가 없을 수도 있어(CLI 기본 경로,
+        // 웹 UI 의 board.repo 이미 설정된 경로) `readOptionalBody` 로 받는다.
+        const body = await readOptionalBody(req);
+        let repo: string | undefined;
+        if (body && 'repo' in body) {
+          if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
+            return errorResponse('repo must look like OWNER/NAME', 400);
+          }
+          repo = body.repo.trim();
+        }
+        try {
+          const result = createIssueForTodo(store, ref, { actor, currentBoardId, run, repo });
+          return json({ url: result.url, todo: withRef(store, result.todo) }, 201);
+        } catch (error) {
+          // 위 사전 검사와 orchestrator 의 재검사 사이에는 `readOptionalBody` 의 await 이
+          // 있다 — 같은 todo 로 두 요청이 겹치면 둘 다 사전 검사를 통과하고, 먼저 끝난
+          // 쪽이 링크를 붙인 뒤 나중 쪽이 orchestrator 안에서 걸린다. 같은 "이미 있음"이
+          // 타이밍에 따라 409/400 으로 갈리지 않게 여기서도 409 로 매핑한다.
+          if (error instanceof IssueAlreadyExistsError) {
+            return alreadyHasIssue(error.url);
+          }
+          // 그 밖의 실패(repo 미설정, `gh` 실패 등)는 항상 400 이다 — `toHttpError` 로
+          // 흘려보내면 `gh` 의 "HTTP 404: Not Found (api.github.com/...)" 같은 메시지가
+          // `/not found/i` 에 걸려, 이 라우트에서 404 는 "todo not found" 라는 계약을
+          // 깬다(finding F).
+          const message = error instanceof Error ? error.message : String(error);
+          return errorResponse(message, 400);
+        }
       }
 
       const todoHandoff = /^\/api\/todos\/([^/]+)\/handoff$/.exec(path);

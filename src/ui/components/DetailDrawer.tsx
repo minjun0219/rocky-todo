@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { TodoView } from '../../server';
+import { findIssueLink } from '../../github';
 import type { Comment, HistoryEntry } from '../../store';
 import {
   actorTone,
@@ -32,6 +34,16 @@ export function DetailDrawer() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [detail, closeDetail]);
+
+  // 드로어가 열린 동안 배경 스크롤을 잠근다. 정리 함수에서 **반드시** 지운다 —
+  // 남기면 드로어를 닫은 뒤 페이지 전체가 스크롤 불가가 된다.
+  useEffect(() => {
+    if (!detail) {
+      return;
+    }
+    document.body.classList.add('is-drawer-open');
+    return () => document.body.classList.remove('is-drawer-open');
+  }, [detail]);
 
   if (!detail) {
     return null;
@@ -368,6 +380,107 @@ function TodoDetail() {
           ) : null}
         </div>
       ) : null}
+      <IssueAction todo={todo} />
+    </div>
+  );
+}
+
+/**
+ * GitHub 이슈 — 없으면 만들고, 있으면 링크로 보낸다. 보드 repo 가 없으면 입력받고, 실패하면
+ * 입력이 열린 채 남아 고쳐 재시도하거나 이미 설정된 repo 를 바꿀 수 있다.
+ *
+ * repo 는 서버가 `gh` 성공 후에만 보드에 저장한다(`createIssueForTodo` — finding C).
+ * 그래서 여기서는 미리 `setBoardRepo` 를 부르지 않는다 — 실패한 슬러그를 먼저 저장해두면
+ * `asking` 이 이미 false 로 내려가 입력이 다시 열리지 않는 막다른 길이 됐던 게 원래
+ * 버그였다. 실패하면 무조건 `asking` 을 다시 연다: 방금 실패한 값을 그대로 보여주거나
+ * (사용자가 직접 입력한 경우), 처음 실패라 아직 아무 값도 안 보였다면 board.repo 를
+ * 프리필한다(있다면) — 어느 쪽이든 사용자가 고쳐서 재시도할 길을 남긴다.
+ */
+function IssueAction({ todo }: { todo: TodoView }) {
+  const boards = useUiStore((s) => s.boards);
+  const createIssue = useUiStore((s) => s.createIssue);
+  const issueCreateAllowed = useUiStore((s) => s.issueCreateAllowed);
+  const [repo, setRepo] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const board = boards.find((b) => b.id === todo.boardId);
+  const issueUrl = findIssueLink(todo.links);
+
+  if (issueUrl) {
+    return (
+      <div className="drawer-actions">
+        <a className="drawer-btn" href={issueUrl} target="_blank" rel="noreferrer">
+          이슈 열기 ↗
+        </a>
+      </div>
+    );
+  }
+
+  // 이미 있는 이슈로 가는 링크는 어디서든 유효하지만(위), 만드는 건 로컬에서만 된다 —
+  // 서버가 403 을 줄 버튼을 그리는 대신 왜 못 하는지 한 줄로 밝힌다. 조용히 사라지면
+  // tailscale 로 접속한 사용자는 기능이 없어진 줄로 읽는다.
+  if (!issueCreateAllowed) {
+    return (
+      <div className="issue-action">
+        <p className="issue-unavailable">
+          GitHub 이슈 만들기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
+        </p>
+      </div>
+    );
+  }
+
+  const submit = async (repoOverride: string | undefined): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    try {
+      await createIssue(todo.id, repoOverride);
+      setAsking(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      // 실패는 절대 조용히 막다른 길이 되면 안 된다 — 입력을 (다시) 열어 고칠 값을 보여준다.
+      setAsking(true);
+      setRepo(repoOverride ?? board?.repo ?? '');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="issue-action">
+      {asking && (
+        <input
+          className="issue-repo-input"
+          value={repo}
+          placeholder="OWNER/NAME"
+          aria-label="GitHub 레포 (OWNER/NAME)"
+          onChange={(e) => setRepo(e.target.value)}
+        />
+      )}
+      <div className="drawer-actions">
+        <button
+          type="button"
+          className="drawer-btn"
+          disabled={busy || (asking && repo.trim() === '')}
+          onClick={() => {
+            if (!board?.repo && !asking) {
+              setAsking(true);
+              setRepo(board?.repo ?? '');
+              return;
+            }
+            void submit(asking ? repo.trim() : undefined);
+          }}
+        >
+          {busy ? '만드는 중…' : 'GitHub 이슈 만들기'}
+        </button>
+      </div>
+      {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
+      {error && (
+        <div className="issue-error" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

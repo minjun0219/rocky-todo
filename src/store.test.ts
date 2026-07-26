@@ -9,6 +9,20 @@ import { buildPath } from './ui/route';
 let dir: string;
 let store: TodoStore;
 
+/**
+ * id prefix 테스트용 — 알파벳이 하나 이상 들어간 prefix 를 고른다.
+ * (`src/server.test.ts` · `src/mcp.test.ts` 의 같은 헬퍼와 같은 이유.)
+ *
+ * id 는 base36 이라 앞 4자가 전부 숫자로 나올 수 있고, 그런 prefix 는 **설계대로**
+ * "번호"로 해석된다(`resolveRef` 의 맨숫자 분기) — prefix 로는 안 풀려 이 테스트가
+ * 확률적으로 깨졌다(CI 에서 실제로 실패). 알파벳이 나오는 지점까지 늘려 그 분기를
+ * 확실히 피한다 — 전부 숫자면 id 전체(정확 일치).
+ */
+function idPrefix(id: string): string {
+  const at = id.search(/[a-z]/);
+  return at === -1 ? id : id.slice(0, Math.max(4, at + 1));
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'rocky-todo-'));
   store = new TodoStore({ dbPath: join(dir, 'todo.db') });
@@ -93,6 +107,64 @@ describe('boards', () => {
 
     const todo = store.createTodo({ board: 'my repo', title: '레거시 보드 작업' }, 'tester');
     expect(todo.boardId).toBe('legacy-board-id');
+  });
+
+  test('setBoardRepo stores the slug and it survives a reload', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    expect(board.repo).toBeUndefined();
+
+    const updated = store.setBoardRepo('rocky', 'minjun0219/rocky', 'tester');
+    expect(updated.repo).toBe('minjun0219/rocky');
+    expect(store.boardById(board.id)?.repo).toBe('minjun0219/rocky');
+    expect(store.listBoards().find((b) => b.key === 'rocky')?.repo).toBe('minjun0219/rocky');
+  });
+
+  test('setBoardRepo does not create a board', () => {
+    expect(() => store.setBoardRepo('nosuchboard', 'o/n', 'tester')).toThrow(/not found/);
+    expect(store.listBoards()).toHaveLength(0);
+  });
+
+  // 저장된 값은 그대로 `gh -R` 인자가 된다 — 공백이 섞여 들어가면 이후 모든 이슈 생성이
+  // 조용히 실패한다. 호출부가 이미 다듬지만 마지막 관문에서도 막는다.
+  test('setBoardRepo trims the slug — history and reload see the clean value', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+
+    const updated = store.setBoardRepo('rocky', '  o/n\n', 'tester');
+    expect(updated.repo).toBe('o/n');
+    expect(store.boardById(board.id)?.repo).toBe('o/n');
+
+    const entry = store.listHistory({ entityId: board.id }).find((h) => h.action === 'update');
+    expect(entry?.changes?.repo?.[1]).toBe('o/n');
+  });
+
+  // `createIssueForTodo` 는 `options.repo` 가 오면 매번 setBoardRepo 를 부른다 —
+  // `issue REF --repo o/n` 반복이나 웹 UI 재시도가 같은 슬러그를 계속 넘기는 경로다.
+  test('setBoardRepo is a no-op when the slug does not change', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const before = store.listHistory({ entityId: board.id }).length;
+
+    const again = store.setBoardRepo('rocky', 'o/n', 'tester');
+    // trim 만으로 같아지는 값도 같은 값이다
+    store.setBoardRepo('rocky', '  o/n  ', 'tester');
+
+    expect(again.repo).toBe('o/n');
+    expect(store.listHistory({ entityId: board.id })).toHaveLength(before);
+  });
+
+  test('setBoardRepo still records a real change', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    store.setBoardRepo('rocky', 'o/n', 'tester');
+    const before = store.listHistory({ entityId: board.id }).length;
+
+    store.setBoardRepo('rocky', 'o/other', 'tester');
+
+    expect(store.boardById(board.id)?.repo).toBe('o/other');
+    expect(store.listHistory({ entityId: board.id }).length).toBe(before + 1);
+  });
+
+  test('boardById returns undefined for an unknown id', () => {
+    expect(store.boardById('nosuchid')).toBeUndefined();
   });
 });
 
@@ -266,7 +338,7 @@ describe('todos', () => {
 
   test('getTodo resolves unique id prefix', () => {
     const todo = store.createTodo({ board: 'rocky', title: 'prefix' }, 'tester');
-    expect(store.getTodo(todo.id.slice(0, 4))?.id).toBe(todo.id);
+    expect(store.getTodo(idPrefix(todo.id))?.id).toBe(todo.id);
     expect(store.getTodo('nope1234')).toBeUndefined();
   });
 

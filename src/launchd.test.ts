@@ -7,21 +7,22 @@ import { plistContent } from './launchd';
  * plist 를 만드는 순수 함수(`plistContent`)만 검증한다 — PATH 회귀는 이 정도로 충분히 잡힌다.
  */
 describe('plistContent', () => {
-  test('EnvironmentVariables 로 설치 시점 PATH 를 굽는다 — launchd 기본 PATH 에는 claude 가 없다', () => {
+  // launchd 기본 PATH 에는 `claude`(핸드오프)도 `gh`(이슈 만들기)도 없다 — 데몬이 둘 다
+  // 이름만으로 spawn 하므로 설치 시점 PATH 를 굽고, 뒤에 흔한 설치 위치를 이어 붙인다.
+  const FALLBACK = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+
+  test('EnvironmentVariables 로 설치 시점 PATH 를 굽는다', () => {
     const xml = plistContent();
     expect(xml).toContain('<key>EnvironmentVariables</key>');
     expect(xml).toContain('<key>PATH</key>');
-    expect(xml).toContain(
-      `<string>${process.env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin'}</string>`,
-    );
+    expect(xml).toContain(`<string>${process.env.PATH}:${FALLBACK}</string>`);
   });
 
-  test('PATH 가 비어 있어도(테스트 환경 등) 최소 기본 PATH 로 폴백한다', () => {
+  test('PATH 가 비어 있어도(테스트 환경 등) 흔한 설치 위치로 폴백한다', () => {
     const original = process.env.PATH;
     delete process.env.PATH;
     try {
-      const xml = plistContent();
-      expect(xml).toContain('<string>/usr/bin:/bin:/usr/sbin:/sbin</string>');
+      expect(plistContent()).toContain(`<string>${FALLBACK}</string>`);
     } finally {
       if (original !== undefined) {
         process.env.PATH = original;
