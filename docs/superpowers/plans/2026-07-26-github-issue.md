@@ -269,6 +269,12 @@ const defaultRun: RunCommand = (cmd, stdin) => {
 /** `owner/name` — GitHub 의 소유자·레포 이름이 허용하는 문자만. */
 const REPO_SLUG = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
+/** 스킴이 붙은 원격 URL(`https://`, `http://`, `ssh://`, `git://`)만 인식한다 — 그 외는 scp-like 로 취급. */
+const SCHEME_URL = /^(?:https?|ssh|git):\/\//i;
+
+/** scp-like 원격(`git@github.com:o/n.git`, `github.com:o/n`) — user@ 접두사는 최대 하나, 호스트는 앵커된 정확 일치. */
+const SCP_LIKE = /^(?:[^@/]+@)?github\.com:(.+)$/;
+
 /**
  * git remote URL → `owner/name`. GitHub 이 아니거나 해석할 수 없으면 undefined.
  * `git@github.com:o/n.git` · `https://github.com/o/n(.git)` · `ssh://git@github.com/o/n` 을 받는다.
@@ -282,20 +288,21 @@ export function parseRepoFromRemote(url: string): string | undefined {
   // 문자열 뒤쪽에 `//github.com/` 이 끼어 있으면 부분 검색은 그 지점부터 다시 앵커해
   // 남의 호스트를 GitHub 으로 오인한다 — 이 슬러그가 "어느 레포에 이슈를 올릴지"를
   // 정하므로 오인은 곧 엉뚱한 레포로 내용이 나가는 일이다.
-  let tail: string | undefined;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+  if (SCHEME_URL.test(trimmed)) {
+    let parsed: URL;
     try {
-      const parsed = new URL(trimmed);
-      if (parsed.hostname.toLowerCase() === 'github.com') {
-        tail = parsed.pathname.replace(/^\/+/, '');
-      }
+      parsed = new URL(trimmed);
     } catch {
       return undefined;
     }
-  } else {
-    // scp 꼴(`git@github.com:o/n`). 앵커해서 user 접두어는 최대 하나만 허용한다.
-    tail = /^(?:[^@/]+@)?github\.com:(.+)$/.exec(trimmed)?.[1];
+    if (parsed.hostname.toLowerCase() !== 'github.com') {
+      return undefined;
+    }
+    const slug = parsed.pathname.replace(/^\/+/, '').replace(/\.git$/, '');
+    return REPO_SLUG.test(slug) ? slug : undefined;
   }
+
+  const tail = SCP_LIKE.exec(trimmed)?.[1];
   if (!tail) {
     return undefined;
   }
