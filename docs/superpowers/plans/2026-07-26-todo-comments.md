@@ -269,12 +269,15 @@ function toComment(row: CommentRow): Comment {
     return comment;
   }
 
-  /** 한 todo 의 댓글 — 오래된 것부터(대화 순). 기본은 보관된 댓글 제외. */
+  /**
+   * 한 todo 의 댓글 — 오래된 것부터(대화 순). 기본은 보관된 댓글 제외.
+   * (같은 밀리초에 들어온 댓글의 순서를 랜덤 id 가 아니라 삽입 순서로 가른다 — `rowid` 를 tiebreak 로 쓴다.)
+   */
   listComments(todoId: string, includeArchived = false): Comment[] {
     const archivedFilter = includeArchived ? '' : ' AND archived_at IS NULL';
     return this.db
       .query<CommentRow, [string]>(
-        `SELECT * FROM comments WHERE todo_id = ?${archivedFilter} ORDER BY created_at ASC, id ASC`,
+        `SELECT * FROM comments WHERE todo_id = ?${archivedFilter} ORDER BY created_at ASC, rowid ASC`,
       )
       .all(todoId)
       .map(toComment);
