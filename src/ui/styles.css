@@ -42,6 +42,8 @@
   --line: #6d563c;
   --line-strong: #876a4b;
   --scrim: rgba(10, 7, 4, 0.55);
+  --dim-archived: 0.45;
+  --dim-stale: 0.55;
 }
 
 /*
@@ -56,12 +58,12 @@
   --text: #241c14;
   --muted: #6b5c4a;
   --faint: #756753;
-  --warm: #8a5a00;
+  --warm: #6b4600;
   --warm-dim: #8b6019;
-  --cool: #1f6b7d;
+  --cool: #195564;
   --cool-dim: #47707a;
   --p1: #b3311c;
-  --p2: #8a5a00;
+  --p2: #6b4600;
   --p3: #6f6215;
   --ok: #3f6b26;
   --handoff: #1f5aa8;
@@ -70,6 +72,8 @@
   --line-strong: #9a7e59;
   /* 배경이 밝아 스크림이 덜 진해도 드로어가 충분히 분리된다. */
   --scrim: rgba(36, 28, 20, 0.35);
+  --dim-archived: 0.55;
+  --dim-stale: 0.65;
 }
 
 * {
@@ -403,7 +407,7 @@ textarea {
 }
 
 .is-archived {
-  opacity: 0.45;
+  opacity: var(--dim-archived);
 }
 
 /* ── chips ──────────────────────────────────────── */
@@ -519,7 +523,7 @@ textarea {
 }
 
 .doing-badge.is-stale {
-  opacity: 0.55;
+  opacity: var(--dim-stale);
 }
 
 .doing-badge.is-stale .doing-pulse {
@@ -550,7 +554,7 @@ textarea {
 
 .note-card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -677,7 +681,6 @@ body.is-drawer-open {
   font-size: 11px;
   letter-spacing: 0.14em;
   color: var(--faint);
-  opacity: 0.6;
   margin: 2px 0 10px;
 }
 
@@ -1083,9 +1086,9 @@ body.is-drawer-open {
   border-bottom: 1px solid var(--line);
 }
 
-/* 보관된 todo(.is-archived)와 같은 톤(opacity 0.45) — 새 변수 없이 기존 관례를 따른다. */
+/* 보관된 todo(.is-archived)와 같은 톤 — 테마별 흐림 토큰을 공유한다. */
 .comment-card.is-archived {
-  opacity: 0.45;
+  opacity: var(--dim-archived);
 }
 
 .comment-head {

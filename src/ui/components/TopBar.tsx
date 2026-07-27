@@ -21,7 +21,7 @@ const THEME_LABEL: Record<ThemePref, string> = {
   light: '밝은 테마',
 };
 
-/** 상단 바 — 워드마크 + 링크(SSE) 상태 + 보관됨 표시 토글 + 호출자(actor) 설정. */
+/** 상단 바 — 워드마크 + 링크(SSE) 상태 + 테마 토글 + 보관됨 표시 토글 + 호출자(actor) 설정. */
 export function TopBar() {
   const connected = useUiStore((s) => s.connected);
   const actor = useUiStore((s) => s.actor);

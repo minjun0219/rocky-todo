@@ -25,7 +25,7 @@ const DARK_BLOCK_RE = /:root\s*,\s*:root\[data-theme=['"]dark['"]\]\s*\{([^}]*)\
 const LIGHT_BLOCK_RE = /:root\[data-theme=['"]light['"]\]\s*\{([^}]*)\}/;
 
 /** 색이 아닌 토큰 — 대비 검사 대상이 아니다. */
-const NON_COLOR_TOKENS = new Set(['--mono', '--sans']);
+const NON_COLOR_TOKENS = new Set(['--mono', '--sans', '--dim-archived', '--dim-stale']);
 
 /** 토큰 이름 → 값 (색 토큰만). 블록을 못 찾으면 조용히 빈 결과를 주지 않고 던진다. */
 function parseTokens(css: string, re: RegExp): Map<string, string> {
@@ -165,5 +165,21 @@ describe('테마 대칭성', () => {
     const dark = [...parseTokens(CSS, DARK_BLOCK_RE).keys()].sort();
     const light = [...parseTokens(CSS, LIGHT_BLOCK_RE).keys()].sort();
     expect(light).toEqual(dark);
+  });
+});
+
+describe('분류 드리프트 가드', () => {
+  test('비텍스트/구분선 토큰이 color: 로 쓰이지 않는다', () => {
+    // TEXT_TOKENS 는 4.5 기준으로 검사되지만, 비텍스트(3.0)/구분선(2.2) 토큰이 나중에
+    // `color:` 자리에 쓰이면 더 낮은 기준으로 통과해 버리면서 실제로는 4.5 를 어긴다.
+    // `(?<![\w-])` 로 `border-color:`/`outline-color:` 등 다른 프로퍼티의 접미어를
+    // "color:" 로 오인하지 않게 막는다.
+    const nonTextColorTokens = [...NON_TEXT_TOKENS, ...DIVIDER_TOKENS].filter((name) =>
+      new RegExp(`(?<![\\w-])color:\\s*var\\(${name}(?:[,)]|\\s)`).test(CSS),
+    );
+    expect(
+      nonTextColorTokens,
+      `비텍스트/구분선 토큰이 color: 로 쓰였다 — 텍스트 기준(4.5)으로 재분류하거나 사용처를 바꿀 것`,
+    ).toEqual([]);
   });
 });

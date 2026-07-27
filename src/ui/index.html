@@ -13,8 +13,9 @@
       // 첫 페인트 전에 data-theme 을 확정해 FOUC 를 막는다. 번들 전에 실행돼야 해서
       // src/ui/lib.ts 의 resolveTheme 을 import 할 수 없다 — 같은 규칙을 복제한 것이니
       // 한쪽을 고치면 반드시 다른 쪽도 고쳐야 한다.
-      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 테마를 못 읽는 것이
-      // 화면이 안 뜨는 것보다 낫다 — 기본 dark 로 떨어진다.
+      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 이 try/catch 가 지키는
+      // 것은 이 인라인 스크립트가 던져서 문서 파싱이 멈추는 것을 막는 것뿐이다(앱 전체
+      // 생존은 아니다) — 여기서 못 읽으면 기본 dark 로 떨어진다.
       var stored, pref;
       try {
         stored = localStorage.getItem("rocky-todo:theme");
