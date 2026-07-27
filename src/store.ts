@@ -1293,11 +1293,31 @@ export class TodoStore {
       status: 'pending',
       createdAt: nowIso(),
     };
+    this.insertHandoffRow(handoff);
+    this.recordHistory(
+      'todo',
+      todo.id,
+      input.actor,
+      'handoff',
+      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
+      todo.boardId,
+    );
+    return handoff;
+  }
+
+  /**
+   * `handoffs` 행 하나를 그대로 넣는다 — `createHandoff` / `createSpawnedHandoff` 공용.
+   *
+   * `deliveredAt`/`deliveredVia` 는 미배달(`pending`) 행에서 `undefined` 로 와 `null` 로
+   * 저장된다. 컬럼이 늘어도 이 한 곳만 고치면 두 호출부가 같이 맞는다.
+   */
+  private insertHandoffRow(handoff: Handoff): void {
     this.db
       .query(
         `INSERT INTO handoffs
-           (id, todo_id, session_id, session_name, session_cwd, note, actor, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, todo_id, session_id, session_name, session_cwd, note, actor, status,
+            created_at, delivered_at, delivered_via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         handoff.id,
@@ -1309,16 +1329,9 @@ export class TodoStore {
         handoff.actor,
         handoff.status,
         handoff.createdAt,
+        handoff.deliveredAt ?? null,
+        handoff.deliveredVia ?? null,
       );
-    this.recordHistory(
-      'todo',
-      todo.id,
-      input.actor,
-      'handoff',
-      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
-      todo.boardId,
-    );
-    return handoff;
   }
 
   /**
@@ -1351,32 +1364,13 @@ export class TodoStore {
       deliveredAt: at,
       deliveredVia: 'spawn',
     };
-    this.db
-      .query(
-        `INSERT INTO handoffs
-           (id, todo_id, session_id, session_name, session_cwd, note, actor, status,
-            created_at, delivered_at, delivered_via)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        handoff.id,
-        handoff.todoId,
-        handoff.sessionId,
-        handoff.sessionName ?? null,
-        handoff.sessionCwd ?? null,
-        handoff.note,
-        handoff.actor,
-        handoff.status,
-        handoff.createdAt,
-        at,
-        'spawn',
-      );
+    this.insertHandoffRow(handoff);
     this.recordHistory(
       'todo',
       todo.id,
       input.actor,
       'handoff-spawn',
-      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
+      { handoff: [null, handoff.sessionName] },
       todo.boardId,
     );
     return handoff;

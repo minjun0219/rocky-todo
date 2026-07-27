@@ -969,8 +969,11 @@ describe('handoffs', () => {
         sessionCwd: '/w',
         actor: 'logan',
       });
-      const actions = store.listChangesSince(before).entries.map((e) => e.action);
-      expect(actions).not.toContain('handoff-spawn');
+
+      const feed = store.listChangesSince(before);
+      expect(feed.entries.some((e) => e.action.startsWith('handoff'))).toBe(false);
+      // 커서는 그래도 전진해야 한다 — 아니면 같은 항목을 영원히 다시 읽는다.
+      expect(feed.lastId).toBeGreaterThan(before);
     });
 
     test('아카이브된 todo 에는 만들지 않는다', () => {
