@@ -45,6 +45,8 @@
   | `--line` | `#6d563c` | `#b19979` |
   | `--line-strong` | `#876a4b` | `#9a7e59` |
   | `--scrim` | `rgba(10, 7, 4, 0.55)` | `rgba(36, 28, 20, 0.35)` |
+  | `--dim-archived` | `0.45` | `0.55` |
+  | `--dim-stale` | `0.55` | `0.65` |
 
 - **localStorage 키**: `rocky-todo:theme` — 값은 `'auto' | 'dark' | 'light'`
 

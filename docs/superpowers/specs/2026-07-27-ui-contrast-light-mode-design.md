@@ -144,6 +144,10 @@ hue·채도 고정, 명도만 이분탐색으로 조정해 기준을 만족하�
   --handoff: #93c5fd;     /*  8.90 */
   --handoff-dim: #1e3a5f; /* .chip-handoff 배경 — 쌍 대비 6.38 */
   --scrim: rgba(10, 7, 4, 0.55); /* 571행에서 승격 */
+  /* 흐림 강도 — `.is-archived` / `.comment-card.is-archived` / `.doing-badge.is-stale`
+     의 하드코딩 opacity 를 승격한 것. 테마마다 값이 달라야 해서 토큰이다. */
+  --dim-archived: 0.45;
+  --dim-stale: 0.55;
 }
 ```
 
@@ -177,6 +181,10 @@ hue·채도 고정, 명도만 이분탐색으로 조정해 기준을 만족하�
   --line: #b19979;        /*  2.30 */
   --line-strong: #9a7e59; /*  3.23 */
   --scrim: rgba(36, 28, 20, 0.35);
+  /* 흐림 강도 — 라이트에서 더 세게 준다. 같은 0.45 를 쓰면 밝은 배경 위에서
+     보관 행이 다크(3.72)보다 1점 가까이 안 읽힌다(2.79). 아래 §5 참고. */
+  --dim-archived: 0.55;
+  --dim-stale: 0.65;
 }
 ```
 
