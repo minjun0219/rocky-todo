@@ -23,6 +23,7 @@ import {
   type RecentSpawns,
   type SpawnInput,
   spawnBackgroundSession,
+  SpawnFailedError,
   worktreeNameFor,
   worktreePathFor,
 } from './spawn';
@@ -657,8 +658,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             }),
           });
         } catch (error) {
-          // 예약을 되돌린다 — 실패한 시도가 60초 동안 재시도를 막으면 안 된다.
-          recentSpawns.forget(worktreePath);
+          // 예약은 **확실히 안 떴을 때만** 되돌린다. "떴는지 모른다"(마감 초과·출력 형식
+          // 변화)에서 풀면, 세션은 떴는데 `agents --json` 에는 아직 안 보이는 창에 사용자가
+          // 다시 눌러 한 워크트리에 두 에이전트가 붙는다 — 예약이 있는 이유가 그 지연이다.
+          // 분류가 없는 에러(예기치 못한 버그)도 모르는 쪽으로 둔다: 헛되이 60초 기다리는
+          // 비용보다 동시 실행의 비용이 훨씬 크다.
+          if (error instanceof SpawnFailedError && error.started === false) {
+            recentSpawns.forget(worktreePath);
+          }
           return errorResponse(error instanceof Error ? error.message : String(error), 400);
         }
 

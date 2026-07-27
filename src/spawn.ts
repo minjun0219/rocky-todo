@@ -38,13 +38,26 @@ export interface SpawnInput extends SpawnCommandInput {
 }
 
 /**
+ * 실행 결과 + "마감에 걸렸나" 한 비트.
+ *
+ * 0 아닌 종료와 마감 초과는 둘 다 `ok:false` 지만 의미가 다르다 — 전자는 자식이 끝난
+ * 것을 보고 실패라 부르는 것이고, 후자는 **무슨 일이 일어났는지 모른다**는 뜻이다.
+ * 세션이 떴는지 여부를 가르는 데 이 구분이 필요해 결과에 실어 나른다
+ * (`spawnBackgroundSession` 의 분류 참고).
+ */
+export interface SpawnRunResult extends RunResult {
+  /** 마감(`timeoutMs`) 안에 자식의 종료 코드를 보지 못했는가. */
+  timedOut?: boolean;
+}
+
+/**
  * `cwd` 를 지정해 외부 명령을 실행한다. `src/sessions.ts` 의 `RunCommand` 에 cwd 를 더한 꼴.
  *
  * 동기가 아니라 `Promise` 다 — `claude --bg` 는 워크트리 생성까지 포함해 최악 30초를
  * 쓸 수 있고, 그동안 `Bun.spawnSync` 는 데몬 전체(MCP·SSE·CLI·다른 세션 훅)를 멈춘다.
  * `src/sessions.ts` 가 실측 220ms 짜리 동기 블로킹을 캐시로 눌러야 했던 것과 같은 이유다.
  */
-export type RunInDir = (cmd: string[], cwd: string, timeoutMs: number) => Promise<RunResult>;
+export type RunInDir = (cmd: string[], cwd: string, timeoutMs: number) => Promise<SpawnRunResult>;
 
 /**
  * 직접 자식이 끝난 뒤 파이프에 남은 출력을 마저 긁어모으는 유예.
@@ -120,11 +133,17 @@ async function readTextUntil(
 export const runInDir: RunInDir = async (cmd, cwd, timeoutMs) => {
   const deadline = createDeadline(timeoutMs);
   let grace: Deadline | undefined;
+  // 마감 경로에서는 `finally` 가 `proc.exited` 보다 먼저 돈다 — 그때 뒤늦게 grace 를 만들면
+  // 아무도 clear 하지 않는 타이머가 남는다. 이 플래그가 그 뒤늦은 생성을 막는다.
+  let finished = false;
   try {
     const proc = Bun.spawn({ cmd, cwd, stdout: 'pipe', stderr: 'pipe', timeout: timeoutMs });
     const stop = Promise.race([
       deadline.reached,
       proc.exited.then(() => {
+        if (finished) {
+          return;
+        }
         grace = createDeadline(EXIT_DRAIN_GRACE_MS);
         return grace.reached;
       }),
@@ -137,7 +156,12 @@ export const runInDir: RunInDir = async (cmd, cwd, timeoutMs) => {
     if (exitCode === undefined) {
       const reason = `${timeoutMs}ms 안에 끝나지 않았다`;
       const trimmed = stderr.trim();
-      return { ok: false, stdout, stderr: trimmed === '' ? reason : `${trimmed}\n${reason}` };
+      return {
+        ok: false,
+        stdout,
+        stderr: trimmed === '' ? reason : `${trimmed}\n${reason}`,
+        timedOut: true,
+      };
     }
     return { ok: exitCode === 0, stdout, stderr };
   } catch (error) {
@@ -147,6 +171,7 @@ export const runInDir: RunInDir = async (cmd, cwd, timeoutMs) => {
       stderr: error instanceof Error ? error.message : String(error),
     };
   } finally {
+    finished = true;
     deadline.cancel();
     grace?.cancel();
   }
@@ -202,23 +227,73 @@ export function buildSpawnCommand(input: SpawnCommandInput): string[] {
 }
 
 /**
+ * spawn 실패 — **세션이 떴는지 아는가**를 함께 나른다.
+ *
+ * 이 한 비트가 동시 실행 가드의 되돌림을 가른다(`createRecentSpawns` 참고). 실패했다고
+ * 예약을 무조건 풀면, 세션은 떴는데 `agents --json` 에는 아직 안 보이는 창에서 사용자가
+ * 다시 눌러 **한 워크트리에 두 에이전트**가 붙는다 — 예약이 존재하는 이유가 정확히 그
+ * 지연이다. 값이 비대칭이라 모르는 쪽은 예약을 유지한다: 헛되이 60초 기다리는 비용은
+ * "잠시 후 다시 시도" 한 줄이다.
+ *
+ * - `false` — **확실히 안 떴다.** 명령을 실행조차 못 했거나, 0 아닌 종료 + stdout 에 id 없음.
+ * - `true` — **떴다.** 명령은 실패로 끝났지만 stdout 에 `backgrounded …` 가 찍혔다.
+ * - `undefined` — **모른다.** 마감 초과(자식의 종료 코드조차 못 봤다)이거나, 출력은 왔는데
+ *   형식이 달라 id 를 못 읽었다.
+ */
+export class SpawnFailedError extends Error {
+  /** 세션이 떴는가. `undefined` 는 "모른다" 다. */
+  readonly started: boolean | undefined;
+
+  constructor(message: string, started: boolean | undefined) {
+    super(message);
+    this.name = 'SpawnFailedError';
+    this.started = started;
+  }
+}
+
+/** 사용자가 다르게 행동해야 하는 두 상태 — 메시지에서 읽히게 한다. */
+function failureMessage(started: boolean | undefined, detail: string): string {
+  if (started === false) {
+    return `세션을 띄우지 못했다 — ${detail}`;
+  }
+  if (started === true) {
+    return `세션은 뜬 것으로 보이는데 claude --bg 가 실패로 끝났다 — claude agents 로 확인하라: ${detail}`;
+  }
+  return `세션이 떴는지 확인할 수 없다 — claude agents 로 확인하라: ${detail}`;
+}
+
+/**
  * 백그라운드 세션을 띄우고 짧은 id 를 돌려준다.
  *
- * @throws 명령이 실패했거나 stdout 에서 id 를 읽지 못하면. id 를 못 읽으면 성공으로 볼 수
- *   없다 — 보드가 배달됐다고 말하는데 무엇이 떴는지 가리킬 수 없는 상태가 된다.
+ * @throws {SpawnFailedError} 명령이 실패했거나 stdout 에서 id 를 읽지 못하면. id 를 못 읽으면
+ *   성공으로 볼 수 없다 — 보드가 배달됐다고 말하는데 무엇이 떴는지 가리킬 수 없는 상태가
+ *   된다. 던지는 에러의 `started` 가 "확실히 안 떴다"(false)와 "떴는지 모른다"(true/undefined)를
+ *   가른다.
  */
 export async function spawnBackgroundSession(
   input: SpawnInput,
   run: RunInDir = runInDir,
 ): Promise<string> {
   const result = await run(buildSpawnCommand(input), input.boardPath, SPAWN_TIMEOUT_MS);
-  if (!result.ok) {
-    const reason = `${result.stderr || result.stdout}`.trim() || 'claude --bg 실행에 실패했다';
-    throw new Error(reason);
-  }
   const id = parseBackgroundId(result.stdout);
+  if (!result.ok) {
+    const detail = `${result.stderr || result.stdout}`.trim() || 'claude --bg 실행에 실패했다';
+    // id 가 찍혔으면 실패 코드와 무관하게 세션은 떴다. 그다음이 마감 초과 — 자식이 끝난
+    // 것조차 못 봤으니 판단 근거가 없다. 남는 것만이 "확실히 안 떴다" 다.
+    let started: boolean | undefined;
+    if (id) {
+      started = true;
+    } else if (!result.timedOut) {
+      started = false;
+    }
+    throw new SpawnFailedError(failureMessage(started, detail), started);
+  }
   if (!id) {
-    throw new Error(`세션이 떴는지 확인할 수 없다 — claude --bg 출력: ${result.stdout.trim()}`);
+    // 명령은 0 으로 끝났다 — 세션은 떴는데 출력 형식이 바뀐 쪽이 더 그럴듯하다. 모른다.
+    throw new SpawnFailedError(
+      failureMessage(undefined, `claude --bg 출력: ${result.stdout.trim()}`),
+      undefined,
+    );
   }
   return id;
 }

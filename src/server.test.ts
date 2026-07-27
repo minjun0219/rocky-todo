@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildTodoServer, resolveSpawnSessions } from './server';
 import { createCachedListSessions, type SessionsResult } from './sessions';
-import { createRecentSpawns, type RecentSpawns, type SpawnInput } from './spawn';
+import { createRecentSpawns, type RecentSpawns, SpawnFailedError, type SpawnInput } from './spawn';
 import { TodoStore } from './store';
 
 let dir: string;
@@ -1328,7 +1328,7 @@ describe('POST /api/todos/:ref/spawn', () => {
   test('spawn 이 실패하면 400 이고 배달 기록을 남기지 않는다', async () => {
     useHandle({
       spawn: () => {
-        throw new Error('claude: command not found');
+        throw new SpawnFailedError('세션을 띄우지 못했다 — claude: command not found', false);
       },
     });
     const todo = seed();
@@ -1491,7 +1491,7 @@ describe('POST /api/todos/:ref/spawn', () => {
     expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(1);
   });
 
-  test('실패한 spawn 은 60초 창을 잡아먹지 않는다 — 예약을 되돌린다', async () => {
+  test('확실히 안 뜬 spawn 은 60초 창을 잡아먹지 않는다 — 예약을 되돌린다', async () => {
     let calls = 0;
     // 시계를 세워 둔다 — TTL 이 흐르지 않는데도 재시도가 통과해야 forget 이 증명된다.
     const recentSpawns = createRecentSpawns(60_000, () => 1_000);
@@ -1500,7 +1500,7 @@ describe('POST /api/todos/:ref/spawn', () => {
       spawn: async () => {
         calls += 1;
         if (calls === 1) {
-          throw new Error('claude: command not found');
+          throw new SpawnFailedError('세션을 띄우지 못했다 — claude: command not found', false);
         }
         return '5acaaaeb';
       },
@@ -1509,10 +1509,59 @@ describe('POST /api/todos/:ref/spawn', () => {
 
     const failed = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
     expect(failed.status).toBe(400);
+    expect(((await failed.json()) as { error: string }).error).toMatch(/띄우지 못했다/);
     const retried = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
     expect(retried.status).toBe(201);
     expect(calls).toBe(2);
     expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(1);
+  });
+
+  /**
+   * 실패 중 "떴는지 모른다" 는 예약을 **유지**해야 한다. 세션이 실제로 떴는데
+   * `agents --json` 에 아직 안 보이는 창이 정확히 이 상태고, 여기서 예약을 풀면 사용자가
+   * 다시 눌러 한 워크트리에 두 에이전트가 붙는다 — 이 설계의 유일한 안전 속성이 무너진다.
+   */
+  test('떴는지 모르는 실패는 예약을 유지한다 — 재요청이 409', async () => {
+    let calls = 0;
+    const recentSpawns = createRecentSpawns(60_000, () => 1_000);
+    useHandle({
+      recentSpawns,
+      spawn: async () => {
+        calls += 1;
+        throw new SpawnFailedError(
+          '세션이 떴는지 확인할 수 없다 — claude agents 로 확인하라',
+          undefined,
+        );
+      },
+    });
+    const todo = seed();
+
+    const failed = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(failed.status).toBe(400);
+    expect(((await failed.json()) as { error: string }).error).toMatch(/확인할 수 없다/);
+
+    const retried = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(retried.status).toBe(409);
+    expect(((await retried.json()) as { error: string }).error).toMatch(/방금 이 워크트리/);
+    expect(calls).toBe(1);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(0);
+  });
+
+  test('분류 없는 예기치 못한 에러도 예약을 유지한다 — 안전한 쪽이다', async () => {
+    let calls = 0;
+    const recentSpawns = createRecentSpawns(60_000, () => 1_000);
+    useHandle({
+      recentSpawns,
+      spawn: async () => {
+        calls += 1;
+        throw new Error('알 수 없는 고장');
+      },
+    });
+    const todo = seed();
+
+    expect((await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' })).status).toBe(400);
+    expect((await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' })).status).toBe(409);
+    expect(calls).toBe(1);
   });
 
   test('상대경로면 400 — 데몬의 cwd 기준으로 풀리면 안 된다', async () => {

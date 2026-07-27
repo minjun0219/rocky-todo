@@ -10,6 +10,8 @@ import {
   runInDir,
   SPAWN_TIMEOUT_MS,
   spawnBackgroundSession,
+  SpawnFailedError,
+  type SpawnRunResult,
   worktreeNameFor,
   worktreePathFor,
 } from './spawn';
@@ -172,6 +174,71 @@ describe('spawnBackgroundSession', () => {
       ),
     ).rejects.toThrow();
   });
+
+  /**
+   * 실패의 성격을 가르는 비트 — 라우트가 동시 실행 가드의 예약을 되돌릴지가 여기서 결정된다.
+   * "확실히 안 떴다"(false)에서만 되돌리고, 모르는 쪽은 예약을 유지한다.
+   */
+  describe('started 분류', () => {
+    /** 주어진 실행 결과로 spawn 을 돌리고 던진 에러를 잡아 온다. */
+    async function failureOf(result: SpawnRunResult): Promise<SpawnFailedError> {
+      const run: RunInDir = async () => result;
+      try {
+        await spawnBackgroundSession(
+          { boardPath: '/repo', worktreeName: 'w', sessionName: 's', prompt: 'p' },
+          run,
+        );
+      } catch (error) {
+        return error as SpawnFailedError;
+      }
+      throw new Error('던졌어야 한다');
+    }
+
+    test('실행조차 못 했으면 started=false', async () => {
+      const error = await failureOf({
+        ok: false,
+        stdout: '',
+        stderr: 'claude: command not found',
+      });
+      expect(error).toBeInstanceOf(SpawnFailedError);
+      expect(error.started).toBe(false);
+      expect(error.message).toMatch(/띄우지 못했다/);
+    });
+
+    test('0 아닌 종료 + stdout 에 id 없음이면 started=false', async () => {
+      const error = await failureOf({ ok: false, stdout: 'usage: claude …', stderr: 'exit 2' });
+      expect(error.started).toBe(false);
+    });
+
+    test('마감 초과면 started=undefined — 떴는지 모른다', async () => {
+      const error = await failureOf({
+        ok: false,
+        stdout: '',
+        stderr: '30000ms 안에 끝나지 않았다',
+        timedOut: true,
+      });
+      expect(error.started).toBeUndefined();
+      expect(error.message).toMatch(/확인할 수 없다/);
+    });
+
+    test('마감 초과라도 stdout 에 id 가 있으면 started=true', async () => {
+      // 리뷰어 실측: `--bg` 가 한 줄 찍은 뒤 파이프를 놓지 않으면 ok=false 인데 id 는 있다.
+      const error = await failureOf({
+        ok: false,
+        stdout: 'backgrounded · cafebabe · demo\n',
+        stderr: '500ms 안에 끝나지 않았다',
+        timedOut: true,
+      });
+      expect(error.started).toBe(true);
+      expect(error.message).toMatch(/claude agents/);
+    });
+
+    test('0 으로 끝났는데 형식이 달라 id 를 못 읽으면 started=undefined', async () => {
+      const error = await failureOf({ ok: true, stdout: 'started something', stderr: '' });
+      expect(error.started).toBeUndefined();
+      expect(error.message).toMatch(/확인할 수 없다/);
+    });
+  });
 });
 
 /**
@@ -210,11 +277,24 @@ describe('runInDir (기본 실행기)', () => {
     expect(result.stderr).toMatch(/boom/);
   });
 
-  test('마감 안에 끝나지 않으면 실패로 돌려준다', async () => {
+  test('마감 안에 끝나지 않으면 timedOut 으로 표시해 실패로 돌려준다', async () => {
     const startedAt = Date.now();
     const result = await runInDir(['sh', '-c', 'sleep 5'], here, 300);
     expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
     expect(Date.now() - startedAt).toBeLessThan(3_000);
+  });
+
+  test('마감에 걸려도 이미 찍힌 출력은 살아 돌아온다 — 떴는지 판단할 근거다', async () => {
+    // `--bg` 가 한 줄 찍고도 종료하지 않는 모양. ok=false 지만 stdout 에 id 가 있다.
+    const result = await runInDir(
+      ['sh', '-c', 'echo "backgrounded · cafebabe · demo"; sleep 10'],
+      here,
+      500,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(parseBackgroundId(result.stdout)).toBe('cafebabe');
   });
 
   test('실행할 수 없는 명령은 던지지 않고 ok=false 로 돌아온다', async () => {
