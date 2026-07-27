@@ -6,6 +6,7 @@ import {
   boardKeyFromMissingRepoError,
   boardRepoPath,
   formatSessions,
+  formatSpawnResult,
   formatTodoLine,
   formatTodoShow,
   isMissingRepoError,
@@ -18,7 +19,7 @@ import {
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
-import type { Board, Comment, HistoryEntry } from './store';
+import type { Board, Comment, Handoff, HistoryEntry } from './store';
 import { TodoStore } from './store';
 
 describe('parseFlags', () => {
@@ -624,6 +625,43 @@ describe('formatSessions', () => {
 
   test('세션이 없으면 그렇게 말한다', () => {
     expect(formatSessions(view({ sessions: [] }))).toContain('실행 중인');
+  });
+});
+
+describe('formatSpawnResult', () => {
+  const handoff: Handoff = {
+    id: 'h1',
+    todoId: 't1',
+    sessionId: 'sess-1',
+    sessionName: 'rocky-todo-1e',
+    note: '',
+    actor: 'minjun',
+    status: 'pending',
+    createdAt: '2026-07-27T00:00:00.000Z',
+  };
+
+  test('새로 띄운 경우 짧은 id 와 claude attach 명령을 보여준다', () => {
+    const out = formatSpawnResult('rocky#12', {
+      handoff,
+      reused: false,
+      worktreePath: '/w/rocky-todo/wt-12',
+      sessionShortId: '1e',
+    });
+    expect(out).toContain('rocky#12');
+    expect(out).toContain('/w/rocky-todo/wt-12');
+    expect(out).toContain('claude attach 1e');
+  });
+
+  test('재사용한 경우 이미 도는 세션에 큐잉했다고 말하고 claude attach 는 없다', () => {
+    const out = formatSpawnResult('rocky#12', {
+      handoff,
+      reused: true,
+      worktreePath: '/w/rocky-todo/wt-12',
+    });
+    expect(out).toContain('rocky#12');
+    expect(out).toContain('이미 도는 세션');
+    expect(out).toContain(handoff.sessionName as string);
+    expect(out).not.toContain('claude attach');
   });
 });
 

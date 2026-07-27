@@ -183,6 +183,25 @@ export function formatSessions(view: SessionsView): string {
     .join('\n');
 }
 
+/** `POST /api/todos/:ref/spawn` 응답 — CLI 와 테스트가 공유하는 뷰 타입. */
+export interface SpawnResult {
+  handoff: Handoff;
+  reused: boolean;
+  worktreePath: string;
+  sessionShortId?: string;
+}
+
+/**
+ * `spawn` 결과를 사람이 읽는 한두 줄로 렌더한다. `reused` 면 이미 도는 세션에 큐잉했다는
+ * 문장(sessionShortId 없음), 아니면 새로 띄운 세션 정보 + 그대로 복사해 쓸 `claude attach`
+ * 명령을 함께 보여준다.
+ */
+export function formatSpawnResult(ref: string, result: SpawnResult): string {
+  return result.reused
+    ? `✓ ${ref} → 이미 도는 세션(${result.handoff.sessionName ?? ''})에 큐잉 · ${result.worktreePath}`
+    : `✓ ${ref} → 새 세션 ${result.sessionShortId} · ${result.worktreePath}\n  claude attach ${result.sessionShortId}`;
+}
+
 function renderTree(
   todos: TodoView[],
   out: string[],
@@ -670,18 +689,14 @@ export async function runCli(): Promise<void> {
       if (!id) {
         throw new Error('usage: rocky-todo spawn REF [--message "본문"]');
       }
-      const message = typeof flags.message === 'string' ? flags.message : undefined;
-      const result = await request<{
-        handoff: Handoff;
-        reused: boolean;
-        worktreePath: string;
-        sessionShortId?: string;
-      }>(ctx, 'POST', todoRefPath(id, '/spawn', board), message ? { note: message } : {});
-      print(result, () =>
-        result.reused
-          ? `✓ ${id} → 이미 도는 세션(${result.handoff.sessionName ?? ''})에 큐잉 · ${result.worktreePath}`
-          : `✓ ${id} → 새 세션 ${result.sessionShortId} · ${result.worktreePath}\n  claude attach ${result.sessionShortId}`,
+      const message = str(flags.message);
+      const result = await request<SpawnResult>(
+        ctx,
+        'POST',
+        todoRefPath(id, '/spawn', board),
+        message ? { note: message } : {},
       );
+      print(result, () => formatSpawnResult(id, result));
       return;
     }
 
