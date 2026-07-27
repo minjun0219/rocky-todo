@@ -1,5 +1,11 @@
 # @minjun0219/rocky-todo
 
+## 0.7.0
+
+### Minor Changes
+
+- [#20](https://github.com/minjun0219/rocky-todo/pull/20) [`d77faef`](https://github.com/minjun0219/rocky-todo/commit/d77faefc12b8415725744605beb4aac30ed90f1a) Thanks [@minjun0219](https://github.com/minjun0219)! - 보드에서 todo 전용 워크트리에 백그라운드 Claude Code 세션을 띄울 수 있다 (로컬 전용)
+
 ## 0.6.0
 
 ### Minor Changes
