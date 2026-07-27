@@ -1861,6 +1861,22 @@ describe('spawn 게이트 힌트와 보드 경로', () => {
     expect(((await res.json()) as { error: string }).error).toBe('path or repo is required');
   });
 
+  // finding: path 가 먼저 처리되면서 같이 온 repo 가 조용히 사라졌다. 부분 적용 대신
+  // 거절한다 — 보내는 쪽은 언제나 한 필드만 보낸다.
+  test('PATCH /api/boards/:key 는 path 와 repo 를 같이 보내면 거절한다', async () => {
+    const before = store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const res = await req('/api/boards/rocky-todo', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: '/repo', repo: 'minjun0219/rocky-todo' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('send path or repo, not both');
+    // 거절했으면 한쪽만 적용되고 끝나는 일도 없어야 한다.
+    const after = store.listBoards().find((b) => b.key === 'rocky-todo');
+    expect(after?.path).toBe(before.path);
+    expect(after?.repo).toBe(before.repo);
+  });
+
   test('PATCH /api/boards/:key 는 잘못된 path 를 repo 에러로 바꿔 말하지 않는다', async () => {
     store.ensureBoard('rocky-todo', { actor: 'logan' });
     for (const path of [123, '', '   ', null]) {

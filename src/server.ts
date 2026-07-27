@@ -300,6 +300,12 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         if (!hasPath && !hasRepo) {
           return errorResponse('path or repo is required', 400);
         }
+        // 둘 다 오면 거절한다. path 를 먼저 처리하면 repo 가 조용히 사라지고, 둘 다
+        // 쓰자니 store 호출이 둘로 갈려 한쪽만 적용된 채 실패할 수 있다 — 부분 적용은
+        // 이 보드에서 가장 나쁜 실패다. 보내는 쪽(UI·CLI)은 언제나 한 필드만 보낸다.
+        if (hasPath && hasRepo) {
+          return errorResponse('send path or repo, not both', 400);
+        }
         if (hasPath) {
           if (typeof body.path !== 'string' || body.path.trim() === '') {
             return errorResponse('path must be a non-empty string', 400);
