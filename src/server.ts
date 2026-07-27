@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import pkg from '../package.json' with { type: 'json' };
 import {
   createIssueForTodo,
@@ -6,9 +7,17 @@ import {
   isRepoSlug,
   type RunCommand,
 } from './github';
-import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
-import { refNeedsBoardContext, withRef } from './refs';
+import { buildHandoffPromptFrom } from './handoff';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE, NON_LOCAL_SPAWN_MESSAGE } from './local-request';
+import { refNeedsBoardContext, refOf, withRef } from './refs';
 import { createCachedListSessions, matchBoard, type SessionsResult } from './sessions';
+import {
+  findLiveSessionAt,
+  type SpawnInput,
+  spawnBackgroundSession,
+  worktreeNameFor,
+  worktreePathFor,
+} from './spawn';
 import {
   DETAIL_HISTORY_EXCLUDED,
   type HandoffStatus,
@@ -35,6 +44,16 @@ export interface TodoServerOptions {
    * (테스트가 호출 횟수에 의존할 수 있고, 주입의 목적 자체가 결정론이다).
    */
   sessions?: () => SessionsResult;
+  /**
+   * 백그라운드 세션 기동 — 테스트 주입용. 기본은 실제 `claude --bg` 를 띄운다.
+   * 짧은 id 를 돌려주고, 실패하면 던진다.
+   */
+  spawn?: (input: SpawnInput) => string;
+  /**
+   * 경로 존재 검사 — 테스트 주입용. 기본은 `existsSync`.
+   * spawn 라우트가 `boards.path` 가 실재하는 git 워크트리인지 보는 데만 쓴다.
+   */
+  pathExists?: (path: string) => boolean;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -126,6 +145,8 @@ function toHttpError(error: unknown): Response {
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store, run } = options;
   const sessionsOf = options.sessions ?? createCachedListSessions();
+  const spawnSession = options.spawn ?? ((input: SpawnInput) => spawnBackgroundSession(input));
+  const pathExists = options.pathExists ?? existsSync;
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -183,6 +204,9 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           version: pkg.version,
           pid: process.pid,
           issueCreateAllowed: local,
+          // spawn 도 이슈 생성과 같은 등급의 로컬 전용 게이트다 — UI 가 없는 버튼을
+          // 그리지 않도록 미리 보는 힌트일 뿐, 강제는 spawn 라우트 자신이 한다.
+          spawnAllowed: local,
         });
       }
 
@@ -212,12 +236,18 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const boardDetail = path.match(/^\/api\/boards\/([^/]+)$/);
       if (boardDetail?.[1] && method === 'PATCH') {
         const body = await readBody(req);
+        const key = decodeURIComponent(boardDetail[1]);
+        // 두 필드는 서로 독립이다 — 하나만 보내는 것이 정상이고, 둘 다 없으면 400.
+        if (typeof body.path === 'string') {
+          if (body.path.trim() === '') {
+            return errorResponse('path must not be empty', 400);
+          }
+          return json(store.setBoardPath(key, body.path.trim(), actor));
+        }
         if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
           return errorResponse('repo must look like OWNER/NAME', 400);
         }
-        return json(
-          store.setBoardRepo(decodeURIComponent(boardDetail[1]), body.repo.trim(), actor),
-        );
+        return json(store.setBoardRepo(key, body.repo.trim(), actor));
       }
 
       // ── sections ──
@@ -440,6 +470,98 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           currentBoardId,
         });
         return json(handoff, 201);
+      }
+
+      const todoSpawn = /^\/api\/todos\/([^/]+)\/spawn$/.exec(path);
+      if (todoSpawn?.[1] && method === 'POST') {
+        // 이슈 생성과 같은 등급의 게이트다 — 보드 쓰기 권한이 "이 기계에서 파일을 고치는
+        // 프로세스를 띄우는 권한" 으로 확대되는 지점이라 `todo.expose` 와 무관하게 막는다.
+        if (!local) {
+          return errorResponse(NON_LOCAL_SPAWN_MESSAGE, 403);
+        }
+        const ref = decodeURIComponent(todoSpawn[1]);
+        const body = await readOptionalBody(req);
+        const note = typeof body?.note === 'string' ? body.note : undefined;
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        if (todo.archivedAt) {
+          return errorResponse(`todo is archived: ${ref}`, 400);
+        }
+        if (store.pendingHandoffOf(todo.id)) {
+          return errorResponse(`이 항목은 이미 다른 세션 앞에 대기 중이다: ${ref}`, 409);
+        }
+
+        const board = store.listBoards(true).find((b) => b.id === todo.boardId);
+        const boardPath = board?.path ?? '';
+        if (boardPath === '') {
+          return errorResponse(
+            `보드 "${board?.key ?? ''}" 에 메인 레포 경로가 없다 — rocky-todo board path <절대경로> 로 설정하라`,
+            400,
+          );
+        }
+        if (!pathExists(`${boardPath.replace(/\/+$/, '')}/.git`)) {
+          return errorResponse(`git 워크트리가 아니다: ${boardPath}`, 400);
+        }
+
+        const sessions = sessionsOf();
+        if (!sessions.available) {
+          return errorResponse(sessions.reason ?? '활성 세션 목록을 가져올 수 없다', 400);
+        }
+
+        const worktreePath = worktreePathFor(boardPath, todo.number);
+        const todoRef = refOf(store, todo.boardId, todo.number, todo.id);
+
+        // 그 워크트리에서 이미 도는 세션이 있으면 새로 띄우지 않는다 — 두 에이전트가 한
+        // 워크트리를 같이 고치는 것을 막는 가드이자, 곧 "세션 재사용" 이다. 이때는 평범한
+        // pending 핸드오프를 만들어 그 세션의 다음 Stop 훅이 집게 한다.
+        const live = findLiveSessionAt(sessions.sessions, worktreePath);
+        if (live) {
+          const handoff = store.createHandoff({
+            ref,
+            sessionId: live.sessionId,
+            sessionName: live.name,
+            sessionCwd: live.cwd,
+            note,
+            actor,
+            currentBoardId,
+          });
+          return json({ handoff, reused: true, worktreePath }, 201);
+        }
+
+        const sessionName = `${board?.key ?? 'todo'}-${todo.number}`;
+        let shortId: string;
+        try {
+          shortId = spawnSession({
+            boardPath,
+            worktreeName: worktreeNameFor(todo.number),
+            sessionName,
+            prompt: buildHandoffPromptFrom({
+              actor,
+              note: (note ?? '').trim(),
+              todoRef,
+              todoTitle: todo.title,
+              remaining: 0,
+            }),
+          });
+        } catch (error) {
+          return errorResponse(error instanceof Error ? error.message : String(error), 400);
+        }
+
+        // 기록은 spawn 이 성공한 뒤에만 남긴다 — 실패한 spawn 이 배달 기록을 남기면
+        // 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다.
+        const handoff = store.createSpawnedHandoff({
+          ref,
+          sessionId: shortId,
+          sessionName,
+          sessionCwd: worktreePath,
+          note,
+          actor,
+          currentBoardId,
+        });
+        return json({ handoff, reused: false, worktreePath, sessionShortId: shortId }, 201);
       }
 
       // ── comments ──

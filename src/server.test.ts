@@ -1213,3 +1213,164 @@ describe('handoff routes', () => {
     expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
   });
 });
+
+describe('POST /api/todos/:ref/spawn', () => {
+  /** 이 describe 는 세션 목록·spawn·경로 검사를 전부 주입한 핸들러로 갈아끼운다. */
+  function useHandle(options: {
+    sessions?: SessionsResult;
+    spawn?: () => string;
+    pathExists?: boolean;
+  }): void {
+    handle = buildTodoServer({
+      store,
+      sessions: () => options.sessions ?? { available: true, sessions: [] },
+      spawn: options.spawn ?? (() => '5acaaaeb'),
+      pathExists: () => options.pathExists ?? true,
+    }).fetch;
+  }
+
+  /** 경로가 설정된 보드 + todo 하나. */
+  function seed(): { number: number; id: string } {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: '세션 띄우기' }, 'logan');
+    return { number: todo.number, id: todo.id };
+  }
+
+  test('보드 경로가 없으면 400', async () => {
+    useHandle({});
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/경로/);
+  });
+
+  test('비로컬 요청은 403', async () => {
+    useHandle({});
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST', peer: '192.168.0.5' });
+    expect(res.status).toBe(403);
+  });
+
+  test('git 워크트리가 아니면 400', async () => {
+    useHandle({ pathExists: false });
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+  });
+
+  test('세션이 없으면 새로 띄우고 via=spawn 으로 기록한다', async () => {
+    useHandle({});
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ note: '테스트부터' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      reused: boolean;
+      sessionShortId: string;
+      worktreePath: string;
+      handoff: { deliveredVia: string; status: string };
+    };
+    expect(body.reused).toBe(false);
+    expect(body.sessionShortId).toBe('5acaaaeb');
+    expect(body.worktreePath).toBe(`/repo/.claude/worktrees/todo-${todo.number}`);
+    expect(body.handoff.deliveredVia).toBe('spawn');
+    expect(body.handoff.status).toBe('delivered');
+  });
+
+  test('그 워크트리에 살아있는 세션이 있으면 spawn 대신 큐잉한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    useHandle({
+      sessions: {
+        available: true,
+        sessions: [
+          {
+            pid: 1,
+            cwd: `/repo/.claude/worktrees/todo-${todo.number}`,
+            kind: 'background',
+            sessionId: 'live-session-uuid',
+            name: 'rocky-todo-live',
+            status: 'busy',
+            state: 'working',
+            startedAt: 0,
+          },
+        ],
+      },
+      spawn: () => {
+        throw new Error('살아있는 세션이 있으면 spawn 하면 안 된다');
+      },
+    });
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      reused: boolean;
+      sessionShortId?: string;
+      handoff: { status: string; sessionId: string };
+    };
+    expect(body.reused).toBe(true);
+    expect(body.handoff.status).toBe('pending');
+    expect(body.handoff.sessionId).toBe('live-session-uuid');
+    expect(body.sessionShortId).toBeUndefined();
+  });
+
+  test('spawn 이 실패하면 400 이고 배달 기록을 남기지 않는다', async () => {
+    useHandle({
+      spawn: () => {
+        throw new Error('claude: command not found');
+      },
+    });
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(0);
+  });
+
+  test('이미 pending 이 있으면 409', async () => {
+    useHandle({});
+    const todo = seed();
+    store.createHandoff({ ref: todo.id, sessionId: 'other-session', actor: 'logan' });
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+
+  test('없는 todo 면 404', async () => {
+    useHandle({});
+    const res = await req('/api/todos/nope/spawn', { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('spawn 게이트 힌트와 보드 경로', () => {
+  test('GET /api/health 가 spawnAllowed 를 싣는다', async () => {
+    const local = (await (await req('/api/health')).json()) as { spawnAllowed: boolean };
+    expect(local.spawnAllowed).toBe(true);
+    const remote = (await (await req('/api/health', { peer: '10.0.0.2' })).json()) as {
+      spawnAllowed: boolean;
+    };
+    expect(remote.spawnAllowed).toBe(false);
+  });
+
+  test('PATCH /api/boards/:key 가 path 를 받는다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const res = await req('/api/boards/rocky-todo', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: '/repo' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { path: string }).path).toBe('/repo');
+  });
+
+  test('PATCH /api/boards/:key 는 repo 도 그대로 받는다 (회귀)', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const res = await req('/api/boards/rocky-todo', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: 'minjun0219/rocky-todo' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { repo: string }).repo).toBe('minjun0219/rocky-todo');
+  });
+});

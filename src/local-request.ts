@@ -68,3 +68,7 @@ export function isLocalRequest(req: Request, peerAddress: string | undefined): b
 /** 거부 문구 — REST(403)와 MCP(도구 에러)가 같은 말을 하도록 한 곳에 둔다. */
 export const NON_LOCAL_ISSUE_MESSAGE =
   'GitHub 이슈 생성은 로컬(루프백) 요청만 할 수 있다 — 데몬 사용자의 gh 인증을 쓰기 때문에 노출된 표면으로는 허용하지 않는다';
+
+/** spawn 거부 문구 — 이슈 생성과 같은 등급의 게이트다. */
+export const NON_LOCAL_SPAWN_MESSAGE =
+  '백그라운드 세션 띄우기는 로컬(루프백) 요청만 할 수 있다 — 이 기계에서 파일을 고치는 프로세스를 띄우기 때문에 노출된 표면으로는 허용하지 않는다';
