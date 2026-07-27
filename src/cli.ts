@@ -306,6 +306,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo issue REF [--repo OWNER/NAME]      todo 를 GitHub 이슈로 (gh CLI 필요)
   rocky-todo handoff REF [--session NAME] [--message "본문"]  실행 중인 세션에 작업 요청 보내기
   rocky-todo handoff REF --cancel               대기 중인 요청 취소
+  rocky-todo spawn REF [--message "본문"]        그 todo 전용 워크트리에 새 세션 띄우기
   rocky-todo sessions                           실행 중인 Claude Code 세션 (* = 이 보드)
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
@@ -313,7 +314,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] [--global|--note] · board ls|add|repo · section ls
+  rocky-todo history REF [--limit N] [--global|--note] · board ls|add|repo|path · section ls
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -664,6 +665,26 @@ export async function runCli(): Promise<void> {
       return;
     }
 
+    case 'spawn': {
+      const id = rest[0];
+      if (!id) {
+        throw new Error('usage: rocky-todo spawn REF [--message "본문"]');
+      }
+      const message = typeof flags.message === 'string' ? flags.message : undefined;
+      const result = await request<{
+        handoff: Handoff;
+        reused: boolean;
+        worktreePath: string;
+        sessionShortId?: string;
+      }>(ctx, 'POST', todoRefPath(id, '/spawn', board), message ? { note: message } : {});
+      print(result, () =>
+        result.reused
+          ? `✓ ${id} → 이미 도는 세션(${result.handoff.sessionName ?? ''})에 큐잉 · ${result.worktreePath}`
+          : `✓ ${id} → 새 세션 ${result.sessionShortId} · ${result.worktreePath}\n  claude attach ${result.sessionShortId}`,
+      );
+      return;
+    }
+
     case 'start':
     case 'stop':
     case 'done':
@@ -783,8 +804,15 @@ export async function runCli(): Promise<void> {
         print(updated, () => `✓ ${updated.key} → ${updated.repo}`);
         return;
       }
+      if (sub === 'path') {
+        // 인자를 주면 그 값, 없으면 지금 있는 자리를 쓴다 — 보통 레포 안에서 부른다.
+        const target = rest[1] ?? process.cwd();
+        const updated = await request<Board>(ctx, 'PATCH', boardRepoPath(board), { path: target });
+        print(updated, () => `✓ ${updated.key} → ${updated.path}`);
+        return;
+      }
       throw new Error(
-        'usage: rocky-todo board ls | board add KEY [제목] | board repo [OWNER/NAME]',
+        'usage: rocky-todo board ls | board add KEY [제목] | board repo [OWNER/NAME] | board path [절대경로]',
       );
     }
 

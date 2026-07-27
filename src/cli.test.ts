@@ -18,7 +18,7 @@ import {
 import { buildContext, type CliContext, request } from './client';
 import { buildTodoServer } from './server';
 import type { TodoView } from './server';
-import type { Comment, HistoryEntry } from './store';
+import type { Board, Comment, HistoryEntry } from './store';
 import { TodoStore } from './store';
 
 describe('parseFlags', () => {
@@ -116,6 +116,10 @@ describe('todoRefPath', () => {
 
   test('suffix 는 인코딩 없이 그대로 붙는다', () => {
     expect(todoRefPath('#1', '/status', 'rocky')).toBe('/api/todos/%231/status?board=rocky');
+  });
+
+  test('spawn 경로에도 board 컨텍스트를 싣는다', () => {
+    expect(todoRefPath('16', '/spawn', 'rocky-todo')).toBe('/api/todos/16/spawn?board=rocky-todo');
   });
 });
 
@@ -254,6 +258,61 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
 
     const detail = await resolveHistoryEntity(ctx, '1', 'rocky');
     expect(detail.todo?.title).toBe('todo 1');
+  });
+});
+
+describe('CLI 경로 왕복 — spawn / board path', () => {
+  let dir: string;
+  let store: TodoStore;
+  let server: ReturnType<typeof Bun.serve>;
+  let ctx: CliContext;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'rocky-todo-cli-spawn-'));
+    store = new TodoStore({ dbPath: join(dir, 'todo.db') });
+    const api = buildTodoServer({
+      store,
+      sessions: () => ({ available: true, sessions: [] }),
+      spawn: () => '5acaaaeb',
+      pathExists: () => true,
+    });
+    server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    });
+    if (server.port === undefined) {
+      throw new Error('Bun.serve did not assign a port');
+    }
+    ctx = buildContext({ port: server.port, dir, actor: 'tester' });
+  });
+
+  afterEach(() => {
+    server.stop(true);
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('board path 가 보드에 경로를 저장한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'tester' });
+    const updated = await request<Board>(ctx, 'PATCH', boardRepoPath('rocky-todo'), {
+      path: '/Users/x/dev/rocky-todo',
+    });
+    expect(updated.path).toBe('/Users/x/dev/rocky-todo');
+  });
+
+  test('spawn 경로가 201 과 짧은 id 를 돌려준다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'tester' });
+    store.setBoardPath('rocky-todo', '/repo', 'tester');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'tester');
+    const result = await request<{ sessionShortId: string; reused: boolean }>(
+      ctx,
+      'POST',
+      todoRefPath(todo.id, '/spawn', 'rocky-todo'),
+      { note: '테스트부터' },
+    );
+    expect(result.reused).toBe(false);
+    expect(result.sessionShortId).toBe('5acaaaeb');
   });
 });
 
