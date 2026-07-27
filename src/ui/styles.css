@@ -262,9 +262,6 @@ textarea {
   font-family: var(--mono);
   font-size: 13px;
   color: var(--muted);
-  /* 모바일 터치 타깃 — 백로그 rocky-todo#1 과 같은 44px 방침. */
-  min-width: 44px;
-  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -921,6 +918,10 @@ body.is-drawer-open {
   .comment-tool {
     min-height: 44px;
     padding: 0 8px;
+  }
+  .theme-toggle {
+    min-width: 44px;
+    min-height: 44px;
   }
   /* 메타 칩 전반(`.comment-badge`, `.chip-link` 등)은 여기서 제외한다 — `.todo-row` 가
      줄바꿈되면 이들은 두 번째 줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로
