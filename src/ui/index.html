@@ -13,9 +13,12 @@
       // 첫 페인트 전에 data-theme 을 확정해 FOUC 를 막는다. 번들 전에 실행돼야 해서
       // src/ui/lib.ts 의 resolveTheme 을 import 할 수 없다 — 같은 규칙을 복제한 것이니
       // 한쪽을 고치면 반드시 다른 쪽도 고쳐야 한다.
-      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 이 try/catch 가 지키는
-      // 것은 이 인라인 스크립트가 던져서 문서 파싱이 멈추는 것을 막는 것뿐이다(앱 전체
-      // 생존은 아니다) — 여기서 못 읽으면 기본 dark 로 떨어진다.
+      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 클래식 인라인 스크립트의
+      // 런타임 예외는 이 스크립트 실행만 중단시키고 문서 파싱 자체는 계속된다 — 이
+      // try/catch 가 막는 건 파싱 중단이 아니라, 예외로 중단된 채 data-theme 이 아예
+      // 안 붙는 것이다. catch 에서 명시적으로 "dark" 를 세팅해 대비시키지만, 다크 블록
+      // 선택자가 `:root, :root[data-theme="dark"]` 라 속성이 없어도 결과는 같다 — 지금은
+      // 사실상 중복이고, 이 선택자가 나중에 속성 필수로 바뀌면 의미가 생긴다.
       var stored, pref;
       try {
         stored = localStorage.getItem("rocky-todo:theme");

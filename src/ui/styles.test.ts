@@ -27,8 +27,22 @@ const LIGHT_BLOCK_RE = /:root\[data-theme=['"]light['"]\]\s*\{([^}]*)\}/;
 /** 색이 아닌 토큰 — 대비 검사 대상이 아니다. */
 const NON_COLOR_TOKENS = new Set(['--mono', '--sans', '--dim-archived', '--dim-stale']);
 
-/** 토큰 이름 → 값 (색 토큰만). 블록을 못 찾으면 조용히 빈 결과를 주지 않고 던진다. */
-function parseTokens(css: string, re: RegExp): Map<string, string> {
+/**
+ * 토큰 이름 → 값. 블록을 못 찾으면 조용히 빈 결과를 주지 않고 던진다.
+ *
+ * 두 용도로 쓰인다 — 기본(`includeNonColor: false`)은 대비 검사용으로 `NON_COLOR_TOKENS`
+ * 를 걸러낸 색 토큰만 반환한다. `includeNonColor: true` 는 테마 대칭성 검사용으로, 색이
+ * 아닌 토큰(`--dim-archived` 등)도 포함한 전체 토큰 집합을 반환한다 — 대칭성은 "두 테마가
+ * 같은 이름의 토큰을 정의하는가"를 보는 것이라 색 여부와 무관하다. 필터링된 Map 의 키만
+ * 비교하면 `NON_COLOR_TOKENS` 에 속한 토큰은 대칭성 가드 밖으로 빠져, 한쪽 테마에서만
+ * 지워져도 테스트가 놓친다.
+ */
+function parseTokens(
+  css: string,
+  re: RegExp,
+  options?: { includeNonColor?: boolean },
+): Map<string, string> {
+  const includeNonColor = options?.includeNonColor ?? false;
   const block = re.exec(css);
   const body = block?.[1];
   if (body === undefined) {
@@ -37,7 +51,11 @@ function parseTokens(css: string, re: RegExp): Map<string, string> {
   const tokens = new Map<string, string>();
   for (const match of body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
     const [, name, value] = match;
-    if (name !== undefined && value !== undefined && !NON_COLOR_TOKENS.has(name)) {
+    if (
+      name !== undefined &&
+      value !== undefined &&
+      (includeNonColor || !NON_COLOR_TOKENS.has(name))
+    ) {
       tokens.set(name, value.trim());
     }
   }
@@ -162,9 +180,34 @@ describe('light 팔레트 대비', () => {
 describe('테마 대칭성', () => {
   test('두 테마가 동일한 토큰 집합을 정의한다', () => {
     // 한쪽에만 토큰을 추가하면 그 테마에서 반대쪽 값이 상속돼 조용히 어긋난다.
-    const dark = [...parseTokens(CSS, DARK_BLOCK_RE).keys()].sort();
-    const light = [...parseTokens(CSS, LIGHT_BLOCK_RE).keys()].sort();
+    // NON_COLOR_TOKENS 도 포함한 전체 집합을 비교한다 — 색이 아니어도 대칭은 지켜야
+    // 한다(예: --dim-stale 이 라이트에만 없으면 라이트가 :root 의 값을 조용히 상속한다).
+    const dark = [...parseTokens(CSS, DARK_BLOCK_RE, { includeNonColor: true }).keys()].sort();
+    const light = [...parseTokens(CSS, LIGHT_BLOCK_RE, { includeNonColor: true }).keys()].sort();
     expect(light).toEqual(dark);
+  });
+});
+
+describe('NON_COLOR_TOKENS 무검증 탈출구 가드', () => {
+  test('NON_COLOR_TOKENS 로 등록된 토큰은 실제로 색이 아니다', () => {
+    // NON_COLOR_TOKENS 에 이름을 넣으면 대비 검사·커버리지 가드·대칭성 필터링을 한 번에
+    // 면제받는다. 색 값을 실수로(혹은 커버리지 가드를 피하려고) 여기 넣으면 대비 회귀가
+    // 조용히 통과해 버리므로, 값 자체가 색 표기가 아님을 단언한다.
+    const COLOR_LIKE = /^#|rgb\(|rgba\(|hsl\(|color-mix\(/;
+    const themes: ReadonlyArray<readonly [string, RegExp]> = [
+      ['dark', DARK_BLOCK_RE],
+      ['light', LIGHT_BLOCK_RE],
+    ];
+    const violations = themes.flatMap(([theme, re]) => {
+      const tokens = parseTokens(CSS, re, { includeNonColor: true });
+      return [...NON_COLOR_TOKENS]
+        .filter((name) => {
+          const value = tokens.get(name);
+          return value !== undefined && COLOR_LIKE.test(value);
+        })
+        .map((name) => `[${theme}] ${name} = ${tokens.get(name)}`);
+    });
+    expect(violations).toEqual([]);
   });
 });
 
