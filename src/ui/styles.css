@@ -8,20 +8,26 @@
   --bg: #16110c;
   --surface: #1f1811;
   --surface-2: #282017;
-  --line: #382c1f;
   --text: #e9dfd2;
   --muted: #9c8d7c;
-  --faint: #6b5f51;
+  /* 마이크로라벨 14곳의 색 — 옛 #6b5f51 은 최악 배경에서 대비 2.58 로 읽히지 않았다. */
+  --faint: #978775;
   --warm: #e8a33d; /* 에이전트 / 에리디언 */
-  --warm-dim: #8a6526;
+  /* .group-eyebrow 의 텍스트색이자 뱃지 테두리 — 텍스트로 쓰이므로 4.5 기준이다. */
+  --warm-dim: #b08130;
   --cool: #7ec8d8; /* 사람 / 지구 */
-  --cool-dim: #47707a;
+  /* 테두리로만 쓰인다 — 기준 3.0. 여기에 4.5 를 강요하면 쿨 톤이 필요 이상 밝아진다. */
+  --cool-dim: #4b7680;
   --p1: #e2634f;
   --p2: #e8a33d;
   --p3: #c8b45a;
   --ok: #86b06c;
   --handoff: #93c5fd; /* 핸드오프 — "보냈다"(파랑), doing 앰버(--warm)와 구분 */
   --handoff-dim: #1e3a5f;
+  /* 구분선(장식)과 컨트롤 테두리(WCAG 1.4.11)는 요구 대비가 다르다 — 토큰을 나눈다. */
+  --line: #6d563c;
+  --line-strong: #876a4b;
+  --scrim: rgba(10, 7, 4, 0.55);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   --sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif;
@@ -245,7 +251,7 @@ textarea {
 .quick-add-input {
   width: 100%;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 9px 14px;
   color: var(--text);
@@ -355,7 +361,7 @@ textarea {
   font-size: 10px;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
@@ -568,7 +574,7 @@ body.is-drawer-open {
 .drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(10, 7, 4, 0.55);
+  background: var(--scrim);
   display: flex;
   justify-content: flex-end;
   z-index: 10;
@@ -644,7 +650,7 @@ body.is-drawer-open {
   width: 100%;
   text-align: left;
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--text);
@@ -697,7 +703,7 @@ body.is-drawer-open {
   font-size: 12px;
   padding: 6px 12px;
   border-radius: 7px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--surface-2);
 }
 
@@ -986,7 +992,7 @@ body.is-drawer-open {
 .drawer-select {
   flex: 1 1 auto;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   padding: 5px 8px;
   color: var(--text);
@@ -1004,7 +1010,7 @@ body.is-drawer-open {
   font: inherit;
   padding: 8px;
   border-radius: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--bg);
   color: inherit;
 }
@@ -1091,7 +1097,7 @@ body.is-drawer-open {
   font: inherit;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--bg);
   color: inherit;
 }
