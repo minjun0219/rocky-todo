@@ -7,14 +7,14 @@ import { Sidebar } from './Sidebar';
 afterEach(cleanup);
 
 /** 보드 하나가 있는 사이드바를 띄우고 createBoard 스파이를 돌려준다. */
-function mountSidebar(createBoard: () => Promise<void>) {
+function mountSidebar(createBoard: (key: string) => Promise<void>) {
   const spy = mock(createBoard);
   renderWithStore(<Sidebar />, {
     boards: [boardFixture()],
     todos: [],
     selected: 'all',
     setSelected: mock(() => {}),
-    createBoard: spy as never,
+    createBoard: spy,
   });
   return spy;
 }
@@ -34,7 +34,7 @@ describe('Sidebar 보드 생성 폼', () => {
     await userEvent.click(openButton());
     await userEvent.type(keyInput(), 'newboard{Enter}');
     expect(createBoard).toHaveBeenCalledTimes(1);
-    expect(createBoard.mock.calls[0]).toEqual(['newboard'] as never);
+    expect(createBoard.mock.calls[0]).toEqual(['newboard']);
     expect(openButton()).toBeDefined();
   });
 

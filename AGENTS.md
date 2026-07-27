@@ -141,8 +141,9 @@ Esc 취소, 인라인 폼의 에러 표시처럼 로직을 순수 함수로 뽑�
 - devDep 3개: `@happy-dom/global-registrator` + `@testing-library/react` +
   `@testing-library/user-event`. preload 는 `src/ui/happydom.ts` (3줄).
 - 픽스처/헬퍼는 `src/ui/test-support.tsx` — `todoFixture` / `boardFixture` /
-  `renderWithStore`. zustand 스토어는 모듈 싱글턴이라 각 테스트가 자기가 읽는 필드를
-  전부 명시해야 앞 테스트의 잔여 상태에 기대지 않는다. `afterEach(cleanup)` 필수.
+  `renderWithStore`. zustand 스토어는 모듈 싱글턴이라 테스트끼리 같은 인스턴스를 공유한다 —
+  `renderWithStore` 가 매 렌더마다 `replace: true` 로 초기 상태를 깔고 인자로 받은 필드만
+  얹어 격리한다. 그래도 각 테스트는 자기가 읽는 필드를 명시한다. `afterEach(cleanup)` 필수.
 - 렌더 밖에서 스토어를 직접 바꿀 땐 `act()` 로 감싼다 — 안 그러면 리렌더가 flush 되지 않는다.
 
 **실행이 두 갈래인 이유 (중요).** happy-dom 의 `GlobalRegistrator` 는 `fetch` 등 HTTP

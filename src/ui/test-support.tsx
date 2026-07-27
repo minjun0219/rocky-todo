@@ -43,17 +43,23 @@ export function boardFixture(over: Partial<Board> = {}): Board {
   };
 }
 
+// 아직 아무 테스트도 건드리지 않은 시점의 스토어 — `renderWithStore` 가 매번 여기로
+// 되돌린 뒤 그 테스트가 쓰는 필드만 얹는다. import 시점에 한 번만 읽는다.
+const pristineState = useUiStore.getState();
+
 /**
- * 스토어 상태를 주입하고 컴포넌트를 렌더한다.
+ * 스토어를 기준 상태로 되돌리고 주어진 필드만 덮어쓴 뒤 컴포넌트를 렌더한다.
  *
- * zustand 스토어는 모듈 싱글턴이라 파일 안의 테스트들이 상태를 공유한다 — 각 테스트가
- * 자기가 읽는 필드를 여기서 전부 명시해야 앞 테스트의 잔여 상태에 기대지 않는다.
+ * zustand 스토어는 모듈 싱글턴이라 파일 안의 테스트들이 같은 인스턴스를 공유한다 —
+ * 부분 병합만 하면 앞 테스트가 넣은 `actor`/`sessions` 같은 필드가 다음 테스트로 새어
+ * 들어간다. 그래서 `replace: true` 로 매번 초기 상태를 깔고 시작한다. 그래도 각 테스트는
+ * 자기가 읽는 필드를 명시하는 편이 좋다 — 무엇에 기대는지가 테스트에 남는다.
  * 액션 자리에는 `mock()` 을 넣어 호출을 관찰한다.
  */
 export function renderWithStore(
   ui: ReactElement,
   state: Partial<ReturnType<typeof useUiStore.getState>>,
 ) {
-  useUiStore.setState(state);
+  useUiStore.setState({ ...pristineState, ...state }, true);
   return render(ui);
 }
