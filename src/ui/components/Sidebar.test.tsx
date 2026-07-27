@@ -22,6 +22,13 @@ function mountSidebar(createBoard: (key: string) => Promise<void>) {
 const openButton = () => screen.getByRole('button', { name: '+ 새 보드' });
 const keyInput = () => screen.getByRole('textbox', { name: '새 보드 이름' });
 
+// 폼 닫힘/에러 표시는 `submit()` 의 `await createBoard(...)` **뒤에** 일어나는데
+// `onKeyDown` 은 `void submit()` 로 던져만 놓는다 — 즉 `userEvent.type` 이 반환된
+// 시점에 그 setState 가 이미 flush 되었다는 보장이 없다. 지금은 React 의 async act 가
+// 마이크로태스크를 걷어가 우연히 맞지만, 기대는 명시해 둔다.
+const findOpenButton = () => screen.findByRole('button', { name: '+ 새 보드' });
+const findAlert = () => screen.findByRole('alert');
+
 describe('Sidebar 보드 생성 폼', () => {
   test('"+ 새 보드" 를 누르면 input 으로 전환된다', async () => {
     mountSidebar(async () => {});
@@ -35,7 +42,7 @@ describe('Sidebar 보드 생성 폼', () => {
     await userEvent.type(keyInput(), 'newboard{Enter}');
     expect(createBoard).toHaveBeenCalledTimes(1);
     expect(createBoard.mock.calls[0]).toEqual(['newboard']);
-    expect(openButton()).toBeDefined();
+    expect(await findOpenButton()).toBeDefined();
   });
 
   // 서버가 key 를 거절했을 때 조용히 닫으면 왜 안 만들어졌는지 알 수 없다.
@@ -47,7 +54,7 @@ describe('Sidebar 보드 생성 폼', () => {
     await userEvent.click(openButton());
     await userEvent.type(keyInput(), 'bad#key{Enter}');
 
-    expect(screen.getByRole('alert').textContent).toBe('board key cannot contain #');
+    expect((await findAlert()).textContent).toBe('board key cannot contain #');
     expect(keyInput()).toHaveProperty('value', 'bad#key');
   });
 
@@ -57,6 +64,9 @@ describe('Sidebar 보드 생성 폼', () => {
     });
     await userEvent.click(openButton());
     await userEvent.type(keyInput(), 'bad#key{Enter}');
+    // 에러가 실제로 떴는지부터 확인한다 — 이걸 빼면 아직 뜨지도 않은 상태를 "걷혔다" 로
+    // 읽어 이 테스트가 빈 채로 통과한다.
+    await findAlert();
     await userEvent.type(keyInput(), 'x');
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -66,7 +76,7 @@ describe('Sidebar 보드 생성 폼', () => {
     await userEvent.click(openButton());
     await userEvent.type(keyInput(), 'newboard{Escape}');
     expect(createBoard).not.toHaveBeenCalled();
-    expect(openButton()).toBeDefined();
+    expect(await findOpenButton()).toBeDefined();
   });
 
   test('빈 입력으로 Enter 하면 만들지 않고 닫는다', async () => {
@@ -74,6 +84,6 @@ describe('Sidebar 보드 생성 폼', () => {
     await userEvent.click(openButton());
     await userEvent.type(keyInput(), '   {Enter}');
     expect(createBoard).not.toHaveBeenCalled();
-    expect(openButton()).toBeDefined();
+    expect(await findOpenButton()).toBeDefined();
   });
 });
