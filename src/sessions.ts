@@ -14,11 +14,21 @@ export interface AgentSession {
   cwd: string;
   /** 'interactive' | 'background' — CLI 가 주는 값을 그대로 둔다. */
   kind: string;
+  /**
+   * 짧은 id(8자) — `claude attach/logs/stop/rm` 이 받는 값이자 `sessionId` 의 접두사다.
+   * background 세션에만 붙는다.
+   */
+  id?: string;
   sessionId: string;
   /** 사람이 읽는 세션 이름 (예: `eelpout-a3`). */
   name: string;
   /** 'idle' | 'busy' — CLI 가 주는 값을 그대로 둔다. */
   status: string;
+  /**
+   * background 세션의 수명 상태 — 'working' | 'done'. interactive 세션에는 없다.
+   * 없음(undefined)은 "죽지 않았다"로 읽는다 — 살아 있는 interactive 세션이 그 꼴이다.
+   */
+  state?: string;
   startedAt: number;
 }
 
@@ -73,9 +83,11 @@ function toSession(value: unknown): AgentSession | null {
     pid: row.pid,
     cwd: row.cwd,
     kind: typeof row.kind === 'string' ? row.kind : 'interactive',
+    ...(typeof row.id === 'string' ? { id: row.id } : {}),
     sessionId: row.sessionId,
     name: row.name,
     status: typeof row.status === 'string' ? row.status : 'idle',
+    ...(typeof row.state === 'string' ? { state: row.state } : {}),
     startedAt: typeof row.startedAt === 'number' ? row.startedAt : 0,
   };
 }
