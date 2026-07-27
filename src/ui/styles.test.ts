@@ -13,8 +13,16 @@ import { describe, expect, test } from 'bun:test';
 
 const CSS = readFileSync(join(import.meta.dir, 'styles.css'), 'utf8');
 
-/** 다크 토큰 블록. Task 3 이 `:root, :root[data-theme="dark"]` 형태로 조인다. */
-const DARK_BLOCK_RE = /:root\s*\{([^}]*)\}/;
+/*
+ * 다크 블록. `:root` 와 속성 선택자를 **둘 다** 요구한다 — index.html 의 인라인
+ * 스크립트가 실행되지 못하면 data-theme 이 안 붙는데, 속성 선택자만 두면 토큰이 하나도
+ * 적용되지 않아 페이지가 무스타일로 뜬다. 한쪽만 남기면 여기서 블록을 못 찾고 실패한다.
+ * (폰트 전용 `:root { --mono; --sans }` 블록을 잘못 잡지 않으려는 목적도 겸한다.)
+ */
+const DARK_BLOCK_RE = /:root\s*,\s*:root\[data-theme=['"]dark['"]\]\s*\{([^}]*)\}/;
+
+/** 라이트 토큰 블록. */
+const LIGHT_BLOCK_RE = /:root\[data-theme=['"]light['"]\]\s*\{([^}]*)\}/;
 
 /** 색이 아닌 토큰 — 대비 검사 대상이 아니다. */
 const NON_COLOR_TOKENS = new Set(['--mono', '--sans']);
@@ -142,5 +150,20 @@ function expectThemePasses(theme: string, tokens: Map<string, string>): void {
 describe('dark 팔레트 대비', () => {
   test('모든 토큰이 쓰임에 맞는 대비 기준을 만족한다', () => {
     expectThemePasses('dark', parseTokens(CSS, DARK_BLOCK_RE));
+  });
+});
+
+describe('light 팔레트 대비', () => {
+  test('모든 토큰이 쓰임에 맞는 대비 기준을 만족한다', () => {
+    expectThemePasses('light', parseTokens(CSS, LIGHT_BLOCK_RE));
+  });
+});
+
+describe('테마 대칭성', () => {
+  test('두 테마가 동일한 토큰 집합을 정의한다', () => {
+    // 한쪽에만 토큰을 추가하면 그 테마에서 반대쪽 값이 상속돼 조용히 어긋난다.
+    const dark = [...parseTokens(CSS, DARK_BLOCK_RE).keys()].sort();
+    const light = [...parseTokens(CSS, LIGHT_BLOCK_RE).keys()].sort();
+    expect(light).toEqual(dark);
   });
 });

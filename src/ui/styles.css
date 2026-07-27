@@ -4,7 +4,21 @@
  * 오프라인 제약(외부 리소스 금지)이라 시스템 폰트 스택 + mono 마이크로라벨로 콘솔 톤을 낸다.
  */
 
+/* 테마와 무관한 토큰 — 두 팔레트가 공유한다. */
 :root {
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+}
+
+/*
+ * 다크가 기본이다. `:root` 를 함께 거는 이유: index.html 의 인라인 스크립트가 어떤
+ * 이유로든(스크립트 차단 등) 실행되지 못하면 data-theme 이 붙지 않는데, 속성 선택자만
+ * 두면 토큰이 하나도 적용되지 않아 페이지가 무스타일로 뜬다.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #16110c;
   --surface: #1f1811;
   --surface-2: #282017;
@@ -28,9 +42,34 @@
   --line: #6d563c;
   --line-strong: #876a4b;
   --scrim: rgba(10, 7, 4, 0.55);
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-  --sans:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif;
+}
+
+/*
+ * 라이트 — 배경이 순백이 아니라 웜 아이보리다. 순백 위에서는 앰버가 탁해져
+ * "두 대기"(warm=에이전트 / cool=사람)의 온도 대비가 죽는다.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #faf6f0;
+  --surface: #ffffff;
+  --surface-2: #f2ebe1;
+  --text: #241c14;
+  --muted: #6b5c4a;
+  --faint: #756753;
+  --warm: #8a5a00;
+  --warm-dim: #8b6019;
+  --cool: #1f6b7d;
+  --cool-dim: #47707a;
+  --p1: #b3311c;
+  --p2: #8a5a00;
+  --p3: #6f6215;
+  --ok: #3f6b26;
+  --handoff: #1f5aa8;
+  --handoff-dim: #d3e4fb;
+  --line: #b19979;
+  --line-strong: #9a7e59;
+  /* 배경이 밝아 스크림이 덜 진해도 드로어가 충분히 분리된다. */
+  --scrim: rgba(36, 28, 20, 0.35);
 }
 
 * {
