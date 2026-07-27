@@ -48,7 +48,6 @@ rocky-todo history REF [--global|--note] · board ls|add|repo|path · section ls
 rocky-todo handoff REF [--session NAME] [--message "본문"]   # 실행 중인 세션에 작업 요청
 rocky-todo handoff REF --cancel                              # 대기 중인 요청 취소
 rocky-todo spawn REF [--message "본문"]                       # todo 전용 워크트리에 새 세션 띄우기
-rocky-todo board path [절대경로]                              # spawn 이 쓸 메인 레포 경로 (생략 시 cwd)
 rocky-todo sessions                                          # 실행 중인 세션 목록 (* = 이 보드)
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
