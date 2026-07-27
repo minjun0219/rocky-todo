@@ -113,6 +113,22 @@ const addHandoffs: Migration = (db) => {
 };
 
 /**
+ * 마이그레이션 4: 보드에 메인 레포 경로를 붙인다.
+ *
+ * 데몬에는 cwd 개념이 없어 보드 key 만으로는 레포가 어디 있는지 알 수 없다 — 백그라운드
+ * 세션을 띄우려면 그 경로가 필요하다. 기존 행에는 NULL 이 남고 CLI/웹 UI 가 나중에 채운다.
+ *
+ * `SCHEMA` 도 이 컬럼을 만들므로 `addBoardRepo` 와 같은 `PRAGMA table_info` 가드가 붙는다.
+ */
+export const addBoardPath: Migration = (db) => {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(boards)').all();
+  if (columns.some((c) => c.name === 'path')) {
+    return;
+  }
+  db.run('ALTER TABLE boards ADD COLUMN path TEXT');
+};
+
+/**
  * 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다.
  *
  * **규칙(`todos.number` vs `boards.repo` divergence — finding G)**: `SCHEMA` 는 신규 DB 를
@@ -125,7 +141,7 @@ const addHandoffs: Migration = (db) => {
  * `SCHEMA` 에 컬럼을 추가하면서 그 컬럼을 위한 마이그레이션도 함께 둘 때는 `addBoardRepo`
  * 를 그대로 본떠라.
  */
-export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo, addHandoffs];
+export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo, addHandoffs, addBoardPath];
 
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */

@@ -36,6 +36,8 @@ export interface Board {
   title: string;
   /** `owner/name` — GitHub 이슈 생성 대상. 설정 전에는 undefined. */
   repo?: string;
+  /** 메인 레포의 절대경로 — 백그라운드 세션을 띄우는 자리. 설정 전에는 undefined. */
+  path?: string;
   createdAt: string;
   archivedAt?: string;
 }
@@ -286,6 +288,7 @@ interface BoardRow {
   key: string;
   title: string;
   repo: string | null;
+  path: string | null;
   created_at: string;
   archived_at: string | null;
 }
@@ -338,6 +341,7 @@ CREATE TABLE IF NOT EXISTS boards (
   key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
   repo TEXT,
+  path TEXT,
   created_at TEXT NOT NULL,
   archived_at TEXT
 );
@@ -657,6 +661,11 @@ export class TodoStore {
     return row ? toBoard(row) : undefined;
   }
 
+  /** 보드 key 로 보드 한 건을 반환한다. 없으면 undefined. */
+  getBoard(key: string): Board | undefined {
+    return this.boardByKey(key);
+  }
+
   /**
    * 보드의 GitHub 레포(`owner/name`)를 설정한다.
    *
@@ -695,6 +704,38 @@ export class TodoStore {
       existing.id,
     );
     return { ...toBoard(existing), repo: normalized };
+  }
+
+  /**
+   * 보드의 메인 레포 경로를 설정한다 — 백그라운드 세션을 띄우는 자리다.
+   *
+   * `setBoardRepo` 와 같은 규칙: 값은 여기서 한 번 더 trim 하고, 같은 값이면 write 도
+   * 히스토리도 남기지 않는다(no-op). 경로가 실제로 존재하는지·git 레포인지는 여기서
+   * 보지 않는다 — 스토어는 파일시스템을 모르고, 그 판정은 spawn 라우트가 한다.
+   *
+   * @throws 없는 보드면 — 여기서 보드를 만들지 않는다(`setBoardRepo` 와 같은 판단).
+   */
+  setBoardPath(key: string, path: string, actor: string): Board {
+    const existing = this.db
+      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
+      .get(key);
+    if (!existing) {
+      throw new Error(`board not found: ${key}`);
+    }
+    const normalized = path.trim();
+    if (existing.path === normalized) {
+      return toBoard(existing);
+    }
+    this.db.query('UPDATE boards SET path = ? WHERE id = ?').run(normalized, existing.id);
+    this.recordHistory(
+      'board',
+      existing.id,
+      actor,
+      'update',
+      { path: [existing.path ?? null, normalized] },
+      existing.id,
+    );
+    return { ...toBoard(existing), path: normalized };
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────
@@ -1565,6 +1606,7 @@ function toBoard(row: BoardRow): Board {
     key: row.key,
     title: row.title,
     repo: row.repo ?? undefined,
+    path: row.path ?? undefined,
     createdAt: row.created_at,
     archivedAt: row.archived_at ?? undefined,
   };

@@ -166,6 +166,25 @@ describe('boards', () => {
   test('boardById returns undefined for an unknown id', () => {
     expect(store.boardById('nosuchid')).toBeUndefined();
   });
+
+  test('setBoardPath stores the path and survives a reload', () => {
+    store.ensureBoard('rocky', { actor: 'logan' });
+    const updated = store.setBoardPath('rocky', '/Users/x/dev/rocky-todo', 'logan');
+    expect(updated.path).toBe('/Users/x/dev/rocky-todo');
+    expect(store.getBoard('rocky')?.path).toBe('/Users/x/dev/rocky-todo');
+  });
+
+  test('setBoardPath trims whitespace and does not record history if value does not change', () => {
+    const board = store.ensureBoard('rocky', { actor: 'logan' });
+    store.setBoardPath('rocky', '  /Users/x/dev/rocky-todo  ', 'logan');
+    const before = store.listHistory({ entity: 'board', entityId: board.id }).length;
+    store.setBoardPath('rocky', '/Users/x/dev/rocky-todo', 'logan');
+    expect(store.listHistory({ entity: 'board', entityId: board.id })).toHaveLength(before);
+  });
+
+  test('setBoardPath throws if board does not exist', () => {
+    expect(() => store.setBoardPath('nope', '/tmp/x', 'logan')).toThrow(/board not found/);
+  });
 });
 
 describe('todos', () => {
