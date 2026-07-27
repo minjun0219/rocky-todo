@@ -123,7 +123,15 @@ rocky-todo/
   <id>`), 데몬은 이름을 결정론적으로 계산할 뿐이라 "이 todo 의 워크트리" 를 저장하지
   않는다. 대상 레포 경로는 `boards.path`(user_version 4). 그 워크트리에서 이미 도는
   세션이 있으면 **띄우지 않고** 기존 handoff 큐로 넘긴다 — 두 에이전트가 한 워크트리를
-  같이 고치는 것을 막는 가드다. `--permission-mode` 는 넘기지 않는다(사용자 기본 설정).
+  같이 고치는 것을 막는 가드다. 이 가드는 두 겹이다: (1) 이 라우트만 **캐시 없는** 세션
+  목록(`spawnSessions` 기본 `listSessions`)을 본다 — TTL 3초 캐시로 보면 spawn 이전
+  스냅샷으로 판정하게 된다, (2) `worktreePath → 띄운 시각` 을 60초 기억해
+  (`createRecentSpawns`, 데몬 수명 클로저) 그 창 안의 재요청은 **409** 다 — 재사용 분기로
+  보내면 짧은 8자 id 로 pending 이 만들어져 full UUID 로 claim 하는 `Stop` 훅에 영영
+  배달되지 않는다. `boards.path` 는 절대경로만 받고 `realpathSync` 로 정규화해 워크트리
+  경로 계산·spawn cwd·보드 저장에 **같은 값**을 쓴다(cwd 비교가 정확 문자열 일치다).
+  `claude --bg` 실행은 비동기(`Bun.spawn` + await)다 — 최악 30초를 데몬 전체가 멎으면
+  안 된다. `--permission-mode` 는 넘기지 않는다(사용자 기본 설정).
   **이슈 생성과 같은 로컬 요청 전용**(`isLocalRequest`, 403) — 보드 쓰기 권한이 프로세스를
   띄우는 권한으로 확대되는 지점이다. MCP 도구는 여전히 5개다.
 
