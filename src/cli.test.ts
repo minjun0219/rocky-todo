@@ -274,8 +274,9 @@ describe('CLI 경로 왕복 — spawn / board path', () => {
     const api = buildTodoServer({
       store,
       sessions: () => ({ available: true, sessions: [] }),
-      spawn: () => '5acaaaeb',
+      spawn: async () => '5acaaaeb',
       pathExists: () => true,
+      realPath: (p) => p,
     });
     server = Bun.serve({
       port: 0,

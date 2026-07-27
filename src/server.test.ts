@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildTodoServer } from './server';
 import type { SessionsResult } from './sessions';
+import { createRecentSpawns, type RecentSpawns, type SpawnInput } from './spawn';
 import { TodoStore } from './store';
 
 let dir: string;
@@ -1215,17 +1216,24 @@ describe('handoff routes', () => {
 });
 
 describe('POST /api/todos/:ref/spawn', () => {
-  /** 이 describe 는 세션 목록·spawn·경로 검사를 전부 주입한 핸들러로 갈아끼운다. */
+  /**
+   * 이 describe 는 세션 목록·spawn·경로 검사·정규화를 전부 주입한 핸들러로 갈아끼운다.
+   * `realPath` 기본은 항등 — 파일시스템 없이 계약만 본다.
+   */
   function useHandle(options: {
     sessions?: SessionsResult;
-    spawn?: () => string;
+    spawn?: (input: SpawnInput) => Promise<string>;
     pathExists?: boolean;
+    realPath?: (path: string) => string;
+    recentSpawns?: RecentSpawns;
   }): void {
     handle = buildTodoServer({
       store,
       sessions: () => options.sessions ?? { available: true, sessions: [] },
-      spawn: options.spawn ?? (() => '5acaaaeb'),
+      spawn: options.spawn ?? (async () => '5acaaaeb'),
       pathExists: () => options.pathExists ?? true,
+      realPath: options.realPath ?? ((p) => p),
+      ...(options.recentSpawns ? { recentSpawns: options.recentSpawns } : {}),
     }).fetch;
   }
 
@@ -1342,20 +1350,206 @@ describe('POST /api/todos/:ref/spawn', () => {
     const res = await req('/api/todos/nope/spawn', { method: 'POST' });
     expect(res.status).toBe(404);
   });
+
+  test('아카이브된 todo 면 400 이고 띄우지 않는다', async () => {
+    let spawned = 0;
+    useHandle({
+      spawn: async () => {
+        spawned += 1;
+        return '5acaaaeb';
+      },
+    });
+    const todo = seed();
+    store.setTodoStatus(todo.id, 'archive', 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/archived/);
+    expect(spawned).toBe(0);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(0);
+  });
+
+  test('세션 목록을 못 얻으면 409 — handoff 라우트와 같은 코드다', async () => {
+    useHandle({
+      sessions: { available: false, sessions: [], reason: 'claude CLI 를 실행할 수 없다' },
+    });
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toMatch(/claude CLI/);
+
+    const handoffRes = await req(`/api/todos/${todo.id}/handoff`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    expect(handoffRes.status).toBe(409);
+  });
+
+  test('spawn 라우트는 캐시 없는 목록(spawnSessions)을 본다 — handoff 는 캐시된 것을 쓴다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const worktree = `/repo/.claude/worktrees/todo-${todo.number}`;
+    let cachedCalls = 0;
+    let freshCalls = 0;
+    handle = buildTodoServer({
+      store,
+      // 캐시된(=낡은) 목록: 워크트리가 비어 보인다.
+      sessions: () => {
+        cachedCalls += 1;
+        return { available: true, sessions: [] };
+      },
+      // 캐시 없는 목록: 그 워크트리에 이미 세션이 있다.
+      spawnSessions: () => {
+        freshCalls += 1;
+        return {
+          available: true,
+          sessions: [
+            {
+              pid: 1,
+              cwd: worktree,
+              kind: 'background',
+              sessionId: 'live-session-uuid',
+              name: 'rocky-todo-live',
+              status: 'busy',
+              state: 'working',
+              startedAt: 0,
+            },
+          ],
+        };
+      },
+      spawn: async () => {
+        throw new Error('캐시 없는 목록이 세션을 보고했으면 spawn 하면 안 된다');
+      },
+      pathExists: () => true,
+      realPath: (p) => p,
+    }).fetch;
+
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { reused: boolean }).reused).toBe(true);
+    expect(freshCalls).toBe(1);
+    expect(cachedCalls).toBe(0);
+  });
+
+  test('방금 띄운 워크트리로 다시 부르면 409 — 재사용 분기로 새지 않는다', async () => {
+    let now = 1_000;
+    const recentSpawns = createRecentSpawns(60_000, () => now);
+    let spawned = 0;
+    useHandle({
+      recentSpawns,
+      spawn: async () => {
+        spawned += 1;
+        return '5acaaaeb';
+      },
+    });
+    const todo = seed();
+
+    const first = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(first.status).toBe(201);
+
+    // 배달된 레코드는 pending 이 아니라 409 게이트가 먼저 걸려야 한다.
+    expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
+    const second = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toMatch(/방금 이 워크트리/);
+    expect(spawned).toBe(1);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(1);
+
+    // TTL 이 지나면 다시 통과한다.
+    now += 60_000;
+    const third = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(third.status).toBe(201);
+    expect(spawned).toBe(2);
+  });
+
+  test('상대경로면 400 — 데몬의 cwd 기준으로 풀리면 안 된다', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', 'repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/절대경로/);
+  });
+
+  test('정규화한 경로를 워크트리 계산과 spawn cwd 에 함께 쓴다', async () => {
+    let seenBoardPath = '';
+    useHandle({
+      realPath: (p) => (p === '/link/repo' ? '/real/repo' : p),
+      spawn: async (input) => {
+        seenBoardPath = input.boardPath;
+        return '5acaaaeb';
+      },
+    });
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/link/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(201);
+    expect(seenBoardPath).toBe('/real/repo');
+    expect(((await res.json()) as { worktreePath: string }).worktreePath).toBe(
+      `/real/repo/.claude/worktrees/todo-${todo.number}`,
+    );
+  });
+
+  test('정규화한 경로로 동시 실행 가드가 성립한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/link/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    useHandle({
+      realPath: (p) => (p === '/link/repo' ? '/real/repo' : p),
+      // agents --json 은 늘 실경로를 보고한다.
+      sessions: {
+        available: true,
+        sessions: [
+          {
+            pid: 1,
+            cwd: `/real/repo/.claude/worktrees/todo-${todo.number}`,
+            kind: 'background',
+            sessionId: 'live-session-uuid',
+            name: 'rocky-todo-live',
+            status: 'busy',
+            state: 'working',
+            startedAt: 0,
+          },
+        ],
+      },
+      spawn: async () => {
+        throw new Error('실경로가 같으면 가드가 걸려야 한다');
+      },
+    });
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { reused: boolean }).reused).toBe(true);
+  });
+
+  test('정규화가 실패하면(경로 없음) 400', async () => {
+    useHandle({
+      realPath: () => {
+        throw new Error('ENOENT: no such file or directory');
+      },
+    });
+    const todo = seed();
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/경로를 찾을 수 없다/);
+  });
 });
 
 describe('POST /api/todos/:ref/spawn — body.path (finding: 실패해도 저장되면 안 된다)', () => {
-  /** 이 describe 도 세션 목록·spawn·경로 검사를 전부 주입한 핸들러로 갈아끼운다. */
+  /** 이 describe 도 세션 목록·spawn·경로 검사·정규화를 전부 주입한 핸들러로 갈아끼운다. */
   function useHandle(options: {
     sessions?: SessionsResult;
-    spawn?: () => string;
+    spawn?: () => Promise<string>;
     pathExists?: boolean;
+    realPath?: (path: string) => string;
   }): void {
     handle = buildTodoServer({
       store,
       sessions: () => options.sessions ?? { available: true, sessions: [] },
-      spawn: options.spawn ?? (() => '5acaaaeb'),
+      spawn: options.spawn ?? (async () => '5acaaaeb'),
       pathExists: () => options.pathExists ?? true,
+      realPath: options.realPath ?? ((p) => p),
     }).fetch;
   }
 
@@ -1443,6 +1637,31 @@ describe('POST /api/todos/:ref/spawn — body.path (finding: 실패해도 저장
     const body = (await res.json()) as { worktreePath: string };
     expect(body.worktreePath).toBe(`/repo/.claude/worktrees/todo-${todo.number}`);
     expect(store.getBoard('rocky-todo')?.path).toBe('/repo');
+  });
+
+  test('보드에는 정규화된 경로가 저장된다 — 가드가 비교하는 값과 같아야 한다', async () => {
+    useHandle({ realPath: (p) => (p === '/link/repo' ? '/real/repo' : p) });
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '/link/repo' }),
+    });
+    expect(res.status).toBe(201);
+    expect(store.getBoard('rocky-todo')?.path).toBe('/real/repo');
+  });
+
+  test('body.path 가 상대경로면 400 이고 저장되지 않는다', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: 'relative/repo' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/절대경로/);
+    expect(store.getBoard('rocky-todo')?.path).toBeUndefined();
   });
 
   test('body.path 가 문자열이 아니면 400', async () => {
