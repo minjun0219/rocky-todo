@@ -9,6 +9,26 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪨</text></svg>"
     />
+    <script>
+      // 첫 페인트 전에 data-theme 을 확정해 FOUC 를 막는다. 번들 전에 실행돼야 해서
+      // src/ui/lib.ts 의 resolveTheme 을 import 할 수 없다 — 같은 규칙을 복제한 것이니
+      // 한쪽을 고치면 반드시 다른 쪽도 고쳐야 한다.
+      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 테마를 못 읽는 것이
+      // 화면이 안 뜨는 것보다 낫다 — 기본 dark 로 떨어진다.
+      var stored, pref;
+      try {
+        stored = localStorage.getItem("rocky-todo:theme");
+        pref = stored === "dark" || stored === "light" || stored === "auto" ? stored : "auto";
+        document.documentElement.dataset.theme =
+          pref === "auto"
+            ? window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark"
+            : pref;
+      } catch (_) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
