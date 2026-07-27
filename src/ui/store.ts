@@ -55,6 +55,8 @@ interface UiState {
    * 로컬 사용 흐름이 조용히 사라지지 않게 한다.
    */
   issueCreateAllowed: boolean;
+  /** `/api/health` 가 알려주는 힌트 — 이 출처에서 세션을 띄울 수 있는가. */
+  spawnAllowed: boolean;
   /** 현재 보드의 대기 중 핸드오프 — refetch 가 함께 갱신한다. */
   handoffs: Array<Handoff & { stale: boolean }>;
   /** 보내기 패널을 열 때만 채운다. */
@@ -121,6 +123,17 @@ interface UiState {
   /** @throws 서버가 거절한 이유를 그대로 던진다 — 호출자가 화면에 보여줘야 한다. */
   sendHandoff: (todoId: string, input: { sessionId?: string; note?: string }) => Promise<void>;
   cancelHandoff: (handoffId: string) => Promise<void>;
+  /**
+   * 그 todo 전용 워크트리에 백그라운드 세션을 띄운다. 이미 도는 세션이 있으면 서버가
+   * spawn 대신 큐잉하고 `reused: true` 로 알린다.
+   * @throws 서버가 거절한 이유를 그대로 던진다 — 호출자가 화면에 보여줘야 한다.
+   */
+  spawnSession: (
+    todoId: string,
+    note?: string,
+  ) => Promise<{ reused: boolean; worktreePath: string; sessionShortId?: string }>;
+  /** 보드의 메인 레포 경로를 설정한다. @throws 서버 거절 사유 그대로. */
+  setBoardPath: (boardKey: string, path: string) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -182,6 +195,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   detail: null,
   seenComments: readSeen(localStorage),
   issueCreateAllowed: true,
+  spawnAllowed: true,
   handoffs: [],
   sessions: { available: true, list: [] },
 
@@ -487,9 +501,15 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   loadCapabilities: async () => {
     try {
-      const health = await api<{ issueCreateAllowed?: boolean }>('/api/health', get().actor);
+      const health = await api<{ issueCreateAllowed?: boolean; spawnAllowed?: boolean }>(
+        '/api/health',
+        get().actor,
+      );
       // 필드가 없는 구버전 데몬이면 낙관적으로 둔다 — 그 데몬에는 애초에 이 가드가 없다.
-      set({ issueCreateAllowed: health.issueCreateAllowed ?? true });
+      set({
+        issueCreateAllowed: health.issueCreateAllowed ?? true,
+        spawnAllowed: health.spawnAllowed ?? true,
+      });
     } catch {
       // 힌트를 못 얻는 것으로 화면이 망가지면 안 된다. 강제는 서버 몫이다.
     }
@@ -498,6 +518,29 @@ export const useUiStore = create<UiState>((set, get) => ({
   cancelHandoff: async (handoffId) => {
     const { actor } = get();
     await api(`/api/handoffs/${handoffId}/cancel`, actor, { method: 'POST' });
+    await get().refetch();
+  },
+
+  spawnSession: async (todoId, note) => {
+    const { actor } = get();
+    const result = await api<{
+      reused: boolean;
+      worktreePath: string;
+      sessionShortId?: string;
+    }>(`/api/todos/${todoId}/spawn`, actor, {
+      method: 'POST',
+      body: JSON.stringify(note ? { note } : {}),
+    });
+    await get().refetch();
+    return result;
+  },
+
+  setBoardPath: async (boardKey, path) => {
+    const { actor } = get();
+    await api(`/api/boards/${encodeURIComponent(boardKey)}`, actor, {
+      method: 'PATCH',
+      body: JSON.stringify({ path }),
+    });
     await get().refetch();
   },
 }));
