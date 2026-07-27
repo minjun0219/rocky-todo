@@ -194,11 +194,12 @@ export interface SpawnResult {
 /**
  * `spawn` 결과를 사람이 읽는 한두 줄로 렌더한다. `reused` 면 이미 도는 세션에 큐잉했다는
  * 문장(sessionShortId 없음), 아니면 새로 띄운 세션 정보 + 그대로 복사해 쓸 `claude attach`
- * 명령을 함께 보여준다.
+ * 명령을 함께 보여준다. `sessionName` 은 표시용 스냅샷이라 없을 수 있다 — 그때는
+ * `sessionId` 로 떨어뜨린다(빈 괄호는 어디로 보냈는지 못 읽게 만든다).
  */
 export function formatSpawnResult(ref: string, result: SpawnResult): string {
   return result.reused
-    ? `✓ ${ref} → 이미 도는 세션(${result.handoff.sessionName ?? ''})에 큐잉 · ${result.worktreePath}`
+    ? `✓ ${ref} → 이미 도는 세션(${result.handoff.sessionName ?? result.handoff.sessionId})에 큐잉 · ${result.worktreePath}`
     : `✓ ${ref} → 새 세션 ${result.sessionShortId} · ${result.worktreePath}\n  claude attach ${result.sessionShortId}`;
 }
 

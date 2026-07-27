@@ -1851,4 +1851,27 @@ describe('spawn 게이트 힌트와 보드 경로', () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as { repo: string }).repo).toBe('minjun0219/rocky-todo');
   });
+
+  // finding: 분기를 값 타입으로 가르면 path 를 고치려던 요청이 repo 에러를 돌려받았다.
+  // 키 존재 여부로 갈라 에러가 실제 원인을 가리키게 한다.
+  test('PATCH /api/boards/:key 는 path 와 repo 가 둘 다 없으면 그렇게 말한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const res = await req('/api/boards/rocky-todo', { method: 'PATCH', body: JSON.stringify({}) });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('path or repo is required');
+  });
+
+  test('PATCH /api/boards/:key 는 잘못된 path 를 repo 에러로 바꿔 말하지 않는다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    for (const path of [123, '', '   ', null]) {
+      const res = await req('/api/boards/rocky-todo', {
+        method: 'PATCH',
+        body: JSON.stringify({ path }),
+      });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe(
+        'path must be a non-empty string',
+      );
+    }
+  });
 });

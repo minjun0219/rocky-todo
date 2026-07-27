@@ -292,9 +292,17 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         const body = await readBody(req);
         const key = decodeURIComponent(boardDetail[1]);
         // 두 필드는 서로 독립이다 — 하나만 보내는 것이 정상이고, 둘 다 없으면 400.
-        if (typeof body.path === 'string') {
-          if (body.path.trim() === '') {
-            return errorResponse('path must not be empty', 400);
+        // 어느 쪽을 고치려던 요청인지는 **키 존재 여부**로 가른다. 값 타입으로 가르면
+        // `{path: 123}` 이 repo 분기로 흘러 원인과 다른 에러("repo must look like ...")를
+        // 돌려주고, 아무것도 안 보낸 요청도 같은 말을 한다.
+        const hasPath = 'path' in body;
+        const hasRepo = 'repo' in body;
+        if (!hasPath && !hasRepo) {
+          return errorResponse('path or repo is required', 400);
+        }
+        if (hasPath) {
+          if (typeof body.path !== 'string' || body.path.trim() === '') {
+            return errorResponse('path must be a non-empty string', 400);
           }
           return json(store.setBoardPath(key, body.path.trim(), actor));
         }

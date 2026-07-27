@@ -664,6 +664,17 @@ describe('formatSpawnResult', () => {
     expect(out).toContain(handoff.sessionName as string);
     expect(out).not.toContain('claude attach');
   });
+
+  // sessionName 은 표시용 스냅샷이라 없을 수 있다 — 빈 괄호("세션()")를 찍으면
+  // 어디로 보냈는지 읽을 수 없으니 sessionId 로 떨어뜨린다.
+  test('sessionName 이 없으면 sessionId 로 폴백한다', () => {
+    const out = formatSpawnResult('rocky#12', {
+      handoff: { ...handoff, sessionName: undefined },
+      reused: true,
+      worktreePath: '/w/rocky-todo/wt-12',
+    });
+    expect(out).toContain('이미 도는 세션(sess-1)');
+  });
 });
 
 describe('bin/rocky-todo entry', () => {
