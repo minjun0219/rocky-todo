@@ -285,3 +285,28 @@ test('마이그레이션 3 — 테이블이 이미 있어도(신규 DB) 실패�
   expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
   db.close();
 });
+
+test('마이그레이션 4 — 기존 DB 에 boards.path 를 더한다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, created_at TEXT)');
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  runMigrations(db, { migrations: MIGRATIONS });
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(boards)').all();
+  expect(columns.some((c) => c.name === 'path')).toBe(true);
+  expect(db.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version).toBe(
+    MIGRATIONS.length,
+  );
+  db.close();
+});
+
+test('마이그레이션 4 — path 가 이미 있는 신규 DB 에서도 기동한다', () => {
+  const db = new Database(':memory:');
+  db.run(
+    'CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, repo TEXT, path TEXT, created_at TEXT)',
+  );
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
+  db.close();
+});

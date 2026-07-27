@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildHandoffPrompt } from './handoff';
+import { buildHandoffPrompt, buildHandoffPromptFrom } from './handoff';
 import type { ClaimedHandoff } from './store';
 
 const base: ClaimedHandoff = {
@@ -45,4 +45,17 @@ describe('buildHandoffPrompt', () => {
   test('잔여가 0이면 잔여 줄이 없다', () => {
     expect(buildHandoffPrompt(base)).not.toContain('대기 중인 요청이');
   });
+});
+
+test('buildHandoffPromptFrom — claim 없이도 같은 주입문을 만든다', () => {
+  const prompt = buildHandoffPromptFrom({
+    actor: 'logan',
+    note: '테스트부터',
+    todoRef: 'rocky-todo#16',
+    todoTitle: '세션 띄우기',
+    remaining: 0,
+  });
+  expect(prompt).toContain('logan → rocky-todo#16 "세션 띄우기"');
+  expect(prompt).toContain('메모: 테스트부터');
+  expect(prompt).not.toContain('대기 중인 요청이');
 });

@@ -421,6 +421,55 @@ textarea {
   width: 100%;
 }
 
+/* ── spawn — 새 세션 띄우기 ─────────────────────────────────────────────── */
+.spawn-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.spawn-path-input,
+.spawn-note-input {
+  width: 100%;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: inherit;
+}
+
+.spawn-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--handoff);
+}
+
+.spawn-result code {
+  user-select: all;
+}
+
+.spawn-error {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--p1);
+  white-space: pre-wrap;
+}
+
+/* 실패가 아니라 "여기서는 불가"라는 안내 — 에러색을 쓰지 않는다. */
+.spawn-unavailable {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 /* ── doing badge — 두 대기의 온도 ─────────────────── */
 
 .doing-badge {

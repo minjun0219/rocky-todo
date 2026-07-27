@@ -380,6 +380,7 @@ function TodoDetail() {
         </div>
       ) : null}
       <IssueAction todo={todo} />
+      <SpawnAction todo={todo} />
     </div>
   );
 }
@@ -477,6 +478,125 @@ function IssueAction({ todo }: { todo: TodoView }) {
       {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
       {error && (
         <div className="issue-error" role="alert">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 그 todo 전용 워크트리에 백그라운드 세션을 띄운다.
+ *
+ * 보드에 메인 레포 경로가 없으면 그 자리에서 입력받는다. `IssueAction` 과 같은 규칙으로
+ * 실패해도 입력을 (다시) 열어 막다른 길을 만들지 않는다 — 브라우저만 쓰는 사용자에게는
+ * 이 화면이 유일한 설정 경로다.
+ *
+ * 경로는 `IssueAction` 의 repo 와 같은 모양으로 **spawn 호출 한 번에 실어** 보낸다.
+ * 여기서 `setBoardPath` 를 먼저 부르지 않는다 — 먼저 저장하면 오타난 경로가 spawn
+ * 성공 여부와 무관하게 보드에 남아, 다른 todo·다른 탭에서 띄우려는 사람도 같은 실패를
+ * 물려받는다(이 컴포넌트가 고치는 finding). 저장은 서버가 spawn 성공 뒤에만 한다.
+ */
+function SpawnAction({ todo }: { todo: TodoView }) {
+  const boards = useUiStore((s) => s.boards);
+  const spawnAllowed = useUiStore((s) => s.spawnAllowed);
+  const spawnSession = useUiStore((s) => s.spawnSession);
+  const [path, setPath] = useState('');
+  const [note, setNote] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    reused: boolean;
+    worktreePath: string;
+    sessionShortId?: string;
+  } | null>(null);
+
+  const board = boards.find((b) => b.id === todo.boardId);
+
+  if (!spawnAllowed) {
+    return (
+      <div className="spawn-action">
+        <p className="spawn-unavailable">
+          세션 띄우기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
+        </p>
+      </div>
+    );
+  }
+
+  const submit = async (): Promise<void> => {
+    setError(null);
+    setBusy(true);
+    try {
+      setResult(
+        await spawnSession(todo.id, {
+          note: note.trim() || undefined,
+          path: asking ? path.trim() : undefined,
+        }),
+      );
+      setAsking(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      // 실패는 절대 조용히 막다른 길이 되면 안 된다 — 입력을 (다시) 열어 고칠 값을 보여준다.
+      setAsking(true);
+      setPath(path || board?.path || '');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="spawn-action">
+      {asking && (
+        <input
+          className="spawn-path-input"
+          value={path}
+          placeholder="/Users/…/레포 절대경로"
+          aria-label="메인 레포 절대경로"
+          onChange={(e) => setPath(e.target.value)}
+        />
+      )}
+      <input
+        className="spawn-note-input"
+        value={note}
+        placeholder="메모 (선택)"
+        aria-label="세션에 함께 보낼 메모"
+        onChange={(e) => setNote(e.target.value)}
+      />
+      <div className="drawer-actions">
+        <button
+          type="button"
+          className="drawer-btn"
+          disabled={busy || (asking && path.trim() === '')}
+          onClick={() => {
+            if (!board?.path && !asking) {
+              setAsking(true);
+              setPath(board?.path ?? '');
+              return;
+            }
+            void submit();
+          }}
+        >
+          {busy ? '띄우는 중…' : '새 세션 띄우기'}
+        </button>
+      </div>
+      {result && (
+        <div className="spawn-result">
+          {result.reused ? (
+            <span>이미 도는 세션에 넘겼다 · {result.worktreePath}</span>
+          ) : (
+            <>
+              <span>
+                세션 {result.sessionShortId} · {result.worktreePath}
+              </span>
+              <code>claude attach {result.sessionShortId}</code>
+            </>
+          )}
+        </div>
+      )}
+      {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
+      {error && (
+        <div className="spawn-error" role="alert">
           {error}
         </div>
       )}

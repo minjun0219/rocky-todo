@@ -166,6 +166,25 @@ describe('boards', () => {
   test('boardById returns undefined for an unknown id', () => {
     expect(store.boardById('nosuchid')).toBeUndefined();
   });
+
+  test('setBoardPath stores the path and survives a reload', () => {
+    store.ensureBoard('rocky', { actor: 'logan' });
+    const updated = store.setBoardPath('rocky', '/Users/x/dev/rocky-todo', 'logan');
+    expect(updated.path).toBe('/Users/x/dev/rocky-todo');
+    expect(store.getBoard('rocky')?.path).toBe('/Users/x/dev/rocky-todo');
+  });
+
+  test('setBoardPath trims whitespace and does not record history if value does not change', () => {
+    const board = store.ensureBoard('rocky', { actor: 'logan' });
+    store.setBoardPath('rocky', '  /Users/x/dev/rocky-todo  ', 'logan');
+    const before = store.listHistory({ entity: 'board', entityId: board.id }).length;
+    store.setBoardPath('rocky', '/Users/x/dev/rocky-todo', 'logan');
+    expect(store.listHistory({ entity: 'board', entityId: board.id })).toHaveLength(before);
+  });
+
+  test('setBoardPath throws if board does not exist', () => {
+    expect(() => store.setBoardPath('nope', '/tmp/x', 'logan')).toThrow(/board not found/);
+  });
 });
 
 describe('todos', () => {
@@ -895,5 +914,80 @@ describe('handoffs', () => {
     expect(feed.entries.some((e) => e.action.startsWith('handoff'))).toBe(false);
     // 커서는 그래도 전진해야 한다 — 아니면 같은 항목을 영원히 다시 읽는다.
     expect(feed.lastId).toBeGreaterThan(before);
+  });
+
+  describe('createSpawnedHandoff', () => {
+    test('생성 즉시 delivered / via=spawn 이다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: '세션 띄우기' }, 'logan');
+      const handoff = store.createSpawnedHandoff({
+        ref: todo.id,
+        sessionId: '5acaaaeb',
+        sessionName: 'rocky-todo-16',
+        sessionCwd: '/repo/.claude/worktrees/todo-16',
+        note: '테스트부터',
+        actor: 'logan',
+      });
+      expect(handoff.status).toBe('delivered');
+      expect(handoff.deliveredVia).toBe('spawn');
+      expect(handoff.deliveredAt).toBeTruthy();
+      expect(handoff.sessionCwd).toBe('/repo/.claude/worktrees/todo-16');
+    });
+
+    test('pending 이 아니므로 claim 대상이 아니다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      store.createSpawnedHandoff({
+        ref: todo.id,
+        sessionId: '5acaaaeb',
+        sessionName: 'n',
+        sessionCwd: '/w',
+        actor: 'logan',
+      });
+      expect(store.pendingHandoffOf(todo.id)).toBeUndefined();
+      expect(store.claimHandoff('5acaaaeb', 'stop')).toBeNull();
+    });
+
+    test('히스토리에 handoff-spawn 을 남긴다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      store.createSpawnedHandoff({
+        ref: todo.id,
+        sessionId: '5acaaaeb',
+        sessionName: 'n',
+        sessionCwd: '/w',
+        actor: 'logan',
+      });
+      const actions = store.listHistory({ entityId: todo.id }).map((h) => h.action);
+      expect(actions).toContain('handoff-spawn');
+    });
+
+    test('/api/changes 피드에서는 빠진다 — 다른 세션의 프롬프트 주입에 실리면 노이즈다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      const before = store.listChangesSince(0).lastId;
+      store.createSpawnedHandoff({
+        ref: todo.id,
+        sessionId: '5acaaaeb',
+        sessionName: 'n',
+        sessionCwd: '/w',
+        actor: 'logan',
+      });
+
+      const feed = store.listChangesSince(before);
+      expect(feed.entries.some((e) => e.action.startsWith('handoff'))).toBe(false);
+      // 커서는 그래도 전진해야 한다 — 아니면 같은 항목을 영원히 다시 읽는다.
+      expect(feed.lastId).toBeGreaterThan(before);
+    });
+
+    test('아카이브된 todo 에는 만들지 않는다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      store.setTodoStatus(todo.id, 'archive', 'logan');
+      expect(() =>
+        store.createSpawnedHandoff({
+          ref: todo.id,
+          sessionId: '5acaaaeb',
+          sessionName: 'n',
+          sessionCwd: '/w',
+          actor: 'logan',
+        }),
+      ).toThrow(/archived/);
+    });
   });
 });
