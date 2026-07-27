@@ -193,21 +193,22 @@ describe('NON_COLOR_TOKENS 무검증 탈출구 가드', () => {
     // NON_COLOR_TOKENS 에 이름을 넣으면 대비 검사·커버리지 가드·대칭성 필터링을 한 번에
     // 면제받는다. 색 값을 실수로(혹은 커버리지 가드를 피하려고) 여기 넣으면 대비 회귀가
     // 조용히 통과해 버리므로, 값 자체가 색 표기가 아님을 단언한다.
+    //
+    // 테마 블록만 훑으면 안 된다 — `--mono`/`--sans` 는 테마와 무관해서 별도 `:root` 블록에
+    // 산다. 그 블록을 안 보면 "등록된 토큰은 색이 아니다" 라는 이 가드의 주장이 정작
+    // 등록된 토큰 대부분에 대해 성립하지 않는다. 그래서 선언 위치를 가리지 않고
+    // CSS 전체에서 해당 이름의 **모든** 선언을 찾아 검사한다.
     const COLOR_LIKE = /^#|rgb\(|rgba\(|hsl\(|color-mix\(/;
-    const themes: ReadonlyArray<readonly [string, RegExp]> = [
-      ['dark', DARK_BLOCK_RE],
-      ['light', LIGHT_BLOCK_RE],
-    ];
-    const violations = themes.flatMap(([theme, re]) => {
-      const tokens = parseTokens(CSS, re, { includeNonColor: true });
-      return [...NON_COLOR_TOKENS]
-        .filter((name) => {
-          const value = tokens.get(name);
-          return value !== undefined && COLOR_LIKE.test(value);
-        })
-        .map((name) => `[${theme}] ${name} = ${tokens.get(name)}`);
-    });
-    expect(violations).toEqual([]);
+    const violations = [...NON_COLOR_TOKENS].flatMap((name) =>
+      [...CSS.matchAll(new RegExp(`${name}\\s*:\\s*([^;]+);`, 'g'))]
+        .map((m) => (m[1] ?? '').trim())
+        .filter((value) => COLOR_LIKE.test(value))
+        .map((value) => `${name} = ${value}`),
+    );
+    expect(
+      violations,
+      'NON_COLOR_TOKENS 에 등록된 이름이 색 값을 담고 있다 — 대비 검사를 우회하게 된다',
+    ).toEqual([]);
   });
 });
 

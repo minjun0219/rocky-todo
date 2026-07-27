@@ -2,7 +2,15 @@ import { create } from 'zustand';
 import type { NoteView, TodoView } from '../server';
 import type { AgentSession } from '../sessions';
 import type { Board, Comment, Handoff, HistoryEntry, Section, StatusAction } from '../store';
-import { markSeen, readSeen, readThemePref, resolveTheme, THEME_KEY, type ThemePref } from './lib';
+import {
+  markSeen,
+  readSeen,
+  readThemePref,
+  resolveTheme,
+  type SeenStorage,
+  THEME_KEY,
+  type ThemePref,
+} from './lib';
 import {
   type BoardSelection,
   buildPath,
@@ -22,6 +30,32 @@ import {
  */
 
 const ACTOR_KEY = 'rocky-todo-actor';
+
+/**
+ * `localStorage` 는 접근만으로도 던진다 — 프라이빗 모드, 사이트 데이터 차단, 용량 초과가
+ * 각각 다른 지점에서 예외를 낸다. 이 보드는 로컬 데몬을 보는 화면이므로, 기억이 남지
+ * 않는 것보다 화면이 안 뜨거나 버튼이 죽는 쪽이 훨씬 나쁘다.
+ *
+ * 그래서 저장은 **부수 효과**로 취급한다: 읽기 실패는 `null`(= 기본값), 쓰기 실패는 무시.
+ * 이 세션의 동작은 어느 쪽이든 그대로 이어진다. `readSeen`/`markSeen` 이 받는
+ * `SeenStorage` 계약과 모양이 같아 그대로 넘길 수 있다.
+ */
+const safeStorage: SeenStorage = {
+  getItem(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // 저장하지 못해도 이번 세션은 정상 동작한다 — 다음 방문에 기억이 없을 뿐이다.
+    }
+  },
+};
 
 // BoardSelection 은 './route' 가 소유한다 — store 가 route 를 import 하므로 반대 방향은
 // 순환이 된다. 기존 import 경로(`from './store'`)를 쓰는 컴포넌트를 위해 재수출한다.
@@ -187,11 +221,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   // 부팅 직후의 applyRoute 가 전체 보기로 되돌린다.
   selected: parseRoute(window.location.pathname).board,
   showArchived: false,
-  actor: localStorage.getItem(ACTOR_KEY) ?? 'logan',
-  themePref: readThemePref(localStorage.getItem(THEME_KEY)),
+  actor: safeStorage.getItem(ACTOR_KEY) ?? 'logan',
+  themePref: readThemePref(safeStorage.getItem(THEME_KEY)),
   connected: false,
   detail: null,
-  seenComments: readSeen(localStorage),
+  seenComments: readSeen(safeStorage),
   issueCreateAllowed: true,
   handoffs: [],
   sessions: { available: true, list: [] },
@@ -214,15 +248,19 @@ export const useUiStore = create<UiState>((set, get) => ({
     void get().refetch();
   },
   setActor: (actor) => {
-    localStorage.setItem(ACTOR_KEY, actor);
+    // 상태를 먼저 — 저장 실패가 이번 세션의 호출자 이름까지 되돌리면 안 된다.
     set({ actor });
+    safeStorage.setItem(ACTOR_KEY, actor);
   },
   setThemePref: (pref) => {
-    localStorage.setItem(THEME_KEY, pref);
+    // 화면 갱신을 먼저 한다. 저장은 다음 방문을 위한 부수 효과일 뿐이라, 그게 실패해도
+    // 이번 클릭은 반드시 반영돼야 한다 — 순서가 반대면 저장이 막힌 브라우저에서 토글이
+    // 통째로 죽고 `auto` 의 OS 추종까지 멈춘다.
     // 해석은 여기서 한 번만 한다 — 이 값을 상태로 복제하지 않고 DOM 에만 반영한다.
     const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
     document.documentElement.dataset.theme = resolveTheme(pref, prefersLight);
     set({ themePref: pref });
+    safeStorage.setItem(THEME_KEY, pref);
   },
   setConnected: (connected) => set({ connected }),
 
@@ -283,8 +321,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 유지)와 상태 사본(리렌더 트리거)을 함께 갱신한다. push 여부와 무관하게 수행한다 —
     // URL 로 연 경우(applyRoute)도, SSE refetch 로 갱신된 경우도 사용자는 그 댓글을 보고 있다.
     if (body.todo.lastCommentAt) {
-      markSeen(localStorage, body.todo.id, body.todo.lastCommentAt);
-      set({ seenComments: readSeen(localStorage) });
+      markSeen(safeStorage, body.todo.id, body.todo.lastCommentAt);
+      set({ seenComments: readSeen(safeStorage) });
     }
     if (options?.push === false) {
       return;
