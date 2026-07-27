@@ -1344,6 +1344,130 @@ describe('POST /api/todos/:ref/spawn', () => {
   });
 });
 
+describe('POST /api/todos/:ref/spawn — body.path (finding: 실패해도 저장되면 안 된다)', () => {
+  /** 이 describe 도 세션 목록·spawn·경로 검사를 전부 주입한 핸들러로 갈아끼운다. */
+  function useHandle(options: {
+    sessions?: SessionsResult;
+    spawn?: () => string;
+    pathExists?: boolean;
+  }): void {
+    handle = buildTodoServer({
+      store,
+      sessions: () => options.sessions ?? { available: true, sessions: [] },
+      spawn: options.spawn ?? (() => '5acaaaeb'),
+      pathExists: () => options.pathExists ?? true,
+    }).fetch;
+  }
+
+  test('body.path 를 실어 보내면 그 경로로 뜬다', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '/override-repo' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { worktreePath: string };
+    expect(body.worktreePath).toBe(`/override-repo/.claude/worktrees/todo-${todo.number}`);
+  });
+
+  test('spawn 이 실패하면 body.path 가 보드에 저장되지 않는다', async () => {
+    useHandle({
+      spawn: () => {
+        throw new Error('claude: command not found');
+      },
+    });
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '/typo-repo' }),
+    });
+    expect(res.status).toBe(400);
+    expect(store.getBoard('rocky-todo')?.path).toBeUndefined();
+  });
+
+  test('spawn 이 성공하면 body.path 가 보드에 저장된다', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '/override-repo' }),
+    });
+    expect(res.status).toBe(201);
+    expect(store.getBoard('rocky-todo')?.path).toBe('/override-repo');
+  });
+
+  test('재사용 분기(reused: true)에서도 body.path 가 저장된다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    useHandle({
+      sessions: {
+        available: true,
+        sessions: [
+          {
+            pid: 1,
+            cwd: `/override-repo/.claude/worktrees/todo-${todo.number}`,
+            kind: 'background',
+            sessionId: 'live-session-uuid',
+            name: 'rocky-todo-live',
+            status: 'busy',
+            state: 'working',
+            startedAt: 0,
+          },
+        ],
+      },
+      spawn: () => {
+        throw new Error('살아있는 세션이 있으면 spawn 하면 안 된다');
+      },
+    });
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '/override-repo' }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { reused: boolean };
+    expect(body.reused).toBe(true);
+    expect(store.getBoard('rocky-todo')?.path).toBe('/override-repo');
+  });
+
+  test('이미 path 가 설정된 보드에 body.path 없이 부르면 기존 값을 쓴다 (회귀)', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/repo', 'logan');
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { worktreePath: string };
+    expect(body.worktreePath).toBe(`/repo/.claude/worktrees/todo-${todo.number}`);
+    expect(store.getBoard('rocky-todo')?.path).toBe('/repo');
+  });
+
+  test('body.path 가 문자열이 아니면 400', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: 42 }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('body.path 가 빈 문자열(trim 후)이면 400', async () => {
+    useHandle({});
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    const res = await req(`/api/todos/${todo.id}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ path: '   ' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('spawn 게이트 힌트와 보드 경로', () => {
   test('GET /api/health 가 spawnAllowed 를 싣는다', async () => {
     const local = (await (await req('/api/health')).json()) as { spawnAllowed: boolean };

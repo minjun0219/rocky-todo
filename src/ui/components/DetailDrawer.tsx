@@ -491,12 +491,16 @@ function IssueAction({ todo }: { todo: TodoView }) {
  * 보드에 메인 레포 경로가 없으면 그 자리에서 입력받는다. `IssueAction` 과 같은 규칙으로
  * 실패해도 입력을 (다시) 열어 막다른 길을 만들지 않는다 — 브라우저만 쓰는 사용자에게는
  * 이 화면이 유일한 설정 경로다.
+ *
+ * 경로는 `IssueAction` 의 repo 와 같은 모양으로 **spawn 호출 한 번에 실어** 보낸다.
+ * 여기서 `setBoardPath` 를 먼저 부르지 않는다 — 먼저 저장하면 오타난 경로가 spawn
+ * 성공 여부와 무관하게 보드에 남아, 다른 todo·다른 탭에서 띄우려는 사람도 같은 실패를
+ * 물려받는다(이 컴포넌트가 고치는 finding). 저장은 서버가 spawn 성공 뒤에만 한다.
  */
 function SpawnAction({ todo }: { todo: TodoView }) {
   const boards = useUiStore((s) => s.boards);
   const spawnAllowed = useUiStore((s) => s.spawnAllowed);
   const spawnSession = useUiStore((s) => s.spawnSession);
-  const setBoardPath = useUiStore((s) => s.setBoardPath);
   const [path, setPath] = useState('');
   const [note, setNote] = useState('');
   const [asking, setAsking] = useState(false);
@@ -524,13 +528,16 @@ function SpawnAction({ todo }: { todo: TodoView }) {
     setError(null);
     setBusy(true);
     try {
-      if (asking && board) {
-        await setBoardPath(board.key, path.trim());
-      }
-      setResult(await spawnSession(todo.id, note.trim() || undefined));
+      setResult(
+        await spawnSession(todo.id, {
+          note: note.trim() || undefined,
+          path: asking ? path.trim() : undefined,
+        }),
+      );
       setAsking(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // 실패는 절대 조용히 막다른 길이 되면 안 된다 — 입력을 (다시) 열어 고칠 값을 보여준다.
       setAsking(true);
       setPath(path || board?.path || '');
     } finally {

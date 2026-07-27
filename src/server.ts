@@ -494,8 +494,20 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           return errorResponse(`이 항목은 이미 다른 세션 앞에 대기 중이다: ${ref}`, 409);
         }
 
+        // path 는 선택 — 주면 이번 spawn 에 한해 boards.path 를 덮어쓰고, **spawn 이
+        // 성공한 뒤에만** 영구 저장한다(아래 persistPathIfGiven). `IssueAction`/
+        // `createIssueForTodo` 와 같은 모양이다 — 저장을 먼저 하면 오타난 경로가 spawn
+        // 실패와 무관하게 보드에 눌어붙어 다른 todo·다른 탭까지 같은 실패를 물려받는다.
+        let pathOverride: string | undefined;
+        if (body && 'path' in body) {
+          if (typeof body.path !== 'string' || body.path.trim() === '') {
+            return errorResponse('path must be a non-empty string', 400);
+          }
+          pathOverride = body.path.trim();
+        }
+
         const board = store.listBoards(true).find((b) => b.id === todo.boardId);
-        const boardPath = board?.path ?? '';
+        const boardPath = pathOverride ?? board?.path ?? '';
         if (boardPath === '') {
           return errorResponse(
             `보드 "${board?.key ?? ''}" 에 메인 레포 경로가 없다 — rocky-todo board path <절대경로> 로 설정하라`,
@@ -514,6 +526,15 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         const worktreePath = worktreePathFor(boardPath, todo.number);
         const todoRef = refOf(store, todo.boardId, todo.number, todo.id);
 
+        // pathOverride 가 주어졌고 여기까지 왔다는 건 그 값으로 워크트리 경로를 구성해
+        // 존재 검사까지 통과했다는 뜻이다 — 유효함이 입증됐으니 저장한다. 재사용 분기도
+        // 예외가 아니다(그 경로로 워크트리를 찾아 살아있는 세션을 판정했으니 옳은 값).
+        const persistPathIfGiven = (): void => {
+          if (pathOverride !== undefined && board) {
+            store.setBoardPath(board.key, pathOverride, actor);
+          }
+        };
+
         // 그 워크트리에서 이미 도는 세션이 있으면 새로 띄우지 않는다 — 두 에이전트가 한
         // 워크트리를 같이 고치는 것을 막는 가드이자, 곧 "세션 재사용" 이다. 이때는 평범한
         // pending 핸드오프를 만들어 그 세션의 다음 Stop 훅이 집게 한다.
@@ -528,6 +549,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             actor,
             currentBoardId,
           });
+          persistPathIfGiven();
           return json({ handoff, reused: true, worktreePath }, 201);
         }
 
@@ -551,7 +573,8 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
 
         // 기록은 spawn 이 성공한 뒤에만 남긴다 — 실패한 spawn 이 배달 기록을 남기면
-        // 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다.
+        // 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다. 경로 저장도 같은 문 뒤다.
+        persistPathIfGiven();
         const handoff = store.createSpawnedHandoff({
           ref,
           sessionId: shortId,
