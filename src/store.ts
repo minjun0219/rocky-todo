@@ -1309,7 +1309,8 @@ export class TodoStore {
    * `handoffs` 행 하나를 그대로 넣는다 — `createHandoff` / `createSpawnedHandoff` 공용.
    *
    * `deliveredAt`/`deliveredVia` 는 미배달(`pending`) 행에서 `undefined` 로 와 `null` 로
-   * 저장된다. 컬럼이 늘어도 이 한 곳만 고치면 두 호출부가 같이 맞는다.
+   * 저장된다. 여기 모아둔 덕에 **INSERT 문 자체는** 두 호출부가 갈라지지 않는다 — 다만
+   * 컬럼이 실제로 늘면 `Handoff` · `HandoffRow` · `toHandoff` 도 함께 고쳐야 한다.
    */
   private insertHandoffRow(handoff: Handoff): void {
     this.db
