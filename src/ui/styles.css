@@ -144,7 +144,7 @@ textarea {
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.18em;
 }
 
@@ -223,7 +223,7 @@ textarea {
 
 .sidebar-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.22em;
   color: var(--faint);
   padding: 0 10px 6px;
@@ -320,7 +320,7 @@ textarea {
 
 .group-eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--warm-dim);
@@ -410,7 +410,7 @@ textarea {
 
 .chip {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
@@ -486,7 +486,7 @@ textarea {
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 9px;
   border-radius: 999px;
   flex-shrink: 0;
@@ -599,7 +599,7 @@ textarea {
 
 .note-meta {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   margin-top: 4px;
 }
@@ -674,7 +674,7 @@ body.is-drawer-open {
 
 .drawer-id {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   color: var(--faint);
   opacity: 0.6;
@@ -691,7 +691,7 @@ body.is-drawer-open {
 
 .drawer-section-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.22em;
   color: var(--faint);
   margin: 16px 0 6px;
@@ -808,7 +808,7 @@ body.is-drawer-open {
 .history-at {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   flex-shrink: 0;
 }
