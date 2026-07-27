@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildTodoServer } from './server';
-import type { SessionsResult } from './sessions';
+import { buildTodoServer, resolveSpawnSessions } from './server';
+import { createCachedListSessions, type SessionsResult } from './sessions';
 import { createRecentSpawns, type RecentSpawns, type SpawnInput } from './spawn';
 import { TodoStore } from './store';
 
@@ -1462,6 +1462,59 @@ describe('POST /api/todos/:ref/spawn', () => {
     expect(spawned).toBe(2);
   });
 
+  test('겹쳐 들어온 두 요청 중 하나만 띄운다 — 예약이 await 앞에 있다', async () => {
+    // 이 테스트가 없으면 회귀가 조용히 돌아온다: 예약(remember)이 `await spawnSession`
+    // 뒤로 밀리면 두 요청이 409 게이트를 나란히 통과해 한 워크트리에 두 에이전트가 붙는다.
+    let calls = 0;
+    let release: () => void = () => {};
+    const spawning = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    useHandle({
+      spawn: async () => {
+        calls += 1;
+        await spawning;
+        return '5acaaaeb';
+      },
+    });
+    const todo = seed();
+
+    const first = req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    const second = req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    // 두 요청이 spawn 앞까지 나아가도록 이벤트 루프를 한 바퀴 돌린 뒤에 놓아준다.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    const [a, b] = await Promise.all([first, second]);
+
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(calls).toBe(1);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(1);
+  });
+
+  test('실패한 spawn 은 60초 창을 잡아먹지 않는다 — 예약을 되돌린다', async () => {
+    let calls = 0;
+    // 시계를 세워 둔다 — TTL 이 흐르지 않는데도 재시도가 통과해야 forget 이 증명된다.
+    const recentSpawns = createRecentSpawns(60_000, () => 1_000);
+    useHandle({
+      recentSpawns,
+      spawn: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error('claude: command not found');
+        }
+        return '5acaaaeb';
+      },
+    });
+    const todo = seed();
+
+    const failed = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(failed.status).toBe(400);
+    const retried = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
+    expect(retried.status).toBe(201);
+    expect(calls).toBe(2);
+    expect(store.listHandoffs({ todoId: todo.id })).toHaveLength(1);
+  });
+
   test('상대경로면 400 — 데몬의 cwd 기준으로 풀리면 안 된다', async () => {
     useHandle({});
     store.ensureBoard('rocky-todo', { actor: 'logan' });
@@ -1533,6 +1586,39 @@ describe('POST /api/todos/:ref/spawn', () => {
     const res = await req(`/api/todos/${todo.id}/spawn`, { method: 'POST' });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/경로를 찾을 수 없다/);
+  });
+});
+
+describe('spawn 라우트의 세션 조회 배선', () => {
+  /**
+   * `buildTodoServer({ store })`(= `daemon.ts` 의 배선)에서 spawn 경로는 캐시된 목록을
+   * 쓰면 안 된다. 훗날 누가 `sessions: createCachedListSessions()` 를 넘겨도 그 기본값이
+   * 딸려오지 않는다는 것을 `resolveSpawnSessions` 의 기본 분기에서 못 박는다.
+   */
+  test('주입이 없으면 부를 때마다 새로 조회한다 — 메모이즈가 끼지 않는다', () => {
+    let calls = 0;
+    const resolved = resolveSpawnSessions({}, () => {
+      calls += 1;
+      return { available: true, sessions: [] };
+    });
+    resolved();
+    resolved();
+    expect(calls).toBe(2);
+  });
+
+  test('대조군: 캐시된 조회기를 배선하면 두 번째 호출이 스냅샷을 준다', () => {
+    // 위 단언이 실제로 캐시를 잡아낸다는 증거 — 같은 모양으로 세면 1 이 나온다.
+    let runs = 0;
+    const cached = createCachedListSessions(3_000, () => {
+      runs += 1;
+      return { ok: true, stdout: '[]', stderr: '' };
+    });
+    const resolved = resolveSpawnSessions({ sessions: cached }, () => {
+      throw new Error('기본값이 쓰이면 안 된다');
+    });
+    resolved();
+    resolved();
+    expect(runs).toBe(1);
   });
 });
 

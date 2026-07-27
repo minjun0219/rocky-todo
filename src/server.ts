@@ -174,11 +174,28 @@ function toHttpError(error: unknown): Response {
   return errorResponse(message, 400);
 }
 
+/**
+ * spawn 라우트가 볼 세션 조회기를 고른다 — 이 배선 규칙이 사는 유일한 자리다.
+ *
+ * 주입이 하나도 없으면 **캐시 없는** `listSessions` 다. `daemon.ts` 가 나중에
+ * `sessions: createCachedListSessions()` 를 넘기더라도 spawn 라우트가 조용히 캐시된
+ * (= spawn 이전) 스냅샷으로 판정하는 일이 없게, 기본값을 `sessions` 와 분리해 둔다.
+ *
+ * @param list 기본 조회기 — 테스트가 호출 횟수를 세려고 주입한다. 기본은 매 호출
+ *   `claude agents --json` 을 새로 부르는 `listSessions`.
+ */
+export function resolveSpawnSessions(
+  options: Pick<TodoServerOptions, 'sessions' | 'spawnSessions'>,
+  list: () => SessionsResult = () => listSessions(),
+): () => SessionsResult {
+  return options.spawnSessions ?? options.sessions ?? list;
+}
+
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store, run } = options;
   const sessionsOf = options.sessions ?? createCachedListSessions();
   // spawn 라우트만 캐시를 우회한다 — 가드가 spawn 이전 스냅샷을 보면 안 된다.
-  const spawnSessionsOf = options.spawnSessions ?? options.sessions ?? (() => listSessions());
+  const spawnSessionsOf = resolveSpawnSessions(options);
   const spawnSession = options.spawn ?? ((input: SpawnInput) => spawnBackgroundSession(input));
   const pathExists = options.pathExists ?? existsSync;
   const realPath = options.realPath ?? realpathSync;
@@ -621,6 +638,10 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
 
         const sessionName = `${board?.key ?? 'todo'}-${todo.number}`;
+        // 예약은 실행 **전에**, 이 동기 구간에서 잡는다. `await spawnSession` 뒤로 미루면
+        // 그 창에 겹쳐 들어온 두 요청이 위 게이트를 나란히 통과해 한 워크트리에 두
+        // 에이전트가 붙는다 — 이 설계의 유일한 안전 속성이 거기서 무너진다.
+        recentSpawns.remember(worktreePath);
         let shortId: string;
         try {
           shortId = await spawnSession({
@@ -636,12 +657,13 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
             }),
           });
         } catch (error) {
+          // 예약을 되돌린다 — 실패한 시도가 60초 동안 재시도를 막으면 안 된다.
+          recentSpawns.forget(worktreePath);
           return errorResponse(error instanceof Error ? error.message : String(error), 400);
         }
 
-        // 기록은 spawn 이 성공한 뒤에만 남긴다 — 실패한 spawn 이 배달 기록을 남기면
-        // 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다. 경로 저장도 같은 문 뒤다.
-        recentSpawns.remember(worktreePath);
+        // 배달 기록·경로 저장은 spawn 이 성공한 뒤에만 남긴다 — 실패한 spawn 이 배달 기록을
+        // 남기면 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다.
         persistPathIfGiven();
         const handoff = store.createSpawnedHandoff({
           ref,

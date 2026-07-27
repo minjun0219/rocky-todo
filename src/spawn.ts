@@ -46,21 +46,109 @@ export interface SpawnInput extends SpawnCommandInput {
  */
 export type RunInDir = (cmd: string[], cwd: string, timeoutMs: number) => Promise<RunResult>;
 
-const defaultRun: RunInDir = async (cmd, cwd, timeoutMs) => {
+/**
+ * 직접 자식이 끝난 뒤 파이프에 남은 출력을 마저 긁어모으는 유예.
+ *
+ * 이 유예가 지나도 닫히지 않는 파이프는 **자손이 물고 있는 것**으로 본다 — 우리가
+ * 기다려 줄 이유가 없는 상대다. `claude --bg` 가 정확히 그 모양이라 짧아도 충분하다:
+ * 우리가 읽어야 하는 것은 자식이 종료 전에 이미 써 둔 `backgrounded …` 한 줄뿐이다.
+ */
+const EXIT_DRAIN_GRACE_MS = 250;
+
+interface Deadline {
+  reached: Promise<void>;
+  cancel: () => void;
+}
+
+/** 취소 가능한 타이머 대기 — 정상 경로에서 타이머를 남기지 않으려고 cancel 을 쥔다. */
+function createDeadline(ms: number): Deadline {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const reached = new Promise<void>((resolve) => {
+    handle = setTimeout(resolve, ms);
+  });
+  return { reached, cancel: () => clearTimeout(handle) };
+}
+
+/**
+ * 스트림을 끝까지, 단 `stop` 이 resolve 되면 거기까지만 읽는다.
+ *
+ * `new Response(stream).text()` 를 쓰지 않는 이유가 이것 — 그 편의 함수는 파이프의
+ * **모든** 쓰기 끝이 닫혀야 resolve 한다. 직접 자식이 종료해도 detach 된 손자가 fd 를
+ * 물고 있으면 영원히 매달린다.
+ */
+async function readTextUntil(
+  stream: ReadableStream<Uint8Array> | undefined,
+  stop: Promise<unknown>,
+): Promise<string> {
+  if (!stream) {
+    return '';
+  }
+  const reader = stream.getReader();
+  // `stop` 이 이기면 undefined — 읽기 결과에는 없는 값이라 그대로 종료 신호가 된다.
+  const halt = stop.then(() => undefined);
+  const decoder = new TextDecoder();
+  let out = '';
+  try {
+    for (;;) {
+      const next = await Promise.race([reader.read(), halt]);
+      if (!next || next.done) {
+        break;
+      }
+      out += decoder.decode(next.value, { stream: true });
+    }
+    out += decoder.decode();
+  } catch {
+    // 읽기 실패로 결과 전체를 버리지 않는다 — 여기까지 읽은 부분 출력을 돌려준다.
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+  return out;
+}
+
+/**
+ * 기본 실행기 — `timeoutMs` 안에 **반드시** 결과를 돌려준다.
+ *
+ * 무한 대기의 자리는 파이프 읽기 하나뿐이라, 읽기를 두 마감에 묶는다: 직접 자식이
+ * 종료하면 `EXIT_DRAIN_GRACE_MS` 만 더 긁고 그만두고, 자식이 종료조차 하지 않으면
+ * `timeoutMs` 에서 끊는다(그 시각엔 `Bun.spawn` 의 `timeout` 이 자식을 이미 죽인다).
+ * 그래서 `claude --bg` 의 백그라운드 세션이 stdout fd 를 계속 물고 있어도 라우트는
+ * 매달리지 않는다 — "세션은 떴는데 응답이 없다" 는 조용한 유실이 구조적으로 없다.
+ *
+ * 마감에 걸렸는데 자식의 종료 코드조차 못 봤으면 실패로 돌려준다 — 무엇이 떴는지
+ * 가리킬 수 없는 상태를 성공이라 부를 수 없다(`spawnBackgroundSession` 참고).
+ */
+export const runInDir: RunInDir = async (cmd, cwd, timeoutMs) => {
+  const deadline = createDeadline(timeoutMs);
+  let grace: Deadline | undefined;
   try {
     const proc = Bun.spawn({ cmd, cwd, stdout: 'pipe', stderr: 'pipe', timeout: timeoutMs });
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
+    const stop = Promise.race([
+      deadline.reached,
+      proc.exited.then(() => {
+        grace = createDeadline(EXIT_DRAIN_GRACE_MS);
+        return grace.reached;
+      }),
     ]);
-    await proc.exited;
-    return { ok: proc.exitCode === 0, stdout, stderr };
+    const [stdout, stderr] = await Promise.all([
+      readTextUntil(proc.stdout, stop),
+      readTextUntil(proc.stderr, stop),
+    ]);
+    const exitCode = await Promise.race([proc.exited, deadline.reached.then(() => undefined)]);
+    if (exitCode === undefined) {
+      const reason = `${timeoutMs}ms 안에 끝나지 않았다`;
+      const trimmed = stderr.trim();
+      return { ok: false, stdout, stderr: trimmed === '' ? reason : `${trimmed}\n${reason}` };
+    }
+    return { ok: exitCode === 0, stdout, stderr };
   } catch (error) {
     return {
       ok: false,
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    deadline.cancel();
+    grace?.cancel();
   }
 };
 
@@ -121,7 +209,7 @@ export function buildSpawnCommand(input: SpawnCommandInput): string[] {
  */
 export async function spawnBackgroundSession(
   input: SpawnInput,
-  run: RunInDir = defaultRun,
+  run: RunInDir = runInDir,
 ): Promise<string> {
   const result = await run(buildSpawnCommand(input), input.boardPath, SPAWN_TIMEOUT_MS);
   if (!result.ok) {
@@ -137,10 +225,18 @@ export async function spawnBackgroundSession(
 
 /** 방금 띄운 워크트리를 기억하는 창 — `createRecentSpawns` 가 만든다. */
 export interface RecentSpawns {
-  /** TTL 안에 이 워크트리로 세션을 띄운 적이 있는가. */
+  /** TTL 안에 이 워크트리로 세션을 띄운(띄우는 중인) 적이 있는가. */
   isRecent: (worktreePath: string) => boolean;
-  /** 방금 이 워크트리에 세션을 띄웠다고 기록한다. */
+  /**
+   * 이 워크트리를 이번 spawn 이 **예약**한다. 실행 전(동기 구간)에 부른다 — 뒤로 미루면
+   * `await` 창에 겹쳐 들어온 요청이 게이트를 같이 통과한다.
+   */
   remember: (worktreePath: string) => void;
+  /**
+   * 예약을 되돌린다 — spawn 이 실패했을 때. 실패한 시도가 60초 동안 재시도를 막으면
+   * 안 되고, 그렇다고 예약을 늦출 수도 없다(그게 곧 동시 실행 창이다).
+   */
+  forget: (worktreePath: string) => void;
 }
 
 /**
@@ -156,8 +252,13 @@ export interface RecentSpawns {
  * 우리가 아는 것은 짧은 8자 id 뿐이고, 세션의 `Stop` 훅은 full UUID 로 claim 한다
  * (`hooks/handoff-stop.ts`) — 짧은 id 로 만든 pending 은 영영 배달되지 않는다.
  *
+ * 그래서 이 창은 **실행 전에 잡는 예약**이다(`remember` → 실패하면 `forget`). 성공한
+ * spawn 뒤에 기록하면 `await` 가 열어 둔 창에 두 요청이 나란히 들어와 둘 다 통과한다.
+ *
  * `createCachedListSessions` 와 같은 결로 상태는 클로저 안에만 있다 — 데몬 프로세스
- * 수명 동안만 유효하고, 재기동하면 자연히 비워진다.
+ * 수명 동안만 유효하고, 재기동하면 자연히 비워진다. 키는 워크트리 경로(= todo 하나)라
+ * 항목 수는 "이 데몬이 세션을 띄운 적 있는 todo" 만큼으로 묶인다. 만료 청소는 조회할
+ * 때만 일어나므로 다시 조회되지 않는 항목은 만료된 채 남는다 — 그 크기라면 무해하다.
  *
  * @param ttlMs 기억하는 기간. 기본 `RECENT_SPAWN_TTL_MS`(60초).
  * @param now 시계 — 테스트가 시간을 통제할 수 있게 주입한다.
@@ -174,7 +275,7 @@ export function createRecentSpawns(
         return false;
       }
       if (now() - at >= ttlMs) {
-        // 만료된 항목은 그 자리에서 버린다 — 이 맵이 데몬 수명만큼 자라지 않게.
+        // 만료된 항목은 조회하는 김에 버린다.
         spawnedAt.delete(worktreePath);
         return false;
       }
@@ -182,6 +283,9 @@ export function createRecentSpawns(
     },
     remember: (worktreePath) => {
       spawnedAt.set(worktreePath, now());
+    },
+    forget: (worktreePath) => {
+      spawnedAt.delete(worktreePath);
     },
   };
 }

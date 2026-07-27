@@ -128,10 +128,14 @@ rocky-todo/
   스냅샷으로 판정하게 된다, (2) `worktreePath → 띄운 시각` 을 60초 기억해
   (`createRecentSpawns`, 데몬 수명 클로저) 그 창 안의 재요청은 **409** 다 — 재사용 분기로
   보내면 짧은 8자 id 로 pending 이 만들어져 full UUID 로 claim 하는 `Stop` 훅에 영영
-  배달되지 않는다. `boards.path` 는 절대경로만 받고 `realpathSync` 로 정규화해 워크트리
+  배달되지 않는다. (2)는 **실행 전에 잡는 예약**이다(`remember` → 실패 시 `forget`) —
+  `await spawnSession` 뒤로 미루면 겹쳐 들어온 두 요청이 게이트를 나란히 통과한다.
+  `boards.path` 는 절대경로만 받고 `realpathSync` 로 정규화해 워크트리
   경로 계산·spawn cwd·보드 저장에 **같은 값**을 쓴다(cwd 비교가 정확 문자열 일치다).
   `claude --bg` 실행은 비동기(`Bun.spawn` + await)다 — 최악 30초를 데몬 전체가 멎으면
-  안 된다. `--permission-mode` 는 넘기지 않는다(사용자 기본 설정).
+  안 된다. 파이프는 `new Response(stream).text()` 로 읽지 않는다(detach 된 손자가 fd 를
+  물면 영원히 매달린다) — 자식 종료 + 짧은 유예, 또는 timeout 에서 끊는다(`runInDir`).
+  `--permission-mode` 는 넘기지 않는다(사용자 기본 설정).
   **이슈 생성과 같은 로컬 요청 전용**(`isLocalRequest`, 403) — 보드 쓰기 권한이 프로세스를
   띄우는 권한으로 확대되는 지점이다. MCP 도구는 여전히 5개다.
 
