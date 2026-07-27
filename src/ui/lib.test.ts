@@ -10,6 +10,9 @@ import {
   markSeen,
   mergeTimeline,
   readSeen,
+  readThemePref,
+  resolveTheme,
+  THEME_KEY,
   type CopyRefDocument,
   type CopyRefTextArea,
   type SeenStorage,
@@ -361,5 +364,37 @@ describe('seen cursor', () => {
   test('readSeen ignores a non-object payload', () => {
     expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': '["a"]' }))).toEqual({});
     expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': 'null' }))).toEqual({});
+  });
+});
+
+describe('theme 해석', () => {
+  test('명시 선택은 OS 설정을 무시한다', () => {
+    expect(resolveTheme('dark', true)).toBe('dark');
+    expect(resolveTheme('dark', false)).toBe('dark');
+    expect(resolveTheme('light', true)).toBe('light');
+    expect(resolveTheme('light', false)).toBe('light');
+  });
+
+  test('auto 는 OS 설정을 따른다', () => {
+    expect(resolveTheme('auto', true)).toBe('light');
+    expect(resolveTheme('auto', false)).toBe('dark');
+  });
+
+  test('저장값이 없거나 알 수 없으면 auto 로 읽는다', () => {
+    expect(readThemePref(null)).toBe('auto');
+    expect(readThemePref('')).toBe('auto');
+    expect(readThemePref('solarized')).toBe('auto');
+    // 예전 버전이 남긴 값이나 손으로 고친 값이 화면을 깨뜨리면 안 된다.
+    expect(readThemePref('DARK')).toBe('auto');
+  });
+
+  test('저장값이 유효하면 그대로 읽는다', () => {
+    expect(readThemePref('auto')).toBe('auto');
+    expect(readThemePref('dark')).toBe('dark');
+    expect(readThemePref('light')).toBe('light');
+  });
+
+  test('THEME_KEY 는 actor 키와 충돌하지 않는다', () => {
+    expect(THEME_KEY).toBe('rocky-todo:theme');
   });
 });
