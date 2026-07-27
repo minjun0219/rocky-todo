@@ -11,27 +11,28 @@
     />
     <script>
       // 첫 페인트 전에 data-theme 을 확정해 FOUC 를 막는다. 번들 전에 실행돼야 해서
-      // src/ui/lib.ts 의 resolveTheme 을 import 할 수 없다 — 같은 규칙을 복제한 것이니
-      // 한쪽을 고치면 반드시 다른 쪽도 고쳐야 한다.
-      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. 클래식 인라인 스크립트의
-      // 런타임 예외는 이 스크립트 실행만 중단시키고 문서 파싱 자체는 계속된다 — 이
-      // try/catch 가 막는 건 파싱 중단이 아니라, 예외로 중단된 채 data-theme 이 아예
-      // 안 붙는 것이다. catch 에서 명시적으로 "dark" 를 세팅해 대비시키지만, 다크 블록
-      // 선택자가 `:root, :root[data-theme="dark"]` 라 속성이 없어도 결과는 같다 — 지금은
-      // 사실상 중복이고, 이 선택자가 나중에 속성 필수로 바뀌면 의미가 생긴다.
-      var stored, pref;
+      // src/ui/lib.ts 의 readThemePref/resolveTheme 을 import 할 수 없다 — 같은 규칙을
+      // 복제한 것이니 한쪽을 고치면 반드시 다른 쪽도 고쳐야 한다.
+      // localStorage 는 프라이빗 모드/차단 설정에서 던질 수 있다. try 는 **읽기만** 감싼다:
+      // 읽기 실패를 "저장값 없음"(= auto)으로 다뤄야 store 의 safeStorage.getItem 과 결론이
+      // 같아진다. 예전처럼 catch 에서 "dark" 로 단정하면, store 는 auto 로 출발하는데 화면만
+      // 다크로 굳어 라이트 OS 사용자가 OS 설정을 바꾸기 전까지 다크에 갇힌다 —
+      // main.tsx 의 auto 추종 effect 는 리스너만 걸고 마운트 시점에 재해석하지 않는다.
+      var stored = null;
       try {
         stored = localStorage.getItem("rocky-todo:theme");
-        pref = stored === "dark" || stored === "light" || stored === "auto" ? stored : "auto";
-        document.documentElement.dataset.theme =
-          pref === "auto"
-            ? window.matchMedia("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark"
-            : pref;
       } catch (_) {
-        document.documentElement.dataset.theme = "dark";
+        // 저장값을 못 읽은 것뿐이다. 아래 해석이 auto 로 떨어져 OS 를 따른다.
       }
+      var pref = stored === "dark" || stored === "light" || stored === "auto" ? stored : "auto";
+      // matchMedia 까지 던지면 data-theme 이 안 붙지만, 다크 블록 선택자가
+      // `:root, :root[data-theme="dark"]` 라 무스타일이 아니라 다크로 뜬다.
+      document.documentElement.dataset.theme =
+        pref === "auto"
+          ? window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark"
+          : pref;
     </script>
   </head>
   <body>

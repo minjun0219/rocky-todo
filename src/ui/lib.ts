@@ -403,7 +403,8 @@ export function readThemePref(stored: string | null): ThemePref {
  *
  * **`src/ui/index.html` 의 인라인 스크립트가 같은 규칙을 손으로 복제하고 있다** — 그쪽은
  * 번들 전에 첫 페인트를 막고 실행돼야 해서 이 모듈을 import 할 수 없다. 한쪽을 고치면
- * 반드시 다른 쪽도 고쳐야 한다.
+ * 반드시 다른 쪽도 고쳐야 한다. `src/ui/inline-theme.test.ts` 가 그 스크립트를 실제로
+ * 실행해 두 경로의 결론이 갈라지는지 감시한다.
  */
 export function resolveTheme(pref: ThemePref, prefersLight: boolean): ResolvedTheme {
   if (pref === 'auto') {
