@@ -372,7 +372,13 @@ textarea {
 
 .todo-ref {
   flex: 0 0 auto;
-  min-width: 3.2em;
+  /* 자릿수 정렬(tabular)을 위한 최소 폭 — `#999` 까지 담고, 그보다 넓히지 않는다.
+     오른쪽 정렬이라 박스가 넓을수록 숫자가 체크박스에서 멀어진다. */
+  min-width: 2.2em;
+  /* 행의 8px gap 을 이 자리에서만 상쇄한다. 체크박스 히트 영역(44px)과 이 버튼이
+     각자 시각 요소를 반대 끝에 두고 있어, gap 까지 더하면 둘 사이가 51px 로 벌어졌다.
+     히트 영역은 맞닿기만 하고 겹치지 않는다 — 겹치면 체크박스 탭을 이 버튼이 가로챈다. */
+  margin-left: -8px;
   padding: 0;
   border: 0;
   background: none;
@@ -900,9 +906,11 @@ body.is-drawer-open {
     /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
     margin: -8px 0 -8px -8px;
   }
+  /* 세로만 44px 로 넓힌다. 가로까지 44px 이면 오른쪽 정렬된 번호가 박스 끝으로 밀려
+     체크박스와 51px 벌어진다 — 목록 밀도를 위해 가로 폭은 내용(2.2em)에 맡긴다.
+     26×44 는 WCAG 2.5.8(24×24)은 통과하지만 이 레포의 44×44 방침에서는 벗어난 예외다. */
   .todo-ref {
     min-height: 44px;
-    min-width: 44px;
   }
   .drawer-ref {
     display: inline-flex;
