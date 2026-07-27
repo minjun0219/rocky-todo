@@ -44,9 +44,11 @@ rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add|repo|path · section ls · open
 rocky-todo handoff REF [--session NAME] [--message "본문"]   # 실행 중인 세션에 작업 요청
 rocky-todo handoff REF --cancel                              # 대기 중인 요청 취소
+rocky-todo spawn REF [--message "본문"]                       # todo 전용 워크트리에 새 세션 띄우기
+rocky-todo board path [절대경로]                              # spawn 이 쓸 메인 레포 경로 (생략 시 cwd)
 rocky-todo sessions                                          # 실행 중인 세션 목록 (* = 이 보드)
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
@@ -112,6 +114,14 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
   정상 동작한다. 대기 중인 요청은 만료되지 않으며, 대상 세션이 사라지면 보드에 "세션 없음"
   으로 표시된다. CLI 대응: `rocky-todo sessions` / `handoff REF --session NAME --message "..."`
   / `handoff REF --cancel`.
+- **새 세션 띄우기** — 실행 중인 세션이 없어도 넘길 수 있다. 드로어의 "새 세션 띄우기"
+  버튼(또는 `rocky-todo spawn REF`)을 누르면 그 todo 전용 워크트리
+  (`<메인 레포>/.claude/worktrees/todo-<번호>`)에 백그라운드 Claude Code 세션을 새로 띄우고
+  작업 요청을 바로 프롬프트로 배달한다. 보드마다 메인 레포의 절대경로를 알아야 하며
+  `rocky-todo board path <절대경로>`(생략 시 cwd) 또는 드로어 입력으로 설정한다. 워크트리
+  생성·재사용은 Claude Code 몫이라 데몬은 이름만 결정론적으로 계산하고, 정리는
+  `claude rm <id>` 로 한다(자동 삭제 없음 — 커밋 안 된 작업물을 지킨다). 이 버튼은
+  **로컬(이 머신)에서만** 뜬다 — 이슈 생성과 같은 등급의 게이트다.
 - **실시간 웹 UI** — Bun fullstack 자동 번들 + SSE (dist 없음, CDN 없음).
 - **URL 퍼머링크** — 주소가 보는 화면을 담는다: `/`(전체) · `/rocky`(보드) · `/rocky/12`(그
   todo 상세). 새로고침해도 유지되고 링크로 공유할 수 있다. board key `api`/`mcp`(데몬 라우트와
