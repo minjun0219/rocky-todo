@@ -11,15 +11,20 @@
 웹 UI 의 가시성이 떨어진다. 원인을 측정했다 — 현재 팔레트의 WCAG 대비비(최악 배경
 `--surface-2` #282017 기준):
 
-| 토큰 | 값 | vs `--bg` | vs `--surface-2` | 판정 | 사용처 |
-| --- | --- | --- | --- | --- | --- |
-| `--line` | `#382c1f` | 1.38 | 1.18 | ✗ | 경계선 17곳 |
-| `--cool-dim` | `#47707a` | 3.45 | 2.95 | ✗ | 사람 톤 뱃지 |
-| `--faint` | `#6b5f51` | 3.02 | 2.58 | ✗ | 마이크로라벨 14곳 |
-| `--warm-dim` | `#8a6526` | 3.55 | 3.03 | △ | 큰 글씨만 통과 |
+기준은 토큰이 실제로 쓰이는 CSS 속성에 따라 다르다 — `color:` 로 쓰이면 텍스트 대비
+4.5, `border:`/`background:` 로만 쓰이면 비텍스트 대비 3.0(WCAG 1.4.11)이다. `styles.css`
+전수 조사로 각 토큰의 쓰임을 확정한 뒤 판정했다.
 
-나머지 토큰(`--text` 14.25, `--warm` 8.70, `--cool` 9.95 등)은 넉넉히 통과한다. 문제는
-**어두운 쪽 네 개**에 몰려 있다.
+| 토큰 | 값 | 쓰임 | 기준 | vs `--surface-2` | 판정 |
+| --- | --- | --- | --- | --- | --- |
+| `--line` | `#382c1f` | 테두리 17곳 | 3.0 | 1.18 | ✗ |
+| `--faint` | `#6b5f51` | `color:` 14곳 | 4.5 | 2.58 | ✗ |
+| `--warm-dim` | `#8a6526` | `color:` (`.group-eyebrow` 268행) + 테두리 5곳 | 4.5 | 3.03 | ✗ |
+| `--cool-dim` | `#47707a` | 테두리만 (144·451행) | 3.0 | 2.95 | ✗ |
+
+나머지는 통과한다 — `--text` 12.18, `--warm` 7.44, `--cool` 8.51, `--muted` 4.98,
+`--p1` 4.68, `--ok` 6.45(테두리·배경 전용이라 기준 3.0). 문제는 **어두운 쪽 네 개**에
+몰려 있다.
 
 여기에 두 번째 원인이 겹친다: **10px 이하 폰트가 11곳**이고, 그 대부분이 위 표의 미달색을
 쓰는 마이크로라벨이다. 작은 글씨 × 최저 대비색이 같은 자리에서 만나 가시성 불만을 만든다.
@@ -100,6 +105,12 @@ Tailwind 는 devDependency 가 아니라 **prod dependency** 여야 하고, 모�
 ### 2. 다크 팔레트 (리튠)
 
 hue·채도 고정, 명도만 이분탐색으로 조정해 기준을 만족하는 **최소 변화** 값을 취했다.
+목표치에는 마진을 뒀다(텍스트 4.6 / 비텍스트 3.2 / 구분선 2.3) — 정확히 기준선에 걸치면
+이후 배경을 미세 조정할 때마다 테스트가 깨진다.
+
+**바뀌는 토큰은 다섯 개뿐이다.** 미달 4개와 신규 1개. 배경 3종을 포함해 나머지는 전부
+현행 값을 유지한다 — 사용자가 톤 자체는 마음에 든다고 했고, 통과하는 색을 건드릴 이유가
+없다.
 
 선택자가 `:root` 와 `:root[data-theme='dark']` **둘 다**인 점이 중요하다. 인라인 스크립트가
 어떤 이유로든 실행되지 못하면 `data-theme` 이 안 붙는데, `[data-theme='dark']` 만 있으면
@@ -111,27 +122,34 @@ hue·채도 고정, 명도만 이분탐색으로 조정해 기준을 만족하�
 ```css
 :root,
 :root[data-theme='dark'] {
-  --bg: #16110c;          /* 유지 */
-  --surface: #211a13;     /* ← #1f1811 */
-  --surface-2: #2c2419;   /* ← #282017 */
-  --text: #f0e7db;        /* ← #e9dfd2 */
-  --muted: #b5a695;       /* ← #9c8d7c */
-  --faint: #958a7a;       /* ← #6b5f51  대비 3.02 → 4.50 */
-  --warm: #f0b455;        /* ← #e8a33d */
-  --warm-dim: #c08a34;    /* ← #8a6526  대비 3.55 → 5.04 */
-  --cool: #8fd4e4;        /* ← #7ec8d8 */
-  --cool-dim: #6ba3b2;    /* ← #47707a  대비 3.45 → 5.47 */
-  --p1: #f0806b;          /* ← #e2634f */
-  --p2: #f0b455;          /* ← #e8a33d */
-  --p3: #d4c268;          /* ← #c8b45a */
-  --ok: #95c079;          /* ← #86b06c */
-  --handoff: #a8cfff;     /* ← #93c5fd */
-  --handoff-dim: #1e3a5f; /* 유지 — 배경 전용, 텍스트 아님 */
-  --line: #6c563d;        /* ← #382c1f  대비 1.38 → 2.20 */
-  --line-strong: #886d4e; /* 신규 — 3.00 */
-  --scrim: rgba(10, 7, 4, 0.55);
+  /* ── 바뀌는 다섯 ── */
+  --faint: #978775;       /* ← #6b5f51   2.58 → 4.61  (텍스트 14곳) */
+  --warm-dim: #b08130;    /* ← #8a6526   3.03 → 4.60  (텍스트 1곳 + 테두리 5곳) */
+  --cool-dim: #4b7680;    /* ← #47707a   2.95 → 3.21  (테두리 전용) */
+  --line: #6d563c;        /* ← #382c1f   1.18 → 2.33  (구분선) */
+  --line-strong: #876a4b; /* 신규        3.20          (컨트롤 테두리) */
+
+  /* ── 현행 유지 ── */
+  --bg: #16110c;
+  --surface: #1f1811;
+  --surface-2: #282017;
+  --text: #e9dfd2;        /* 12.18 */
+  --muted: #9c8d7c;       /*  4.98 */
+  --warm: #e8a33d;        /*  7.44 */
+  --cool: #7ec8d8;        /*  8.51 */
+  --p1: #e2634f;          /*  4.68 */
+  --p2: #e8a33d;          /*  7.44 */
+  --p3: #c8b45a;          /*  7.74 */
+  --ok: #86b06c;          /*  6.45 — 테두리·배경 전용이라 기준 3.0 */
+  --handoff: #93c5fd;     /*  8.90 */
+  --handoff-dim: #1e3a5f; /* .chip-handoff 배경 — 쌍 대비 6.38 */
+  --scrim: rgba(10, 7, 4, 0.55); /* 571행에서 승격 */
 }
 ```
+
+`--cool-dim` 이 2.95 → 3.21 로 거의 안 움직이는 게 정상이다. 테두리로만 쓰이므로 기준이
+4.5 가 아니라 3.0 이고, 원래 값이 기준에 0.05 모자랐을 뿐이다. 여기에 4.5 를 강요하면
+쿨블루 뱃지 테두리가 필요 이상으로 밝아져 "사람 톤" 의 차분함이 깨진다.
 
 ### 3. 라이트 팔레트 (신규)
 
@@ -143,36 +161,36 @@ hue·채도 고정, 명도만 이분탐색으로 조정해 기준을 만족하�
   --bg: #faf6f0;
   --surface: #ffffff;
   --surface-2: #f2ebe1;
-  --text: #241c14;
-  --muted: #6b5c4a;
-  --faint: #776954;
-  --warm: #8a5a00;
-  --warm-dim: #8b6019;
-  --cool: #1f6b7d;
-  --cool-dim: #377382;
-  --p1: #b3311c;
-  --p2: #8a5a00;
-  --p3: #6f6215;
-  --ok: #3f6b26;
-  --handoff: #1f5aa8;
-  --handoff-dim: #d3e4fb; /* .chip-handoff 배경 — 다크의 대응값을 반전 */
-  --line: #b49d7e;
-  --line-strong: #a0835c;
+  --text: #241c14;        /* 14.18 */
+  --muted: #6b5c4a;       /*  5.45 */
+  --faint: #756753;       /*  4.64 */
+  --warm: #8a5a00;        /*  5.01 */
+  --warm-dim: #8b6019;    /*  4.69 */
+  --cool: #1f6b7d;        /*  5.13 */
+  --cool-dim: #47707a;    /*  4.59 — 다크의 현행값을 그대로 쓴다 */
+  --p1: #b3311c;          /*  5.26 */
+  --p2: #8a5a00;          /*  5.01 */
+  --p3: #6f6215;          /*  5.17 */
+  --ok: #3f6b26;          /*  5.31 */
+  --handoff: #1f5aa8;     /*  5.75 */
+  --handoff-dim: #d3e4fb; /* .chip-handoff 배경 — 쌍 대비 5.27 */
+  --line: #b19979;        /*  2.30 */
+  --line-strong: #9a7e59; /*  3.23 */
   --scrim: rgba(36, 28, 20, 0.35);
 }
 ```
 
-**검증 결과** — 두 테마 전 토큰이 기준을 통과한다. 텍스트 토큰 ≥ 4.5, `--line` ≥ 2.2,
-`--line-strong` ≥ 3.0, 각 테마의 세 배경(`--bg` / `--surface` / `--surface-2`) 중
-**최악값** 기준.
+**검증 결과** — 두 테마 전 토큰이 기준을 통과한다. 텍스트 ≥ 4.5, 비텍스트 ≥ 3.0,
+구분선 ≥ 2.2 이고, 각 테마의 세 배경(`--bg` / `--surface` / `--surface-2`) 중
+**최악값**을 쓴다. 분류 근거는 아래 §6.
 
 **세 배경 말고도 검사해야 하는 쌍이 둘 있다.** `styles.css` 를 훑어 배경 토큰 위에 전경
 토큰이 직접 얹히는 자리를 찾았다:
 
 | 자리 | 전경 on 배경 | 다크 | 라이트 |
 | --- | --- | --- | --- |
-| `.chip-handoff` (396–397행) | `--handoff` on `--handoff-dim` | 7.14 ✓ | 5.27 ✓ |
-| `.todo-check:checked::after` ✓ (301·307행) | `--bg` on `--ok` | 9.02 ✓ | 5.84 ✓ |
+| `.chip-handoff` (396–397행) | `--handoff` on `--handoff-dim` | 6.38 ✓ | 5.27 ✓ |
+| `.todo-check:checked::after` ✓ (301·307행) | `--bg` on `--ok` | 7.54 ✓ | 5.84 ✓ |
 
 즉 `--handoff-dim` 은 "배경 전용이라 검사 제외" 가 아니라 **`--handoff` 와의 쌍으로**
 검사한다. `--ok` 도 배경으로 쓰일 때는 `--bg` 와 쌍을 이룬다. 아래 회귀 테스트가 이 두
@@ -216,16 +234,17 @@ try {
 의 `change` 리스너가 `data-theme` 을 갱신한다. `main.tsx` 의 `useEffect` 에서 구독하고
 언마운트 시 해제.
 
-**store** — 기존 `actor` 의 localStorage 패턴을 그대로 따른다.
+**store** — 기존 `actor` 의 localStorage 패턴을 그대로 따른다. 상태는 `themePref` **하나**다.
 
 ```ts
-type ThemePref = 'auto' | 'dark' | 'light';
-// 상태: themePref (사용자 의도) + resolvedTheme ('dark' | 'light', 실제 적용값)
-// setThemePref(pref) → localStorage 저장 + resolvedTheme 재계산 + <html data-theme> 갱신
+// 상태: themePref: ThemePref  — 사용자 의도(`auto` 포함)
+// setThemePref(pref) → localStorage 저장 + 해석 + <html data-theme> 갱신
 ```
 
-`themePref` 와 `resolvedTheme` 을 분리하는 이유: 토글 UI 는 사용자 의도(`auto` 포함)를
-보여줘야 하고, 렌더링은 해석된 값을 써야 한다. 하나로 합치면 `auto` 선택 상태가 사라진다.
+해석된 값(`'dark'`/`'light'`)은 상태로 들지 않는다. 그걸 필요로 하는 건 CSS 뿐이고 CSS 는
+`<html data-theme>` 에서 직접 읽으므로, 스토어에 사본을 두면 DOM 과 어긋날 수 있는 두 번째
+진실 공급원만 생긴다. 반대로 `themePref` 는 반드시 상태여야 한다 — 토글 UI 가 `auto` 를
+선택 상태로 보여줘야 하는데 DOM 의 `data-theme` 에는 그 정보가 없다.
 
 **TopBar 토글** — 3상 순환 `auto → dark → light → auto`. 현재 `themePref` 에 따라
 아이콘(`◐` / `●` / `○`)과 `aria-label` 이 바뀐다. 기존 `.link-status` 옆, 마이크로라벨과
@@ -243,12 +262,23 @@ type ThemePref = 'auto' | 'dark' | 'light';
 **단위 테스트 — `src/ui/lib.ts` 의 순수 함수**
 
 ```ts
-/** 저장된 테마 선호와 OS 설정으로부터 실제 적용할 테마를 해석한다. */
-export function resolveTheme(stored: string | null, prefersLight: boolean): 'dark' | 'light';
+export type ThemePref = 'auto' | 'dark' | 'light';
+export type ResolvedTheme = 'dark' | 'light';
+export const THEME_KEY = 'rocky-todo:theme';
+
+/** localStorage 원문 → 테마 선호. 알 수 없는 값은 전부 `auto`. */
+export function readThemePref(stored: string | null): ThemePref;
+
+/** 테마 선호 + OS 설정 → 실제 적용할 테마. */
+export function resolveTheme(pref: ThemePref, prefersLight: boolean): ResolvedTheme;
 ```
 
-`lib.test.ts` 에 케이스 추가: `'dark'`/`'light'` 는 OS 무시하고 그대로, `'auto'`·`null`·
-알 수 없는 값은 `prefersLight` 를 따름.
+저장값 해석(`readThemePref`)과 테마 해석(`resolveTheme`)을 나눈 이유: 앞은 신뢰할 수 없는
+문자열을 좁히는 일이고 뒤는 OS 설정을 반영하는 일이라, 검증 대상이 다르다. store 는 앞을
+부팅 때 한 번, 뒤를 토글할 때마다 부른다.
+
+`lib.test.ts` 에 케이스 추가: `'dark'`/`'light'` 는 OS 무시하고 그대로, `'auto'` 는
+`prefersLight` 를 따름, `null`·빈 문자열·`'solarized'`·`'DARK'` 는 전부 `auto` 로 읽힘.
 
 인라인 스크립트는 이 함수와 같은 규칙을 손으로 복제한 것이다 (번들 전에 실행돼야 해서
 import 할 수 없다). 두 곳이 어긋나지 않도록 양쪽에 서로를 가리키는 주석을 단다.
@@ -259,12 +289,23 @@ import 할 수 없다). 두 곳이 어긋나지 않도록 양쪽에 서로를 �
 (`:root[data-theme='light']`) 의 토큰을 파싱하고, 각 테마의 세 배경 대비 최악값을 계산해
 기준 미달이면 실패한다.
 
-- 텍스트 토큰(`--text` `--muted` `--faint` `--warm` `--warm-dim` `--cool` `--cool-dim`
-  `--p1` `--p2` `--p3` `--ok` `--handoff`) ≥ 4.5
-- `--line` ≥ 2.2 / `--line-strong` ≥ 3.0
-- **명시 쌍** ≥ 4.5 — `--handoff` on `--handoff-dim`, `--bg` on `--ok`
-- 제외: `--scrim`(알파 있어 합성 결과가 배경에 의존) · 배경 토큰 자신
-- 두 테마가 **동일한 토큰 집합**을 정의하는지도 확인 — 한쪽에만 추가하는 사고를 막는다
+토큰을 **실제 쓰임에 따라** 세 부류로 나눈다. 이 분류가 테스트의 핵심이다 — 전부 4.5 로
+잡으면 테두리 전용 토큰까지 과하게 어두워지고, 전부 3.0 으로 잡으면 마이크로라벨이 다시
+안 읽힌다.
+
+- **텍스트 (`color:` 로 쓰임) ≥ 4.5** — `--text` `--muted` `--faint` `--warm` `--warm-dim`
+  `--cool` `--p1` `--p2` `--p3` `--handoff`
+- **비텍스트 (`border:`/`background:` 전용) ≥ 3.0** — `--cool-dim` `--ok` `--line-strong`
+- **장식적 구분선 ≥ 2.2** — `--line`
+- **명시 쌍 ≥ 4.5** — `--handoff` on `--handoff-dim`, `--bg` on `--ok`
+- **제외** — `--scrim`(알파가 있어 합성 결과가 배경에 의존) · 배경 토큰 자신
+  (`--bg` `--surface` `--surface-2` `--handoff-dim`)
+
+**커버리지 가드** — 위 분류 어디에도 안 들어간 토큰이 블록에 있으면 테스트가 실패한다.
+새 색 토큰을 추가할 때 "이건 텍스트인가 테두리인가"를 반드시 정하게 만든다.
+
+**대칭성** — 두 테마가 동일한 토큰 집합을 정의하는지 확인한다. 한쪽에만 추가하는 사고를
+막는다.
 
 이 테스트가 이번 작업의 결과를 잠근다. 앞으로 누가 색을 만지든 대비는 깨지지 않는다.
 
@@ -280,7 +321,7 @@ import 할 수 없다). 두 곳이 어긋나지 않도록 양쪽에 서로를 �
 | `src/ui/styles.css` | `:root` → `[data-theme='dark']`/`[data-theme='light']` 두 블록. 571행 스크림 토큰화. `--line-strong` 도입처 분류(input·checkbox·버튼). 10px 이하 11곳 → 11px |
 | `src/ui/index.html` | `<head>` 인라인 테마 스크립트 |
 | `src/ui/lib.ts` | `resolveTheme` 추가 |
-| `src/ui/store.ts` | `themePref` / `resolvedTheme` 상태 + `setThemePref` |
+| `src/ui/store.ts` | `themePref` 상태 + `setThemePref` |
 | `src/ui/main.tsx` | `auto` 일 때 `matchMedia` change 구독 |
 | `src/ui/components/TopBar.tsx` | 3상 테마 토글 |
 | `src/ui/lib.test.ts` | `resolveTheme` 테스트 |
