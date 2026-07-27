@@ -258,6 +258,22 @@ textarea {
   animation: pulse 2.4s ease-in-out infinite;
 }
 
+.theme-toggle {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  /* 모바일 터치 타깃 — 백로그 rocky-todo#1 과 같은 44px 방침. */
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+}
+
 .archived-toggle {
   display: flex;
   align-items: center;
