@@ -52,7 +52,7 @@ claude plugin install rocky-todo@rocky-marketplace     # rocky 자동 동반 (de
 bun install
 bun run check       # Biome
 bun run typecheck   # tsc --noEmit
-bun test            # 모든 src/**/*.test.ts + hooks/**/*.test.ts
+bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 두 갈래가 섞여 깨진다
 ```
 
 rocky 본체는 별도 레포 [minjun0219/rocky](https://github.com/minjun0219/rocky).
