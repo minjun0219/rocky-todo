@@ -15,6 +15,13 @@ import {
 } from '../lib';
 import { useUiStore } from '../store';
 
+/** 우선순위 → 색 유틸 (TodoItem 과 동일 값). Tailwind 정적 스캔 때문에 리터럴이다. */
+const PRIO_TEXT: Record<string, string> = {
+  p1: 'text-(--p1)',
+  p2: 'text-(--p2)',
+  p3: 'text-(--p3)',
+};
+
 /**
  * 우측 상세 드로어 — todo/note 상세 + 상태 버튼 + 히스토리 타임라인.
  *
@@ -191,7 +198,7 @@ function TodoDetail() {
   const statusButton = (label: string, action: Parameters<typeof setTodoStatus>[1]) => (
     <button
       type="button"
-      className="drawer-btn"
+      className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
       onClick={() => void setTodoStatus(todo.id, action)}
     >
       {label}
@@ -202,7 +209,7 @@ function TodoDetail() {
     <div className="drawer-body">
       <button
         type="button"
-        className="drawer-ref"
+        className="drawer-ref cursor-pointer text-[0.9em] text-(--muted) tabular-nums hover:text-(--text) hover:underline max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:min-w-11 max-[900px]:items-center"
         onClick={() => void handleCopyRef()}
         title={copied ? '복사됨' : `${todo.ref} 복사`}
         aria-label={copied ? '복사됨' : `${todo.ref} 복사`}
@@ -211,7 +218,7 @@ function TodoDetail() {
       </button>
       {editingTitle ? (
         <input
-          className="drawer-title-input"
+          className="drawer-title-input mt-1 mb-2.5 w-full rounded-md border border-(--warm-dim) bg-(--surface) px-1.5 py-[3px] text-lg leading-[1.35] font-bold text-(--text)"
           value={title}
           aria-label="제목 수정 (Enter 저장 · Esc 취소)"
           // biome-ignore lint/a11y/noAutofocus: 클릭으로 진입한 편집이라 즉시 입력이 기대 동작
@@ -243,10 +250,10 @@ function TodoDetail() {
       ) : (
         // heading 시맨틱은 유지한다 — 노트 상세도 h2 라 같은 영역에서 구조가 갈리지 않게.
         // 클릭 affordance 는 안쪽 버튼에만 건다.
-        <h2 className="drawer-title">
+        <h2 className="drawer-title mt-1 mb-2.5 text-lg leading-[1.35] font-bold text-(--text)">
           <button
             type="button"
-            className="drawer-title-edit"
+            className="drawer-title-edit block w-full cursor-text text-left hover:rounded-[3px] hover:bg-(--surface) hover:shadow-[0_0_0_4px_var(--surface)]"
             onClick={() => setEditingTitle(true)}
             title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
             aria-label={`제목 수정: ${todo.title}`}
@@ -255,16 +262,33 @@ function TodoDetail() {
           </button>
         </h2>
       )}
-      <div className="drawer-id">{todo.id}</div>
-      <div className="drawer-chips">
-        <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
+      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[11px] tracking-[0.14em] text-(--faint)">
+        {todo.id}
+      </div>
+      <div className="drawer-chips mb-2.5 flex flex-wrap gap-1.5">
+        <span
+          className={`chip prio-${todo.priority} shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] ${PRIO_TEXT[todo.priority] ?? 'text-(--muted)'}`}
+        >
+          {todo.priority}
+        </span>
         {todo.labels.map((label) => (
-          <span key={label} className="chip chip-label">
+          <span
+            key={label}
+            className="chip chip-label shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)"
+          >
             {label}
           </span>
         ))}
-        {todo.due && <span className="chip chip-due">{todo.due}</span>}
-        {todo.archivedAt && <span className="chip">보관됨</span>}
+        {todo.due && (
+          <span className="chip chip-due shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)">
+            {todo.due}
+          </span>
+        )}
+        {todo.archivedAt && (
+          <span className="chip shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)">
+            보관됨
+          </span>
+        )}
       </div>
       {/*
         섹션 이동 — 이 보드의 섹션만 후보다. 빈 값은 섹션 해제(store 가 공백을 해제로 읽는다).
@@ -273,10 +297,12 @@ function TodoDetail() {
         멀쩡한 섹션이 해제된다.
       */}
       {boardSections.length > 0 && (
-        <label className="drawer-section-pick">
-          <span className="drawer-section-label">섹션</span>
+        <label className="drawer-section-pick mt-2.5 mb-1 flex items-center gap-2">
+          <span className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+            섹션
+          </span>
           <select
-            className="drawer-select"
+            className="drawer-select flex-auto rounded-md border border-(--line-strong) bg-(--surface) px-2 py-[5px] text-[13px] text-(--text)"
             value={todo.sectionId ?? ''}
             onChange={(e) => {
               const picked = boardSections.find((s) => s.id === e.target.value);
@@ -293,33 +319,35 @@ function TodoDetail() {
         </label>
       )}
       {todo.links.length > 0 && (
-        <div className="drawer-links">
+        <div className="drawer-links mb-2.5 flex flex-wrap gap-1.5">
           {todo.links.map((link) => (
             <a
               key={link.url}
               href={link.url}
               target="_blank"
               rel="noreferrer"
-              className="chip chip-link"
+              className="chip chip-link shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--cool) no-underline hover:bg-[color-mix(in_srgb,currentColor_18%,transparent)]"
             >
               {link.title ?? linkLabel(link.url)} ↗
             </a>
           ))}
         </div>
       )}
-      <div className="drawer-section-label">설명</div>
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+        설명
+      </div>
       {editingDesc ? (
         <div>
           <textarea
-            className="drawer-desc-edit"
+            className="drawer-desc-edit w-full resize-y rounded-lg border border-(--warm-dim) bg-(--bg) px-3 py-2.5 text-[13px] max-[900px]:text-base"
             value={desc}
             rows={8}
             onChange={(e) => setDesc(e.target.value)}
           />
-          <div className="drawer-actions">
+          <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
             <button
               type="button"
-              className="drawer-btn"
+              className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
               onClick={() => {
                 void patchTodo(todo.id, { description: desc });
                 setEditingDesc(false);
@@ -327,21 +355,29 @@ function TodoDetail() {
             >
               저장
             </button>
-            <button type="button" className="drawer-btn" onClick={() => setEditingDesc(false)}>
+            <button
+              type="button"
+              className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
+              onClick={() => setEditingDesc(false)}
+            >
               취소
             </button>
           </div>
         </div>
       ) : (
-        <button type="button" className="drawer-desc" onClick={() => setEditingDesc(true)}>
+        <button
+          type="button"
+          className="drawer-desc block w-full rounded-lg border border-(--line-strong) bg-(--bg) px-3 py-2.5 text-left text-[13px] text-(--text)"
+          onClick={() => setEditingDesc(true)}
+        >
           {todo.description === '' ? (
-            <span className="drawer-desc-empty">설명 없음 — 눌러서 작성</span>
+            <span className="drawer-desc-empty text-(--faint)">설명 없음 — 눌러서 작성</span>
           ) : (
             <Markdown text={todo.description} />
           )}
         </button>
       )}
-      <div className="drawer-actions">
+      <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
         {todo.status !== 'doing' && statusButton('▶ 시작', 'start')}
         {todo.status === 'doing' && statusButton('⏸ 중단', 'stop')}
         {todo.status !== 'done' && statusButton('✓ 완료', 'done')}
@@ -351,20 +387,24 @@ function TodoDetail() {
           : statusButton('▣ 보관', 'archive')}
       </div>
       {pending ? (
-        <div className="handoff-pending">
+        <div className="handoff-pending mt-2 flex items-center gap-2 text-(--handoff)">
           <span>대기 중 · {pending.sessionName ?? pending.sessionId} 에게</span>
-          {pending.stale ? <span className="handoff-stale">세션 없음</span> : null}
+          {pending.stale ? <span className="handoff-stale text-(--p1)">세션 없음</span> : null}
           <button type="button" onClick={() => void cancelHandoff(pending.id)}>
             취소
           </button>
         </div>
       ) : (
-        <button type="button" className="drawer-btn" onClick={() => void openHandoff()}>
+        <button
+          type="button"
+          className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
+          onClick={() => void openHandoff()}
+        >
           에이전트에게 보내기
         </button>
       )}
       {handoffOpen && !pending ? (
-        <div className="handoff-panel">
+        <div className="handoff-panel mt-2 flex flex-wrap gap-1.5">
           {sessions.available ? (
             <>
               <select value={handoffSession} onChange={(e) => setHandoffSession(e.target.value)}>
@@ -388,7 +428,7 @@ function TodoDetail() {
             <p>세션 목록을 가져올 수 없다: {sessions.reason}</p>
           )}
           {handoffError ? (
-            <p className="handoff-error" role="alert">
+            <p className="handoff-error w-full text-(--p1)" role="alert">
               {handoffError}
             </p>
           ) : null}
@@ -425,8 +465,13 @@ function IssueAction({ todo }: { todo: TodoView }) {
 
   if (issueUrl) {
     return (
-      <div className="drawer-actions">
-        <a className="drawer-btn" href={issueUrl} target="_blank" rel="noreferrer">
+      <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
+        <a
+          className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
+          href={issueUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
           이슈 열기 ↗
         </a>
       </div>
@@ -438,8 +483,8 @@ function IssueAction({ todo }: { todo: TodoView }) {
   // tailscale 로 접속한 사용자는 기능이 없어진 줄로 읽는다.
   if (!issueCreateAllowed) {
     return (
-      <div className="issue-action">
-        <p className="issue-unavailable">
+      <div className="issue-action mt-2.5">
+        <p className="issue-unavailable m-0 text-xs leading-[1.4] text-(--muted)">
           GitHub 이슈 만들기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
         </p>
       </div>
@@ -463,20 +508,20 @@ function IssueAction({ todo }: { todo: TodoView }) {
   };
 
   return (
-    <div className="issue-action">
+    <div className="issue-action mt-2.5">
       {asking && (
         <input
-          className="issue-repo-input"
+          className="issue-repo-input w-full rounded-md border border-(--line-strong) bg-(--bg) px-2 py-1.5"
           value={repo}
           placeholder="OWNER/NAME"
           aria-label="GitHub 레포 (OWNER/NAME)"
           onChange={(e) => setRepo(e.target.value)}
         />
       )}
-      <div className="drawer-actions">
+      <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
         <button
           type="button"
-          className="drawer-btn"
+          className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
           disabled={busy || (asking && repo.trim() === '')}
           onClick={() => {
             if (!board?.repo && !asking) {
@@ -492,7 +537,10 @@ function IssueAction({ todo }: { todo: TodoView }) {
       </div>
       {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
       {error && (
-        <div className="issue-error" role="alert">
+        <div
+          className="issue-error mt-1.5 text-xs leading-[1.4] whitespace-pre-wrap text-(--p1)"
+          role="alert"
+        >
           {error}
         </div>
       )}
@@ -531,8 +579,8 @@ function SpawnAction({ todo }: { todo: TodoView }) {
 
   if (!spawnAllowed) {
     return (
-      <div className="spawn-action">
-        <p className="spawn-unavailable">
+      <div className="spawn-action mt-2.5 flex flex-col gap-1.5">
+        <p className="spawn-unavailable m-0 text-xs leading-[1.4] text-(--muted)">
           세션 띄우기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
         </p>
       </div>
@@ -561,10 +609,10 @@ function SpawnAction({ todo }: { todo: TodoView }) {
   };
 
   return (
-    <div className="spawn-action">
+    <div className="spawn-action mt-2.5 flex flex-col gap-1.5">
       {asking && (
         <input
-          className="spawn-path-input"
+          className="spawn-path-input w-full rounded-md border border-(--line) bg-(--bg) px-2 py-1.5"
           value={path}
           placeholder="/Users/…/레포 절대경로"
           aria-label="메인 레포 절대경로"
@@ -572,16 +620,16 @@ function SpawnAction({ todo }: { todo: TodoView }) {
         />
       )}
       <input
-        className="spawn-note-input"
+        className="spawn-note-input w-full rounded-md border border-(--line) bg-(--bg) px-2 py-1.5"
         value={note}
         placeholder="메모 (선택)"
         aria-label="세션에 함께 보낼 메모"
         onChange={(e) => setNote(e.target.value)}
       />
-      <div className="drawer-actions">
+      <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
         <button
           type="button"
-          className="drawer-btn"
+          className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
           disabled={busy || (asking && path.trim() === '')}
           onClick={() => {
             if (!board?.path && !asking) {
@@ -596,7 +644,7 @@ function SpawnAction({ todo }: { todo: TodoView }) {
         </button>
       </div>
       {result && (
-        <div className="spawn-result">
+        <div className="spawn-result mt-1.5 flex flex-col gap-1 text-xs leading-[1.4] text-(--handoff)">
           {result.reused ? (
             <span>이미 도는 세션에 넘겼다 · {result.worktreePath}</span>
           ) : (
@@ -611,7 +659,10 @@ function SpawnAction({ todo }: { todo: TodoView }) {
       )}
       {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
       {error && (
-        <div className="spawn-error" role="alert">
+        <div
+          className="spawn-error mt-1.5 text-xs leading-[1.4] whitespace-pre-wrap text-(--p1)"
+          role="alert"
+        >
           {error}
         </div>
       )}
@@ -636,16 +687,20 @@ function NoteDetail() {
     <div className="drawer-body">
       <button
         type="button"
-        className="drawer-ref"
+        className="drawer-ref cursor-pointer text-[0.9em] text-(--muted) tabular-nums hover:text-(--text) hover:underline max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:min-w-11 max-[900px]:items-center"
         onClick={() => void handleCopyRef()}
         title={copied ? '복사됨' : `${note.ref} 복사`}
         aria-label={copied ? '복사됨' : `${note.ref} 복사`}
       >
         {copied ? '✓' : note.ref}
       </button>
-      <h2 className="drawer-title">{note.title}</h2>
-      <div className="drawer-id">{note.id}</div>
-      <div className="drawer-desc drawer-desc-static">
+      <h2 className="drawer-title mt-1 mb-2.5 text-lg leading-[1.35] font-bold text-(--text)">
+        {note.title}
+      </h2>
+      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[11px] tracking-[0.14em] text-(--faint)">
+        {note.id}
+      </div>
+      <div className="drawer-desc drawer-desc-static block w-full cursor-default rounded-lg border border-(--line-strong) bg-(--bg) px-3 py-2.5 text-left text-[13px] text-(--text)">
         <Markdown text={note.content} />
       </div>
     </div>
@@ -711,10 +766,12 @@ function CommentComposer({ todoId }: { todoId: string }) {
   };
 
   return (
-    <div className="comment-compose">
-      <div className="drawer-section-label">댓글</div>
+    <div className="comment-compose mt-3.5">
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+        댓글
+      </div>
       <textarea
-        className="comment-input"
+        className="comment-input w-full resize-y rounded-md border border-(--line-strong) bg-(--bg) p-2"
         value={body}
         rows={3}
         placeholder="진행 상황이나 질문을 남긴다 (⌘/Ctrl+Enter 전송)"
@@ -727,14 +784,14 @@ function CommentComposer({ todoId }: { todoId: string }) {
         }}
       />
       {error && (
-        <div className="comment-error" role="alert">
+        <div className="comment-error px-0.5 pt-1 text-xs leading-[1.4] text-(--p1)" role="alert">
           {error}
         </div>
       )}
-      <div className="drawer-actions">
+      <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
         <button
           type="button"
-          className="drawer-btn"
+          className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
           onClick={() => void submit()}
           disabled={body.trim() === '' || sending}
         >
@@ -800,17 +857,23 @@ function CommentCard({ comment }: { comment: Comment }) {
   };
 
   return (
-    <div className={`comment-card${archived ? ' is-archived' : ''}`}>
-      <div className="comment-head">
-        <span className={`history-dot tone-${actorTone(comment.actor)}`} />
-        <span className={`comment-actor tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
-        <span className="comment-at">{formatStamp(comment.createdAt)}</span>
-        {edited && <span className="comment-edited">(수정됨)</span>}
-        {archived && <span className="comment-edited">(보관됨)</span>}
-        <span className="comment-tools">
+    <div
+      className={`comment-card border-b border-(--line) py-2 ${archived ? 'is-archived opacity-(--dim-archived)' : ''}`}
+    >
+      <div className="comment-head flex items-center gap-1.5 text-xs">
+        <span
+          className={`history-dot size-[7px] shrink-0 self-center rounded-full bg-current tone-${actorTone(comment.actor)}`}
+        />
+        <span className={`comment-actor font-semibold tone-${actorTone(comment.actor)}`}>
+          {comment.actor}
+        </span>
+        <span className="comment-at text-(--muted)">{formatStamp(comment.createdAt)}</span>
+        {edited && <span className="comment-edited text-(--muted)">(수정됨)</span>}
+        {archived && <span className="comment-edited text-(--muted)">(보관됨)</span>}
+        <span className="comment-tools ml-auto flex gap-1.5">
           <button
             type="button"
-            className="comment-tool"
+            className="comment-tool cursor-pointer text-xs text-(--muted) hover:text-inherit max-[900px]:min-h-11 max-[900px]:px-2"
             onClick={() => {
               setEditing(!editing);
               setError(null);
@@ -820,7 +883,7 @@ function CommentCard({ comment }: { comment: Comment }) {
           </button>
           <button
             type="button"
-            className="comment-tool"
+            className="comment-tool cursor-pointer text-xs text-(--muted) hover:text-inherit max-[900px]:min-h-11 max-[900px]:px-2"
             disabled={busy}
             onClick={() =>
               void run(() => (archived ? unarchiveComment(comment.id) : archiveComment(comment.id)))
@@ -833,24 +896,29 @@ function CommentCard({ comment }: { comment: Comment }) {
       {editing ? (
         <div>
           <textarea
-            className="comment-input"
+            className="comment-input w-full resize-y rounded-md border border-(--line-strong) bg-(--bg) p-2"
             value={draft}
             rows={3}
             onChange={(e) => setDraft(e.target.value)}
           />
-          <div className="drawer-actions">
-            <button type="button" className="drawer-btn" disabled={busy} onClick={save}>
+          <div className="drawer-actions mt-3.5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="drawer-btn rounded-[7px] border border-(--line-strong) bg-(--surface-2) px-3 py-1.5 text-xs hover:border-(--warm-dim) hover:text-(--warm) max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:items-center max-[900px]:justify-center"
+              disabled={busy}
+              onClick={save}
+            >
               {busy ? '저장 중…' : '저장'}
             </button>
           </div>
         </div>
       ) : (
-        <div className="comment-body">
+        <div className="comment-body mt-1 text-[13px] leading-normal">
           <Markdown text={comment.body} />
         </div>
       )}
       {error && (
-        <div className="comment-error" role="alert">
+        <div className="comment-error px-0.5 pt-1 text-xs leading-[1.4] text-(--p1)" role="alert">
           {error}
         </div>
       )}
@@ -862,22 +930,35 @@ function CommentCard({ comment }: { comment: Comment }) {
 function Timeline({ history, comments }: { history: HistoryEntry[]; comments: Comment[] }) {
   const items = mergeTimeline(history, comments);
   return (
-    <div className="drawer-history">
-      <div className="drawer-section-label">타임라인</div>
+    <div className="drawer-history mt-[18px] border-t border-(--line)">
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+        타임라인
+      </div>
       {items.map((item) =>
         item.kind === 'comment' ? (
           <CommentCard key={`c-${item.comment.id}`} comment={item.comment} />
         ) : (
-          <div key={`h-${item.entry.id}`} className="history-row">
-            <span className={`history-dot tone-${actorTone(item.entry.actor)}`} />
-            <span className={`history-actor tone-${actorTone(item.entry.actor)}`}>
+          <div
+            key={`h-${item.entry.id}`}
+            className="history-row flex items-baseline gap-2 py-[5px] text-xs"
+          >
+            <span
+              className={`history-dot size-[7px] shrink-0 self-center rounded-full bg-current tone-${actorTone(item.entry.actor)}`}
+            />
+            <span
+              className={`history-actor font-(family-name:--mono) text-[11px] tone-${actorTone(item.entry.actor)}`}
+            >
               {item.entry.actor}
             </span>
-            <span className="history-action">{actionLabel(item.entry.action)}</span>
+            <span className="history-action text-(--muted)">{actionLabel(item.entry.action)}</span>
             {item.entry.changes?.title && (
-              <span className="history-change">→ {String(item.entry.changes.title[1])}</span>
+              <span className="history-change min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--faint)">
+                → {String(item.entry.changes.title[1])}
+              </span>
             )}
-            <span className="history-at">{formatElapsed(item.entry.at)} 전</span>
+            <span className="history-at ml-auto shrink-0 font-(family-name:--mono) text-[11px] text-(--faint)">
+              {formatElapsed(item.entry.at)} 전
+            </span>
           </div>
         ),
       )}
