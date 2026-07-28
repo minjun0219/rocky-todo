@@ -28,8 +28,9 @@ open http://127.0.0.1:8636        # 또는: rocky-todo open
 엔드포인트: `http://127.0.0.1:8636/mcp` (streamable HTTP). Claude Code 는 플러그인이 자동 등록,
 opencode/Codex 는 `rocky-todo mcp setup` 안내대로 수동 등록.
 
-각 도구의 `id` 인자는 REF 문법(`rocky#12` / `#12` / id 전체 / id 앞부분)을 받는다 — `#12` 처럼
-보드 접두사 없는 번호를 쓰려면 같이 넘기는 `board` 인자가 그 컨텍스트가 된다.
+각 도구의 `id` 인자는 REF 문법(`rocky-12` / 맨숫자 `12` / id 전체 / id 앞부분)을 받는다 —
+맨숫자처럼 보드 접두사 없는 번호를 쓰려면 같이 넘기는 `board` 인자가 그 컨텍스트가 된다.
+옛 표기(`rocky#12` / `#12`)도 입력으로는 계속 받는다.
 
 `createIssue: true` 를 주면 그 todo 를 GitHub 이슈로 만들고 URL 을 `links` 에 자동으로 붙인다
 (보드에 repo 가 설정돼 있어야 한다 — 아래 CLI `board repo` 참고, `gh` CLI 필요).
@@ -53,18 +54,18 @@ rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
 ```
 
-REF 는 `rocky#12`(보드 지정) / `#12` 또는 `12`(현재 보드의 번호) / id 전체 / id 앞부분(유일하면)
-중 아무거나 받는다 — `ls` 출력의 `#12` 를 그대로 다음 명령에 복사해 쓰면 된다.
-글로벌 메모(보드 미소속)는 번호가 `#3` 처럼 접두사 없이 표시되며, `note show|edit|append|archive`
-와 `history` 는 `--global` 을 붙여야 보드 번호와 헷갈리지 않고 그 공간을 조회한다.
-todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2` 가 둘 다일 수 있다 — `history` 는
+REF 는 `rocky-12`(보드 지정, 가장 오른쪽 `-` 에서 갈린다) / 맨숫자 `12`(현재 보드의 번호) /
+id 전체 / id 앞부분(유일하면) 중 아무거나 받는다 — `ls` 출력의 `rocky-12` 를 그대로 다음
+명령에 복사해 쓰면 된다. 옛 표기(`rocky#12` / `#12`)도 입력으로는 계속 받는다.
+글로벌 메모(보드 미소속)는 번호가 `note-3` 으로 표시되며, `note show|edit|append|archive`
+와 `history` 는 `--global` 을 붙여야 보드 번호와 헷갈리지 않고 그 공간을 조회한다. `note` 는
+예약된 접두사라 보드 이름으로 새로 쓸 수 없다(기존에 있던 `note` 보드는 계속 동작하되
+그 안의 항목은 raw id 로만 가리킬 수 있다).
+todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 번호 `2` 가 둘 다일 수 있다 — `history` 는
 기본적으로 todo 를 먼저 찾으니, 메모 쪽을 보려면 `--note`(보드 메모) 나 `--global`(전역 메모)로
 대상을 확정한다.
 
 보드 키는 생략 시 cwd 의 git repo 이름으로 유추. **삭제는 없다 — 아카이브만.**
-
-`#` 로 시작하는 REF 는 bash/zsh 에서 주석 시작 문자다 — 따옴표로 감싸서 넘긴다:
-`rocky-todo show '#12'` 또는 보드 접두사 없이 `rocky-todo show 12`.
 
 ## 설정 (`rocky.json`, user 레벨)
 
@@ -125,6 +126,8 @@ todo 와 메모는 같은 보드 안에서도 번호를 따로 매기므로 `#2`
   사고를 막는 가드다. 경로는 절대경로만 받고 실경로로 정규화해 저장한다. 이 버튼은
   **로컬(이 머신)에서만** 뜬다 — 이슈 생성과 같은 등급의 게이트다.
 - **실시간 웹 UI** — Bun fullstack 자동 번들 + SSE (dist 없음, CDN 없음).
+- 번호 버튼을 누르면 `/rocky-todo:board rocky-12` 가 클립보드에 들어간다 — 세션에
+  그대로 붙여넣으면 그 항목을 맡아 착수한다.
 - **URL 퍼머링크** — 주소가 보는 화면을 담는다: `/`(전체) · `/rocky`(보드) · `/rocky/12`(그
   todo 상세). 새로고침해도 유지되고 링크로 공유할 수 있다. board key `api`/`mcp`(데몬 라우트와
   충돌)와 `.`/`..`(브라우저가 `/` 로 정규화)는 만들 수는 있지만 URL 로 가리킬 수 없어 주소가
