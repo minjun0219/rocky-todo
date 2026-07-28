@@ -18,7 +18,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { extractChangelogSection } from './changelog';
-import { resolveTargetSha } from './release-target';
+import { assertTagMatchesTarget, resolveTargetSha } from './release-target';
 
 const version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version?: string }).version;
 if (!version) {
@@ -44,6 +44,21 @@ const sha = resolveTargetSha({
   githubSha: process.env.GITHUB_SHA,
   headSha: Bun.spawnSync(['git', 'rev-parse', 'HEAD']).stdout.toString(),
 });
+// 태그가 이미 있으면 gh 는 --target 을 무시한다 → 잘못된 커밋에 조용히 붙는 걸 막는다.
+// `commits/<ref>` 는 annotated / lightweight 태그를 모두 커밋 sha 로 풀어준다.
+const tagLookup = Bun.spawnSync([
+  'gh',
+  'api',
+  `repos/{owner}/{repo}/commits/${tag}`,
+  '--jq',
+  '.sha',
+]);
+assertTagMatchesTarget({
+  tag,
+  tagSha: tagLookup.success ? tagLookup.stdout.toString() : undefined,
+  targetSha: sha,
+});
+
 const created = Bun.spawnSync(
   ['gh', 'release', 'create', tag, '--target', sha, '--title', tag, '--notes', notes],
   { stdout: 'inherit', stderr: 'inherit' },

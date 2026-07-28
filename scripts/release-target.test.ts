@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { resolveTargetSha } from './release-target';
+import { assertTagMatchesTarget, resolveTargetSha } from './release-target';
 
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const OTHER = 'fdbf9dd0000000000000000000000000000000ff';
@@ -33,5 +33,33 @@ describe('resolveTargetSha', () => {
 
   it('HEAD 를 못 읽으면 실패한다', () => {
     expect(() => resolveTargetSha({ githubSha: SHA, headSha: '' })).toThrow(/HEAD sha/);
+  });
+});
+
+describe('assertTagMatchesTarget', () => {
+  it('태그가 아직 없으면 통과한다 (gh 가 --target 으로 만든다)', () => {
+    expect(() => assertTagMatchesTarget({ tag: 'v0.9.0', targetSha: SHA })).not.toThrow();
+    expect(() =>
+      assertTagMatchesTarget({ tag: 'v0.9.0', tagSha: '  ', targetSha: SHA }),
+    ).not.toThrow();
+  });
+
+  it('기존 태그가 같은 커밋이면 통과한다 (부분 실패 복구 경로)', () => {
+    expect(() =>
+      assertTagMatchesTarget({ tag: 'v0.9.0', tagSha: `${SHA}\n`, targetSha: SHA }),
+    ).not.toThrow();
+  });
+
+  // v0.5.0~v0.8.0 정리 시 밟게 되는 함정: 릴리스만 지우고 재생성하면 잘못된 태그에 다시 붙는다.
+  it('기존 태그가 다른 커밋이면 멈춘다', () => {
+    expect(() => assertTagMatchesTarget({ tag: 'v0.8.0', tagSha: OTHER, targetSha: SHA })).toThrow(
+      /이미 다른 커밋을 가리킨다/,
+    );
+  });
+
+  it('실패 메시지가 태그 삭제 방법을 알려준다', () => {
+    expect(() => assertTagMatchesTarget({ tag: 'v0.8.0', tagSha: OTHER, targetSha: SHA })).toThrow(
+      /git push origin :refs\/tags\/v0\.8\.0/,
+    );
   });
 });
