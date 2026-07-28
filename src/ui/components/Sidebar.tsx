@@ -41,7 +41,7 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar flex flex-col gap-0.5 overflow-y-auto border-r border-(--line) px-2.5 py-4 max-[900px]:shrink-0 max-[900px]:flex-row max-[900px]:flex-nowrap max-[900px]:items-center max-[900px]:gap-1.5 max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden max-[900px]:border-r-0 max-[900px]:border-b max-[900px]:px-3 max-[900px]:py-2">
-      <div className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint) max-[900px]:hidden">
+      <div className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint) max-[900px]:hidden">
         BOARDS
       </div>
       <button

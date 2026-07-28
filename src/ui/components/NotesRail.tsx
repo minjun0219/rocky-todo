@@ -12,7 +12,7 @@ export function NotesRail() {
   return (
     <aside className="notes-rail flex flex-col gap-3 overflow-y-auto border-l border-(--line) px-3.5 py-4 max-[900px]:shrink-0 max-[900px]:overflow-y-visible max-[900px]:border-l-0 max-[900px]:border-t max-[900px]:p-3.5">
       <div className="notes-head flex items-center justify-between">
-        <span className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+        <span className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint)">
           NOTES
         </span>
         <button
@@ -116,7 +116,7 @@ function NoteCard({ note }: { note: NoteView }) {
           }
         }}
       />
-      <div className="note-meta mt-1 font-(family-name:--mono) text-[11px] text-(--faint)">
+      <div className="note-meta mt-1 font-(family-name:--mono) text-[10px] text-(--faint)">
         {dirty ? '수정중… (blur 로 저장)' : `갱신 ${formatElapsed(note.updatedAt)} 전`}
       </div>
     </div>

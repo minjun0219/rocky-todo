@@ -33,25 +33,22 @@
   --surface-2: #282017;
   --text: #e9dfd2;
   --muted: #9c8d7c;
-  /* 마이크로라벨 14곳의 색 — 옛 #6b5f51 은 최악 배경에서 대비 2.58 로 읽히지 않았다. */
-  --faint: #978775;
+  --faint: #6b5f51;
   --warm: #e8a33d; /* 에이전트 / 에리디언 */
-  /* .group-eyebrow 의 텍스트색이자 뱃지 테두리 — 텍스트로 쓰이므로 4.5 기준이다. */
-  --warm-dim: #b08130;
+  --warm-dim: #8a6526;
   --cool: #7ec8d8; /* 사람 / 지구 */
-  /* 테두리로만 쓰인다 — 기준 3.0. 여기에 4.5 를 강요하면 쿨 톤이 필요 이상 밝아진다. */
-  --cool-dim: #4b7680;
+  --cool-dim: #47707a;
   --p1: #e2634f;
   --p2: #e8a33d;
   --p3: #c8b45a;
   --ok: #86b06c;
   --handoff: #93c5fd; /* 핸드오프 — "보냈다"(파랑), doing 앰버(--warm)와 구분 */
   --handoff-dim: #1e3a5f;
-  /* 구분선(장식)과 컨트롤 테두리(WCAG 1.4.11)는 요구 대비가 다르다 — 토큰을 나눈다.
-     구분선은 헤어라인(캔버스 대비 1.4~1.5, DESIGN.md §1)이다 — 구조는 면·여백이 지고
-     선은 속삭인다. 한때 2.7 까지 올렸다가 화면이 시끄러워져 되돌린 값이다. */
-  --line: #3f3123;
-  --line-strong: #876a4b;
+  /* 구분선과 컨트롤 테두리 — main 디자인은 하나의 --line 으로 쓴다. --line-strong 은
+     Tailwind 이관 때 도입한 토큰이라 클래스에 남아 있지만, 값을 --line 과 동일하게 두어
+     화면은 main 그대로다 (사용자 결정 2026-07-28: 디자인 기준은 main). */
+  --line: #382c1f;
+  --line-strong: #382c1f;
   --scrim: rgba(10, 7, 4, 0.55);
   --dim-archived: 0.45;
   --dim-stale: 0.55;
@@ -80,7 +77,7 @@
   --handoff: #1f5aa8;
   --handoff-dim: #d3e4fb;
   --line: #d6cab9;
-  --line-strong: #9a7e59;
+  --line-strong: #d6cab9;
   /* 배경이 밝아 스크림이 덜 진해도 드로어가 충분히 분리된다. */
   --scrim: rgba(36, 28, 20, 0.35);
   --dim-archived: 0.55;
@@ -150,8 +147,7 @@
   appearance: none;
   width: 15px;
   height: 15px;
-  /* 조작 컨트롤 경계 — --line-strong 이 정확히 이 용도다(3.0 충족, --muted 4.98 은 과했다). */
-  border: 1.5px solid var(--line-strong);
+  border: 1.5px solid var(--muted);
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
@@ -169,15 +165,6 @@
   font-size: 11px;
   color: var(--bg);
   font-weight: 700;
-}
-
-/* stretched-link — 제목 버튼의 클릭 영역을 행 전체로 넓힌다(마크업·JS 변경 없음,
-   버튼 시맨틱 그대로). 제목 글자만 눌리면 목록에서 조준이 어렵다(사용자 지적).
-   행 안의 다른 인터랙티브 요소는 z-index 로 오버레이 위에 올려 제 클릭을 지킨다. */
-.todo-title::after {
-  content: "";
-  position: absolute;
-  inset: 0;
 }
 
 /*

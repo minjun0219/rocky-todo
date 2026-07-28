@@ -30,7 +30,7 @@ export function NoteDetail() {
       <h2 className="drawer-title mt-1 mb-2.5 text-lg leading-[1.35] font-bold text-(--text)">
         {note.title}
       </h2>
-      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[11px] tracking-[0.14em] text-(--faint)">
+      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[10px] tracking-[0.14em] text-(--faint)">
         {note.id}
       </div>
       <div className="drawer-desc drawer-desc-static block w-full cursor-default rounded-lg border border-(--line-strong) bg-(--bg) px-3 py-2.5 text-left text-[13px] text-(--text)">

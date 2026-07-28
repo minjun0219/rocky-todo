@@ -34,7 +34,7 @@ export function CommentComposer({ todoId }: { todoId: string }) {
 
   return (
     <div className="comment-compose mt-3.5">
-      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint)">
         댓글
       </div>
       <textarea
@@ -198,7 +198,7 @@ export function Timeline({ history, comments }: { history: HistoryEntry[]; comme
   const items = mergeTimeline(history, comments);
   return (
     <div className="drawer-history mt-[18px] border-t border-(--line)">
-      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint)">
         타임라인
       </div>
       {items.map((item) =>
@@ -223,7 +223,7 @@ export function Timeline({ history, comments }: { history: HistoryEntry[]; comme
                 → {String(item.entry.changes.title[1])}
               </span>
             )}
-            <span className="history-at ml-auto shrink-0 font-(family-name:--mono) text-[11px] text-(--faint)">
+            <span className="history-at ml-auto shrink-0 font-(family-name:--mono) text-[10px] text-(--faint)">
               {formatElapsed(item.entry.at)} 전
             </span>
           </div>

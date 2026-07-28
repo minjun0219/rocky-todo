@@ -39,7 +39,7 @@ export function TopBar() {
         ROCKY<span className="text-(--warm)">·</span>TODO
       </span>
       <span
-        className={`link-status inline-flex items-center gap-1.5 font-(family-name:--mono) text-[11px] tracking-[0.18em] ${connected ? 'is-on text-(--warm)' : 'is-off text-(--faint)'}`}
+        className={`link-status inline-flex items-center gap-1.5 font-(family-name:--mono) text-[10px] tracking-[0.18em] ${connected ? 'is-on text-(--warm)' : 'is-off text-(--faint)'}`}
         title="데몬 SSE 연결 상태"
       >
         <span

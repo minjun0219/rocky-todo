@@ -6,10 +6,10 @@ import { useUiStore } from '../store';
 import { Markdown } from './Markdown';
 
 /** 우선순위 → 색 유틸. Tailwind 정적 스캔 때문에 리터럴이다 (TodoItem 과 동일 값). */
-const PRIO_TEXT: Record<string, string> = {
-  p1: 'text-(--p1)',
-  p2: 'text-(--p2)',
-  p3: 'text-(--p3)',
+const PRIO_CHIP: Record<string, string> = {
+  p1: 'border-(--p1) text-(--p1)',
+  p2: 'border-(--p2) text-(--p2)',
+  p3: 'border-(--p3) text-(--p3)',
 };
 
 export function TodoDetail() {
@@ -188,30 +188,30 @@ export function TodoDetail() {
           </button>
         </h2>
       )}
-      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[11px] tracking-[0.14em] text-(--faint)">
+      <div className="drawer-id mt-0.5 mb-2.5 font-(family-name:--mono) text-[10px] tracking-[0.14em] text-(--faint)">
         {todo.id}
       </div>
       <div className="drawer-chips mb-2.5 flex flex-wrap gap-1.5">
         <span
-          className={`chip prio-${todo.priority} shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] ${PRIO_TEXT[todo.priority] ?? 'text-(--muted)'}`}
+          className={`chip prio-${todo.priority} shrink-0 whitespace-nowrap rounded-full border px-[7px] py-px font-(family-name:--mono) text-[10px] ${PRIO_CHIP[todo.priority] ?? 'text-(--muted)'}`}
         >
           {todo.priority}
         </span>
         {todo.labels.map((label) => (
           <span
             key={label}
-            className="chip chip-label shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)"
+            className="chip chip-label shrink-0 whitespace-nowrap rounded-full border px-[7px] py-px font-(family-name:--mono) text-[10px] border-(--line) text-(--muted)"
           >
             {label}
           </span>
         ))}
         {todo.due && (
-          <span className="chip chip-due shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)">
+          <span className="chip chip-due shrink-0 whitespace-nowrap rounded-full border px-[7px] py-px font-(family-name:--mono) text-[10px] border-(--line) text-(--muted)">
             {todo.due}
           </span>
         )}
         {todo.archivedAt && (
-          <span className="chip shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--muted)">
+          <span className="chip shrink-0 whitespace-nowrap rounded-full border px-[7px] py-px font-(family-name:--mono) text-[10px] border-(--line) text-(--muted)">
             보관됨
           </span>
         )}
@@ -224,7 +224,7 @@ export function TodoDetail() {
       */}
       {boardSections.length > 0 && (
         <label className="drawer-section-pick mt-2.5 mb-1 flex items-center gap-2">
-          <span className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+          <span className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint)">
             섹션
           </span>
           <select
@@ -252,14 +252,14 @@ export function TodoDetail() {
               href={link.url}
               target="_blank"
               rel="noreferrer"
-              className="chip chip-link shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-(family-name:--mono) text-[11px] bg-[color-mix(in_srgb,currentColor_10%,transparent)] text-(--cool) no-underline hover:bg-[color-mix(in_srgb,currentColor_18%,transparent)]"
+              className="chip chip-link shrink-0 whitespace-nowrap rounded-full border px-[7px] py-px font-(family-name:--mono) text-[10px] border-(--line) text-(--cool) no-underline hover:border-(--cool)"
             >
               {link.title ?? linkLabel(link.url)} ↗
             </a>
           ))}
         </div>
       )}
-      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+      <div className="drawer-section-label mt-4 mb-1.5 font-(family-name:--mono) text-[10px] tracking-[0.22em] text-(--faint)">
         설명
       </div>
       {editingDesc ? (
