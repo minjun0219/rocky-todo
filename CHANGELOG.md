@@ -1,5 +1,15 @@
 # @minjun0219/rocky-todo
 
+## 0.8.0
+
+### Minor Changes
+
+- [#22](https://github.com/minjun0219/rocky-todo/pull/22) [`2ab7029`](https://github.com/minjun0219/rocky-todo/commit/2ab702921eec8cf46f5be993ee2d053261bf90b5) Thanks [@minjun0219](https://github.com/minjun0219)! - 보드 항목의 참조 표기를 `rocky#12` 에서 `rocky-12` 로 바꿨다. GitHub 이슈 번호와
+  겹치던 `#` 를 없앤다. 보드에 속하지 않는 전역 메모는 `note-3` 으로 표기하며 `note` 는
+  그 참조의 예약 접두사가 됐다(보드 이름으로는 여전히 쓸 수 있으나, 그 보드의 항목은
+  `note-3` 과 겹치지 않도록 raw id 로만 참조된다). 옛 표기(`rocky#12` / `[#12](https://github.com/minjun0219/rocky-todo/issues/12)`)는 입력으로
+  계속 받는다. 웹 UI 의 번호 버튼은 이제 `/rocky-todo:board rocky-12` 를 복사한다.
+
 ## 0.7.0
 
 ### Minor Changes
