@@ -1,18 +1,18 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import ui from './ui/index.html';
 import { resolveTodoRuntimeConfig } from './config';
 import { loadTodoConfig } from './rocky-config';
 import { createMcpFetchHandler } from './mcp';
 import { buildTodoServer } from './server';
 import { TodoStore } from './store';
 import { ensureTailscaleServe } from './tailscale';
+import { buildUi } from './ui/build';
 
 /**
  * rocky-todo 데몬 — 시스템 유일 인스턴스, 단일 writer.
  *
- * 하나의 Bun fullstack 서버가 네 표면을 서빙한다:
- *   /            React 웹 UI (HTML import 자동 번들 — dist 없음)
+ * 하나의 Bun 서버가 네 표면을 서빙한다:
+ *   /            React 웹 UI (기동 시 Bun.build 로 번들 → 정적 서빙 — 별도 빌드 스텝 없음)
  *   /*           같은 웹 UI — 퍼머링크(`/rocky/12`) 새로고침용 fallback
  *   /api/*       REST (CLI + 웹 UI 공용)
  *   /api/events  SSE (웹 UI 실시간 갱신)
@@ -58,9 +58,13 @@ export async function startDaemon(): Promise<void> {
   const api = buildTodoServer({ store });
   const mcp = createMcpFetchHandler({ store });
 
-  // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.
-  // CLI/브릿지가 호출자 cwd 를 상속시켜 spawn 하면 /../../<cwd> 로 깨지므로 ui 디렉터리로 고정한다.
-  process.chdir(join(import.meta.dir, 'ui'));
+  // 웹 UI 는 기동 시 한 번 번들해 정적으로 서빙한다. 런타임 HTML import 를 버린 이유는
+  // src/ui/build.ts 참고 (Tailwind 플러그인이 그 경로에서 동작하지 않는다). 이전 기동의
+  // 산출물은 청크 해시가 달라 쌓이기만 하므로 먼저 비운다.
+  const uiDist = join(runtime.dir, 'ui-dist');
+  rmSync(uiDist, { recursive: true, force: true });
+  await buildUi(uiDist);
+  const indexHtml = Bun.file(join(uiDist, 'index.html'));
 
   server = Bun.serve({
     port: runtime.port,
@@ -69,17 +73,26 @@ export async function startDaemon(): Promise<void> {
     hostname: runtime.host,
     development: false,
     routes: {
-      '/': ui,
       // peer 주소를 넘기는 이유: 이슈 생성은 사용자의 `gh` 인증을 빌리므로 노출된 표면에서
       // 실행되면 안 된다 (`src/local-request.ts`). 두 핸들러가 같은 판별을 공유한다.
       '/mcp': (req, server) => mcp(req, server.requestIP(req)?.address),
       '/api/*': (req, server) => api.fetch(req, server.requestIP(req)?.address),
-      // 웹 UI 퍼머링크(`/rocky/12`)는 클라이언트 라우팅이라 서버에 그 경로가 없다.
-      // 이 fallback 이 없으면 새로고침이 아래 `fetch`(REST) 로 떨어져 404 가 된다.
-      // Bun 은 더 구체적인 패턴을 먼저 매칭하므로 `/api/*`·`/mcp` 는 영향받지 않는다.
-      '/*': ui,
     },
-    fetch: (req, server) => api.fetch(req, server.requestIP(req)?.address),
+    // routes 미매칭 = 정적 자산 또는 클라이언트 라우팅 퍼머링크(`/rocky/12`).
+    // 자산(chunk-*.js/css 등)은 파일로, 나머지는 전부 index.html — 예전 `'/*': ui`
+    // fallback 과 같은 의미다 (퍼머링크 새로고침이 404 로 떨어지면 안 된다).
+    fetch: async (req) => {
+      const pathname = decodeURIComponent(new URL(req.url).pathname);
+      // uiDist 밖을 읽지 못하게 한다 — 노출된 데몬(`todo.expose`)에서 `/..%2f..` 류의
+      // 경로 탈출로 임의 파일이 새면 안 된다. 세그먼트 검사가 정규화보다 단순하고 충분하다.
+      if (!pathname.split('/').includes('..') && pathname !== '/') {
+        const asset = Bun.file(join(uiDist, pathname.slice(1)));
+        if (await asset.exists()) {
+          return new Response(asset);
+        }
+      }
+      return new Response(indexHtml);
+    },
   });
 
   const pidPath = join(runtime.dir, 'daemon.pid');
