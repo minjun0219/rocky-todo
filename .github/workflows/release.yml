@@ -40,9 +40,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Version PR 이 병합돼 main 버전이 오르면 v<version> 태그 + GitHub Release 생성 (멱등, npm 무관).
-      # changeset 이 남아 있는 push(=Version PR 생성 단계)에서는 버전이 아직 안 올랐으므로 태그가 이미 있어 skip.
+  # Version PR 이 병합돼 main 버전이 오르면 v<version> 태그 + GitHub Release 생성 (멱등, npm 무관).
+  # changeset 이 남아 있는 push(=Version PR 생성 단계)에서는 main 의 버전이 아직 안 올랐으므로
+  # 그 버전의 release 가 이미 있어 skip 된다.
+  #
+  # **별도 job 인 이유**: 같은 job 에 두면 앞 스텝의 changesets/action 이 워킹 트리를 Version PR
+  # 브랜치로 옮긴 뒤라, 아직 머지되지도 않은 커밋에 태그가 박힌다. 실제로 v0.5.0~v0.8.0 이 그렇게
+  # main 밖 커밋을 가리켰고 릴리스가 PR 머지보다 2시간 먼저 생성됐다. 별도 job 은 push 된 커밋을
+  # 그대로 체크아웃하므로 package.json 도 main 기준으로 읽힌다.
+  release:
+    name: tag + GitHub Release
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # release-github.ts 는 로컬 모듈만 import 하므로 bun install 이 필요 없다.
       - name: Tag + GitHub Release on version bump
         run: bun scripts/release-github.ts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
