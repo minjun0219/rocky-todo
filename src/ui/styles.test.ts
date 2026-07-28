@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
  * `styles.css` 에서 토큰을 직접 파싱한다 — 값을 테스트에 복사해 두면 CSS 만 고쳤을 때
  * 테스트가 낡은 값을 검사하며 통과해 버린다. 기준은 토큰이 실제로 쓰이는 CSS 속성에서
  * 온다: `color:` 로 쓰이면 텍스트(4.5), `border:`/`background:` 전용이면 비텍스트(3.0),
- * 장식적 구분선은 2.2. 근거는 설계 문서 §6 참고.
+ * 장식적 구분선은 헤어라인 밴드(캔버스 대비 1.3~1.7). 근거는 DESIGN.md §1·§2.
  */
 
 const CSS = readFileSync(join(import.meta.dir, 'styles.css'), 'utf8');
@@ -97,7 +97,7 @@ const TEXT_TOKENS = [
 /** `border:` / `background:` 전용 — WCAG 1.4.11 비텍스트 대비 3.0 */
 const NON_TEXT_TOKENS = ['--cool-dim', '--ok', '--line-strong'];
 
-/** 장식적 구분선 — 1.4.11 대상이 아니라 "보이되 튀지 않는" 2.2 */
+/** 장식적 구분선 — 1.4.11 대상이 아니다. 헤어라인 밴드로 검사한다(아래 참고) */
 const DIVIDER_TOKENS = ['--line'];
 
 /** 전경이 얹히는 배경 토큰. 세 배경 대비가 아니라 아래 PAIRS 로 검사한다. */
@@ -131,7 +131,6 @@ function expectThemePasses(theme: string, tokens: Map<string, string>): void {
   const groups = [
     { names: TEXT_TOKENS, min: 4.5, kind: '텍스트' },
     { names: NON_TEXT_TOKENS, min: 3.0, kind: '비텍스트' },
-    { names: DIVIDER_TOKENS, min: 2.2, kind: '구분선' },
   ];
   for (const { names, min, kind } of groups) {
     for (const name of names) {
@@ -141,6 +140,21 @@ function expectThemePasses(theme: string, tokens: Map<string, string>): void {
         `[${theme}] ${kind} ${name}(${tokenValue(tokens, name, theme)}) 대비 ${ratio.toFixed(2)} — ${min} 이상이어야 한다`,
       ).toBeGreaterThanOrEqual(min);
     }
+  }
+  // 장식적 구분선은 헤어라인 **밴드**다 (DESIGN.md §1·§2) — WCAG 하한이 없는 대신
+  // 디자인이 상한을 요구한다: 구조는 면·여백이 지고 선은 속삭인다. 한때 "≥2.2" 하한을
+  // 뒀다가 2.7 까지 올라가 화면이 시끄러워졌다 — 세지는 쪽도 회귀다. 기준은 최악 배경이
+  // 아니라 **캔버스(--bg)** 다: 헤어라인은 캔버스 위 패널 경계에 그어지는 선이다.
+  for (const name of DIVIDER_TOKENS) {
+    const ratio = contrast(tokenValue(tokens, name, theme), tokenValue(tokens, '--bg', theme));
+    expect(
+      ratio,
+      `[${theme}] 구분선 ${name}(${tokenValue(tokens, name, theme)}) 캔버스 대비 ${ratio.toFixed(2)} — 헤어라인 밴드 1.3~1.7 을 지킬 것`,
+    ).toBeGreaterThanOrEqual(1.3);
+    expect(
+      ratio,
+      `[${theme}] 구분선 ${name}(${tokenValue(tokens, name, theme)}) 캔버스 대비 ${ratio.toFixed(2)} — 1.7 을 넘으면 헤어라인이 아니라 그어진 선이다`,
+    ).toBeLessThanOrEqual(1.7);
   }
   for (const [fg, bg] of PAIRS) {
     const ratio = contrast(tokenValue(tokens, fg, theme), tokenValue(tokens, bg, theme));
@@ -214,7 +228,7 @@ describe('NON_COLOR_TOKENS 무검증 탈출구 가드', () => {
 
 describe('분류 드리프트 가드', () => {
   test('비텍스트/구분선 토큰이 color: 로 쓰이지 않는다', () => {
-    // TEXT_TOKENS 는 4.5 기준으로 검사되지만, 비텍스트(3.0)/구분선(2.2) 토큰이 나중에
+    // TEXT_TOKENS 는 4.5 기준으로 검사되지만, 비텍스트(3.0)/구분선(헤어라인) 토큰이 나중에
     // `color:` 자리에 쓰이면 더 낮은 기준으로 통과해 버리면서 실제로는 4.5 를 어긴다.
     // `(?<![\w-])` 로 `border-color:`/`outline-color:` 등 다른 프로퍼티의 접미어를
     // "color:" 로 오인하지 않게 막는다.

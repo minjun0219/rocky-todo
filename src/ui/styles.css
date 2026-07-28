@@ -38,8 +38,10 @@
   --ok: #86b06c;
   --handoff: #93c5fd; /* 핸드오프 — "보냈다"(파랑), doing 앰버(--warm)와 구분 */
   --handoff-dim: #1e3a5f;
-  /* 구분선(장식)과 컨트롤 테두리(WCAG 1.4.11)는 요구 대비가 다르다 — 토큰을 나눈다. */
-  --line: #6d563c;
+  /* 구분선(장식)과 컨트롤 테두리(WCAG 1.4.11)는 요구 대비가 다르다 — 토큰을 나눈다.
+     구분선은 헤어라인(캔버스 대비 1.4~1.5, DESIGN.md §1)이다 — 구조는 면·여백이 지고
+     선은 속삭인다. 한때 2.7 까지 올렸다가 화면이 시끄러워져 되돌린 값이다. */
+  --line: #3f3123;
   --line-strong: #876a4b;
   --scrim: rgba(10, 7, 4, 0.55);
   --dim-archived: 0.45;
@@ -68,7 +70,7 @@
   --ok: #3f6b26;
   --handoff: #1f5aa8;
   --handoff-dim: #d3e4fb;
-  --line: #b19979;
+  --line: #d6cab9;
   --line-strong: #9a7e59;
   /* 배경이 밝아 스크림이 덜 진해도 드로어가 충분히 분리된다. */
   --scrim: rgba(36, 28, 20, 0.35);
@@ -421,9 +423,12 @@ textarea {
 .chip {
   font-family: var(--mono);
   font-size: 11px;
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid var(--line-strong);
+  /* 칩은 면이다 — 윤곽선을 두르지 않는다(DESIGN.md §6). 한 행에 다섯까지 붙는 자리라
+     선은 개수만큼 시끄럽다. currentColor 틴트라 색 클래스가 color 만 바꾸면 배경이
+     따라온다 — .doing-badge 의 8% 틴트와 같은 어법. */
+  background: color-mix(in srgb, currentColor 10%, transparent);
   color: var(--muted);
   white-space: nowrap;
   flex-shrink: 0;
@@ -431,22 +436,18 @@ textarea {
 
 .prio-p1 {
   color: var(--p1);
-  border-color: var(--p1);
 }
 
 .prio-p2 {
   color: var(--p2);
-  border-color: var(--p2);
 }
 
 .prio-p3 {
   color: var(--p3);
-  border-color: var(--p3);
 }
 
 .chip-due.is-overdue {
   color: var(--p1);
-  border-color: var(--p1);
 }
 
 .chip-link {
@@ -455,7 +456,7 @@ textarea {
 }
 
 .chip-link:hover {
-  border-color: var(--cool);
+  background: color-mix(in srgb, currentColor 18%, transparent);
 }
 
 /* ── handoff — "보냈다"(파랑) 은 doing(앰버)과 다른 상태다 ─────────────── */
