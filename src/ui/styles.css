@@ -190,10 +190,10 @@ textarea {
 .actor-chip {
   font-family: var(--mono);
   font-size: 12px;
-  padding: 4px 13px;
+  padding: 3px 12px;
   border-radius: 999px;
-  /* 사람의 손 — cool 틴트 면. 윤곽선을 두르지 않는다(DESIGN.md §6). */
-  background: color-mix(in srgb, var(--cool) 10%, transparent);
+  /* actor 칩은 doing 뱃지와 같은 계열(행위자 표지)이라 같은 어법 — 테두리 알약. */
+  border: 1px solid var(--cool-dim);
   color: var(--cool);
 }
 
@@ -337,6 +337,8 @@ textarea {
 }
 
 .todo-row {
+  /* 제목 버튼의 ::after 오버레이(아래) 기준점 — 행 전체가 상세 열기 클릭 영역이 된다. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -411,6 +413,23 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* stretched-link — 제목 버튼의 클릭 영역을 행 전체로 넓힌다(마크업·JS 변경 없음,
+   버튼 시맨틱 그대로). 제목 글자만 눌리면 목록에서 조준이 어렵다(사용자 지적).
+   행 안의 다른 인터랙티브 요소는 z-index 로 오버레이 위에 올려 제 클릭을 지킨다. */
+.todo-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.todo-check-hit,
+.todo-ref,
+.chip-link,
+.comment-badge {
+  position: relative;
+  z-index: 1;
 }
 
 .todo-title:hover {
@@ -565,9 +584,11 @@ textarea {
 }
 
 .doing-badge.tone-warm {
-  /* 뱃지도 면이다(DESIGN.md §6) — 칩과 같은 어법. 칩(10%)보다 살짝 진해
-     "지금 움직이는 중"이 옆 칩들 사이에서 한 톤 앞선다. */
-  background: color-mix(in srgb, var(--warm) 14%, transparent);
+  /* doing 뱃지는 칩(면)과 달리 테두리+틴트다 — "지금 움직이는 중"은 정적 메타가
+     아니라 활성 상태라, 윤곽이 존재감을 지는 게 맞다(사용자 확인). 행에서 유일하게
+     테두리를 가진 메타 요소여서 시끄럽지 않다. */
+  border: 1px solid var(--warm-dim);
+  background: color-mix(in srgb, var(--warm) 8%, transparent);
 }
 
 .tone-cool {
@@ -575,7 +596,8 @@ textarea {
 }
 
 .doing-badge.tone-cool {
-  background: color-mix(in srgb, var(--cool) 14%, transparent);
+  border: 1px solid var(--cool-dim);
+  background: color-mix(in srgb, var(--cool) 8%, transparent);
 }
 
 .doing-pulse {
