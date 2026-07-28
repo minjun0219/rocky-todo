@@ -734,6 +734,23 @@ describe('참조 해석', () => {
     expect(store.getTodo('_private#1')?.id).toBe(t.id);
   });
 
+  // 레거시 `#` 표기는 대문자 시작/밑줄 시작 board key 에 대한 회귀 테스트를 갖고 있었지만
+  // (finding A, 바로 위 두 테스트), 신규 `-` 표기는 그런 커버리지가 없었다. 둘 다 오늘은
+  // 문제없이 왕복하지만(대문자는 board 조회가 그대로 대소문자 구분, `_` 는 이 분기가
+  // wildcard 가드보다 먼저 매칭돼 안전) — 회귀로 굳힌다.
+  test('대문자로 시작하는 board key 의 신규 표기(board-N)가 resolve 된다', () => {
+    store.ensureBoard('MyProject', { actor: 'tester' });
+    const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
+    expect(store.getTodo('MyProject-1')?.id).toBe(t.id);
+  });
+
+  test('밑줄로 시작하는 board key 의 신규 표기(board-N)가 resolve 된다 — id-prefix 와일드카드 가드를 타지 않는다', () => {
+    store.ensureBoard('_private', { actor: 'tester' });
+    const t = store.createTodo({ board: '_private', title: '대상' }, 'tester');
+    expect(() => store.getTodo('_private-1')).not.toThrow();
+    expect(store.getTodo('_private-1')?.id).toBe(t.id);
+  });
+
   test('rocky-12 형태(신규 표기)로 보드를 지정해 찾는다', () => {
     const t = store.createTodo({ board: 'rocky', title: '신규 표기' }, 'tester');
     expect(store.getTodo(`rocky-${t.number}`)?.id).toBe(t.id);
