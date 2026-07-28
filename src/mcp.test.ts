@@ -463,7 +463,7 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { board: 'rocky', title: 'ref 확인', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(created.ref).toBe('rocky#1');
+    expect(created.ref).toBe('rocky-1');
   });
 
   test('두 보드의 항목이 같은 number 를 가져도 ref 로 구분된다', async () => {
@@ -485,8 +485,8 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
 
     expect(rockyList.todos[0]?.number).toBe(1);
     expect(otherList.todos[0]?.number).toBe(1);
-    expect(rockyList.todos[0]?.ref).toBe('rocky#1');
-    expect(otherList.todos[0]?.ref).toBe('other#1');
+    expect(rockyList.todos[0]?.ref).toBe('rocky-1');
+    expect(otherList.todos[0]?.ref).toBe('other-1');
     expect(rockyList.todos[0]?.ref).not.toBe(otherList.todos[0]?.ref);
   });
 
@@ -501,7 +501,7 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
     const detail = resultJson(
       await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
     ) as { todo: { ref: string } };
-    expect(detail.todo.ref).toBe('rocky#1');
+    expect(detail.todo.ref).toBe('rocky-1');
 
     const status = resultJson(
       await client.callTool({
@@ -509,17 +509,17 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { id: created.id, action: 'start', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(status.ref).toBe('rocky#1');
+    expect(status.ref).toBe('rocky-1');
   });
 
-  test('보드 소속 메모는 rocky#1, 글로벌 메모는 #1 로 ref 가 구분된다', async () => {
+  test('보드 소속 메모는 rocky-1, 글로벌 메모는 note-1 로 ref 가 구분된다', async () => {
     const boardNote = resultJson(
       await client.callTool({
         name: 'note_write',
         arguments: { board: 'rocky', title: '보드 메모', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(boardNote.ref).toBe('rocky#1');
+    expect(boardNote.ref).toBe('rocky-1');
 
     const globalNote = resultJson(
       await client.callTool({
@@ -527,12 +527,12 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { title: '글로벌 메모', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(globalNote.ref).toBe('#1');
+    expect(globalNote.ref).toBe('note-1');
 
     const list = resultJson(
       await client.callTool({ name: 'note_list', arguments: { board: 'rocky' } }),
     ) as { notes: { ref: string }[] };
-    expect(list.notes[0]?.ref).toBe('rocky#1');
+    expect(list.notes[0]?.ref).toBe('rocky-1');
   });
 });
 

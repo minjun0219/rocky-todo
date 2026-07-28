@@ -161,6 +161,15 @@ describe('isRefSafeBoardKey', () => {
   test('빈 key 는 불안전', () => {
     expect(isRefSafeBoardKey('')).toBe(false);
   });
+
+  test('예약어 `note` 는 불안전 (전역 메모 참조와 충돌)', () => {
+    expect(isRefSafeBoardKey('note')).toBe(false);
+  });
+
+  test('`note` 로 시작할 뿐인 key 는 안전', () => {
+    expect(isRefSafeBoardKey('notes')).toBe(true);
+    expect(isRefSafeBoardKey('note-taking')).toBe(true);
+  });
 });
 
 describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)', () => {
@@ -249,24 +258,38 @@ describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)',
     expect(() => withRef(store, orphan)).toThrow(/board not found/);
   });
 
-  test('정상 board 는 영향 없음 — ref === "rocky#1" 이고 왕복된다', () => {
+  test('정상 board 는 영향 없음 — ref === "rocky-1" 이고 왕복된다', () => {
     const todo = store.createTodo({ board: 'rocky', title: '평범한 작업' }, 'tester');
 
     const view = withRef(store, todo);
-    expect(view.ref).toBe('rocky#1');
+    expect(view.ref).toBe('rocky-1');
 
     const resolved = store.getTodo(view.ref);
     expect(resolved?.id).toBe(todo.id);
   });
 
-  test('글로벌 note 는 여전히 `#N` 을 받는다', () => {
+  test('글로벌 note 는 `note-N` 을 받는다', () => {
     const note = store.createNote({ title: '글로벌 메모' }, 'tester');
 
     const view = withRef(store, note);
-    expect(view.ref).toBe(`#${note.number}`);
+    expect(view.ref).toBe(`note-${note.number}`);
 
     const resolved = store.getNote(view.ref);
     expect(resolved?.id).toBe(note.id);
+  });
+
+  /**
+   * `ensureBoard` 의 예약어 검증은 CREATE 에만 걸린다 — 검증 도입 전에 만들어진 `note`
+   * 보드가 있을 수 있다. 그 보드의 항목에 `note-1` 을 내보내면 전역 메모 1번과 구분되지
+   * 않는 위조 참조가 되므로 raw id 로 폴백해야 한다.
+   */
+  test('legacy `note` board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다', () => {
+    seedLegacyBoard('legacy-note-board', 'note');
+    const todo = store.createTodo({ board: 'note', title: '레거시 note 보드 작업' }, 'tester');
+
+    const view = withRef(store, todo);
+    expect(view.ref).toBe(todo.id);
+    expect(store.getTodo(view.ref)?.id).toBe(todo.id);
   });
 });
 
@@ -298,7 +321,7 @@ describe('withRef comment stats', () => {
   test('note view is unaffected', () => {
     const note = store.createNote({ board: 'rocky', title: '메모' }, 'logan');
     const view = withRef(store, note);
-    expect(view.ref).toBe(`rocky#${note.number}`);
+    expect(view.ref).toBe(`rocky-${note.number}`);
     expect('commentCount' in view).toBe(false);
   });
 });

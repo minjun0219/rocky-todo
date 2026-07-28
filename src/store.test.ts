@@ -909,7 +909,7 @@ describe('handoffs', () => {
 
     const claimed = store.claimHandoff('sess-1', 'stop');
     expect(claimed?.todoTitle).toBe('첫째');
-    expect(claimed?.todoRef).toBe('rocky-todo#1');
+    expect(claimed?.todoRef).toBe('rocky-todo-1');
     expect(claimed?.remaining).toBe(1);
     expect(claimed?.handoff.status).toBe('delivered');
     expect(claimed?.handoff.deliveredVia).toBe('stop');

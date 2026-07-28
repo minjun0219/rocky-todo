@@ -322,7 +322,7 @@ describe('formatTodoLine', () => {
   const base: TodoView = {
     id: 'a1b2c3d4',
     number: 1,
-    ref: 'rocky#1',
+    ref: 'rocky-1',
     boardId: 'b',
     title: '작업 제목',
     description: '',
@@ -348,7 +348,7 @@ describe('formatTodoLine', () => {
       {
         id: 'a1b2c3d4',
         number: 12,
-        ref: 'rocky#12',
+        ref: 'rocky-12',
         boardId: 'b1',
         title: '보드·섹션 생성',
         description: '',
@@ -402,7 +402,7 @@ describe('formatTodoShow', () => {
   const todo: TodoView = {
     id: 'a1b2c3d4',
     number: 1,
-    ref: 'rocky#1',
+    ref: 'rocky-1',
     boardId: 'b',
     title: '작업 제목',
     description: '',
@@ -642,24 +642,24 @@ describe('formatSpawnResult', () => {
   };
 
   test('새로 띄운 경우 짧은 id 와 claude attach 명령을 보여준다', () => {
-    const out = formatSpawnResult('rocky#12', {
+    const out = formatSpawnResult('rocky-12', {
       handoff,
       reused: false,
       worktreePath: '/w/rocky-todo/wt-12',
       sessionShortId: '1e',
     });
-    expect(out).toContain('rocky#12');
+    expect(out).toContain('rocky-12');
     expect(out).toContain('/w/rocky-todo/wt-12');
     expect(out).toContain('claude attach 1e');
   });
 
   test('재사용한 경우 이미 도는 세션에 큐잉했다고 말하고 claude attach 는 없다', () => {
-    const out = formatSpawnResult('rocky#12', {
+    const out = formatSpawnResult('rocky-12', {
       handoff,
       reused: true,
       worktreePath: '/w/rocky-todo/wt-12',
     });
-    expect(out).toContain('rocky#12');
+    expect(out).toContain('rocky-12');
     expect(out).toContain('이미 도는 세션');
     expect(out).toContain(handoff.sessionName as string);
     expect(out).not.toContain('claude attach');
@@ -668,7 +668,7 @@ describe('formatSpawnResult', () => {
   // sessionName 은 표시용 스냅샷이라 없을 수 있다 — 빈 괄호("세션()")를 찍으면
   // 어디로 보냈는지 읽을 수 없으니 sessionId 로 떨어뜨린다.
   test('sessionName 이 없으면 sessionId 로 폴백한다', () => {
-    const out = formatSpawnResult('rocky#12', {
+    const out = formatSpawnResult('rocky-12', {
       handoff: { ...handoff, sessionName: undefined },
       reused: true,
       worktreePath: '/w/rocky-todo/wt-12',
