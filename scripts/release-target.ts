@@ -42,3 +42,37 @@ export function resolveTargetSha({ githubSha, headSha }: ResolveTargetInput): st
   }
   return target;
 }
+
+/**
+ * 이미 존재하는 태그가 우리가 릴리스하려는 커밋을 가리키는지 확인한다.
+ *
+ * `gh release create <tag> --target <sha>` 의 `--target` 은 **태그가 없을 때만** 쓰인다
+ * (`gh release create --help`: "If a matching git tag does not yet exist, one will automatically
+ * get created... Use --target to point to a different branch or commit for the automatic tag
+ * creation"). 태그가 이미 있으면 조용히 그 태그의 커밋에 릴리스가 붙는다.
+ *
+ * 그래서 과거의 잘못된 태그(v0.5.0~v0.8.0 처럼 main 밖 커밋을 가리키는)를 지우고 릴리스만
+ * 다시 만들면, 잘못된 연결이 그대로 되살아난다. 어긋나면 멈추고 사람이 판단하게 한다.
+ *
+ * @param tagSha 원격에 이미 있는 태그가 가리키는 커밋. 태그가 없으면 `undefined`.
+ * @throws 태그가 존재하는데 target 과 다른 커밋을 가리킬 때.
+ */
+export function assertTagMatchesTarget({
+  tag,
+  tagSha,
+  targetSha,
+}: {
+  tag: string;
+  tagSha?: string;
+  targetSha: string;
+}): void {
+  const existing = tagSha?.trim();
+  if (!existing || existing === targetSha.trim()) {
+    return;
+  }
+  throw new Error(
+    `${tag} 태그가 이미 다른 커밋을 가리킨다 — 태그=${existing}, 릴리스 대상=${targetSha.trim()}. ` +
+      'gh 는 태그가 이미 있으면 --target 을 무시하므로, 이대로 두면 잘못된 커밋에 릴리스가 붙는다. ' +
+      `의도한 커밋이 맞다면 태그를 먼저 지우고(git push origin :refs/tags/${tag}) 다시 실행하라.`,
+  );
+}
