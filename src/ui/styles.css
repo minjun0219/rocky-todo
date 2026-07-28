@@ -263,84 +263,6 @@
   color: var(--cool);
 }
 
-/* ── notes rail ─────────────────────────────────── */
-
-.notes-rail {
-  border-left: 1px solid var(--line);
-  padding: 16px 14px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.notes-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.notes-add {
-  font-size: 12px;
-  color: var(--warm);
-}
-
-.note-card {
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.note-card-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.note-title {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  font-weight: 600;
-  font-size: 13px;
-  padding: 2px 0;
-}
-
-.note-action {
-  color: var(--faint);
-  font-size: 12px;
-  padding: 2px 4px;
-}
-
-.note-action:hover {
-  color: var(--text);
-}
-
-.note-content {
-  width: 100%;
-  background: none;
-  border: none;
-  resize: vertical;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.55;
-  margin-top: 4px;
-}
-
-.note-content:focus {
-  color: var(--text);
-  outline: none;
-}
-
-.note-meta {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--faint);
-  margin-top: 4px;
-}
-
 /* ── drawer ─────────────────────────────────────── */
 
 /* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. iOS 는 `html, body` 를 100%(큰
@@ -562,10 +484,6 @@ body.is-drawer-open {
     min-height: 44px;
     min-width: 44px;
   }
-  .note-action {
-    min-height: 44px;
-    min-width: 44px;
-  }
   .drawer-close {
     min-height: 44px;
     min-width: 44px;
@@ -587,19 +505,10 @@ body.is-drawer-open {
     justify-content: center;
     min-height: 44px;
   }
-  .notes-rail {
-    border-left: none;
-    border-top: 1px solid var(--line);
-    padding: 14px;
-    overflow-y: visible;
-    flex-shrink: 0;
-  }
   .drawer {
     width: 100vw;
   }
   /* iOS Safari: 16px 미만 입력 필드 포커스 시 자동 확대 방지 */
-  .note-title,
-  .note-content,
   .drawer-desc-edit {
     font-size: 16px;
   }

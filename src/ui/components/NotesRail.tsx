@@ -10,12 +10,14 @@ export function NotesRail() {
   const addNote = useUiStore((s) => s.addNote);
 
   return (
-    <aside className="notes-rail">
-      <div className="notes-head">
-        <span className="sidebar-label">NOTES</span>
+    <aside className="notes-rail flex flex-col gap-3 overflow-y-auto border-l border-(--line) px-3.5 py-4 max-[900px]:shrink-0 max-[900px]:overflow-y-visible max-[900px]:border-l-0 max-[900px]:border-t max-[900px]:p-3.5">
+      <div className="notes-head flex items-center justify-between">
+        <span className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint)">
+          NOTES
+        </span>
         <button
           type="button"
-          className="notes-add"
+          className="notes-add text-xs text-(--warm)"
           onClick={() =>
             void addNote({
               board: selected === 'all' ? undefined : selected,
@@ -26,7 +28,11 @@ export function NotesRail() {
           + 메모
         </button>
       </div>
-      {notes.length === 0 && <div className="empty-state">메모가 없다. 스크래치패드로 쓰자.</div>}
+      {notes.length === 0 && (
+        <div className="empty-state px-1 py-[18px] text-[13px] text-(--faint)">
+          메모가 없다. 스크래치패드로 쓰자.
+        </div>
+      )}
       {notes.map((note) => (
         <NoteCard key={note.id} note={note} />
       ))}
@@ -62,11 +68,13 @@ function NoteCard({ note }: { note: NoteView }) {
   const handleCopyRef = () => copyRefWithFeedback(note.ref, setCopied);
 
   return (
-    <div className={`note-card ${note.archivedAt ? 'is-archived' : ''}`}>
-      <div className="note-card-head">
+    <div
+      className={`note-card rounded-[10px] border border-(--line-strong) bg-(--surface) px-3 py-2.5 ${note.archivedAt ? 'is-archived opacity-(--dim-archived)' : ''}`}
+    >
+      <div className="note-card-head flex items-center gap-1">
         <button
           type="button"
-          className="todo-ref"
+          className="todo-ref min-w-[2.2em] shrink-0 cursor-pointer text-right text-[0.85em] text-(--muted) tabular-nums hover:text-(--text) hover:underline max-[900px]:inline-flex max-[900px]:min-h-11 max-[900px]:min-w-11 max-[900px]:items-center"
           onClick={() => void handleCopyRef()}
           title={copied ? '복사됨' : `${note.ref} 복사`}
           aria-label={copied ? '복사됨' : `${note.ref} 복사`}
@@ -74,14 +82,14 @@ function NoteCard({ note }: { note: NoteView }) {
           {copied ? '✓' : `#${note.number}`}
         </button>
         <input
-          className="note-title"
+          className="note-title min-w-0 flex-1 px-0 py-0.5 text-[13px] font-semibold max-[900px]:text-base"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={save}
         />
         <button
           type="button"
-          className="note-action"
+          className="note-action px-1 py-0.5 text-xs text-(--faint) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:min-w-11"
           title="히스토리"
           onClick={() => void openNoteDetail(note.id)}
         >
@@ -89,7 +97,7 @@ function NoteCard({ note }: { note: NoteView }) {
         </button>
         <button
           type="button"
-          className="note-action"
+          className="note-action px-1 py-0.5 text-xs text-(--faint) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:min-w-11"
           title="보관 (삭제는 없다)"
           onClick={() => void archiveNote(note.id)}
         >
@@ -97,7 +105,7 @@ function NoteCard({ note }: { note: NoteView }) {
         </button>
       </div>
       <textarea
-        className="note-content"
+        className="note-content mt-1 w-full resize-y text-[13px] leading-[1.55] text-(--muted) focus:text-(--text) focus:outline-none max-[900px]:text-base"
         value={content}
         rows={Math.min(12, Math.max(3, content.split('\n').length + 1))}
         onChange={(e) => setContent(e.target.value)}
@@ -108,7 +116,7 @@ function NoteCard({ note }: { note: NoteView }) {
           }
         }}
       />
-      <div className="note-meta">
+      <div className="note-meta mt-1 font-(family-name:--mono) text-[11px] text-(--faint)">
         {dirty ? '수정중… (blur 로 저장)' : `갱신 ${formatElapsed(note.updatedAt)} 전`}
       </div>
     </div>
