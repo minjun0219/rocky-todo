@@ -1,0 +1,7 @@
+{
+  "todo": {
+    "port": 8993,
+    "dir": "/tmp/rt-demo",
+    "expose": "off"
+  }
+}

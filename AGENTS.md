@@ -88,6 +88,15 @@ rocky-todo/
 - **첫 세션 순서 미보장**: SessionStart 데몬 기동 ↔ http MCP 초기화 순서는 보장 안 됨. 첫 세션
   MCP `failed` 는 `/mcp` retry / 다음 세션 / launchd 로 해소 — 감안 사항.
 - **전역 단일 인스턴스**: 포트가 락. project rocky.json 무시, user rocky.json 의 todo 블록만.
+- **데모/개발 인스턴스는 전역 설정을 상속하지 않는다** — `bun run demo` 로 띄운다.
+  이 스크립트는 `ROCKY_CONFIG=./demo.rocky.json` 을 걸어 데몬이 user `rocky.json` 을 **아예
+  안 읽게** 만든다 (전용 포트 8993 / `/tmp/rt-demo` / `expose: "off"`).
+  `bun run src/daemon.ts` 를 맨손으로 부르면 포트·디렉터리를 env 로 갈라놔도 **`expose` 는
+  전역 설정에서 딸려온다**. 실제로 그렇게 뜬 데모가 user config 의 `tailscale-serve` 를 물려받아
+  기동 시 `tailscale serve` 를 자기 포트로 잡았고, 설치본이 열어둔 테일넷 노출을 빼앗아
+  폰에서 빈 데모 보드가 보이는 사고가 났다 (`serve` 의 노출 지점은 443 의 `/` 하나뿐인
+  머신 공유 자원인데, 단일 인스턴스 보장은 *같은 포트* 기준이라 둘은 공존한다).
+  전역 설정을 일부러 태우고 싶을 때만 맨손으로 부른다.
 - **이슈 생성은 로컬 요청 전용**: 보드는 무인증이고 `todo.expose` 로 노출하는 대상이지만,
   이슈 생성은 데몬 사용자의 `gh` 인증을 빌려 외부에 되돌릴 수 없는 글을 쓴다 — 보드 쓰기
   권한이 GitHub 쓰기 권한으로 확대되는 지점이라 노출 설정과 무관하게 막는다. 판별은
@@ -199,6 +208,7 @@ bun run check       # Biome verify
 bun run fix         # Biome safe fix + format
 bun run typecheck   # tsc --noEmit
 bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 쓰지 않는다
+bun run demo        # 데모 데몬 (전역 설정 미상속 — :8993 / /tmp/rt-demo / expose off)
 bunx changeset      # user-facing 변경의 버전 의도 선언
 ```
 
