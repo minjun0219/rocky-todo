@@ -26,7 +26,7 @@ export function todoFixture(over: Partial<TodoView> = {}): TodoView {
     position: 0,
     createdAt: '2026-07-27T00:00:00.000Z',
     updatedAt: '2026-07-27T00:00:00.000Z',
-    ref: 'rocky-todo#1',
+    ref: 'rocky-todo-1',
     commentCount: 0,
     ...over,
   };

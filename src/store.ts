@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ID_LENGTH, newId } from './ids';
 import { runMigrations } from './migrations';
-import { refOf } from './refs';
+import { GLOBAL_NOTE_PREFIX, refOf } from './refs';
 
 // id 생성과 그 길이는 `./ids` 가 소유한다 — `refs.ts` 도 `ID_LENGTH` 가 필요해서, 여기
 // 두면 store ↔ refs 런타임 순환이 된다. 기존 import 경로(`from './store'`)를 쓰던
@@ -52,7 +52,7 @@ export interface Section {
 
 export interface Todo {
   id: string;
-  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(rocky-12). id 와 달리 보드 안에서만 유일하다. */
   number: number;
   boardId: string;
   sectionId?: string;
@@ -75,7 +75,7 @@ export interface Todo {
 
 export interface Note {
   id: string;
-  /** 보드별 순번 — 사람이 읽고 부르는 참조(#12). id 와 달리 보드 안에서만 유일하다. */
+  /** 보드별 순번 — 사람이 읽고 부르는 참조(rocky-12). id 와 달리 보드 안에서만 유일하다. */
   number: number;
   boardId?: string;
   title: string;
@@ -121,7 +121,7 @@ export interface Handoff {
 }
 
 export interface CreateHandoffInput {
-  /** todo 참조 문법 (`#12` / `rocky#12` / id / id prefix). */
+  /** todo 참조 문법 (`rocky-12` / 레거시 입력 `#12`·`rocky#12` / id / id prefix). */
   ref: string;
   sessionId: string;
   sessionName?: string;
@@ -132,7 +132,7 @@ export interface CreateHandoffInput {
 }
 
 export interface CreateSpawnedHandoffInput {
-  /** todo 참조 문법 (`#12` / `rocky#12` / id / id prefix). */
+  /** todo 참조 문법 (`rocky-12` / 레거시 입력 `#12`·`rocky#12` / id / id prefix). */
   ref: string;
   /** 짧은 id(8자) — 사용자가 `claude attach/logs/stop/rm` 에 그대로 넣는 값이다. */
   sessionId: string;
@@ -147,7 +147,7 @@ export interface CreateSpawnedHandoffInput {
 /** claim 결과 — 훅이 주입문을 만드는 데 필요한 것을 한 번에 준다. */
 export interface ClaimedHandoff {
   handoff: Handoff;
-  /** `rocky-todo#11` 형태의 사람이 읽는 참조. */
+  /** `rocky-todo-11` 형태의 사람이 읽는 참조 (`refOf` 가 만든다). */
   todoRef: string;
   todoTitle: string;
   /** 이 세션 앞에 아직 남은 pending 건수. */
@@ -499,11 +499,30 @@ export class TodoStore {
   // ── boards ────────────────────────────────────────────────────────────────
 
   /**
-   * board key 를 만든다. `resolveRef` 의 스코프 ref 정규식(`^([^#\s]+)#(\d+)$`)이
-   * key 부분에서 공백과 `#` 를 허용하지 않으므로, 그 두 문자(부류)가 섞인 key 를
-   * 저장하면 `refOf` 가 만든 `<key>#<number>` 를 서버 스스로 못 읽는 모순이 생긴다
-   * (예: `my repo#1` → scoped 정규식 불일치 → `resolveRef` 가 undefined; `a#b#1` 도
-   * 동일). `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
+   * board key 를 만든다. `refOf`(`src/refs.ts`)는 이제 `<key>-<number>` 를 만든다.
+   * 공백/`#` 를 막는 이유는 두 문자가 서로 다르다 — 공백은 지금도 구조적으로 못 읽고,
+   * `#` 는 사실 dashed 분기가 제대로 읽는다(직접 검증함, 아래).
+   *
+   * - **공백**: `resolveRef` 의 신규 스코프 정규식(`^(\S+)-(\d+)$`)은 `\S+` 라 공백을
+   *   포함하는 key 는 애초에 매칭 자체가 안 된다(`my repo-1` → 불일치 → undefined). 이
+   *   문자는 여전히 구조적으로 안전하지 않다.
+   * - **`#`**: 겉보기엔 레거시 스코프 분기(`^([^#\s]+)#(\d+)$`)가 먼저 먹어 다른 뜻이
+   *   될 것 같지만, 실제로는 그렇지 않다 — `refOf` 가 항상 `<key>-<number>` 꼴로
+   *   `-<숫자>` 를 마지막에 붙이므로, key 안의 첫 `#` 뒤 나머지가 끝까지 순수 숫자여야
+   *   하는 레거시 정규식의 조건을 그 `-` 가 항상 깨뜨린다 — 즉 레거시 분기는 **절대
+   *   매칭되지 않는다**(예: `a#b-1` 에 대해 `scoped.exec()` 는 `null`). 대신 신규
+   *   dashed 분기가 오른쪽 끝 `-` 로 정확히 갈라 key `a#b` 를 찾아낸다 — 즉 board 가
+   *   실제로 존재한다면 `refOf` 가 만든 `#` 섞인 ref 는 지금도 올바르게 왕복된다.
+   *   그런데도 여전히 막는 이유는 정확성이 아니라 정책이다: {@link isRefSafeBoardKey}
+   *   (`src/refs.ts`, `note` 예약어와 같은 안전장치)가 `#` 섞인 key 를 이미 안전하지
+   *   않다고 걸러 `refOf` 가 절대 `<key>-<number>` 를 내보내지 않고 raw id 로만
+   *   폴백한다 — 그러니 `#` 섞인 새 board 를 허용해봤자 그 보드는 영원히 예쁜 번호
+   *   참조를 못 받는다(무용지물). 게다가 여전히 INPUT 으로 살아있는 레거시
+   *   `rocky#12` 표기, 그리고 `#` 를 그대로 쓰는 GitHub 이슈 번호 라벨(`src/github.ts`,
+   *   `src/ui/lib.ts`)과 시각적으로 겹쳐 사람이 헷갈리기 쉽다 — 그래서 생성 시점에
+   *   막아 애초에 그런 무용한 board 가 생기지 않게 한다.
+   *
+   * `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
    * REST(`POST /api/boards`)·MCP(`todo_write`/`note_write` 의 `board`)로 직접
    * 들어오기도 해 여기서 한 번 더 막는다. 조용히 정규화(공백→`-` 치환 등)하지 않는다
    * — `my repo` 를 요청했는데 다른 이름의 보드가 말없이 만들어지면 더 혼란스럽다.
@@ -657,7 +676,7 @@ export class TodoStore {
   }
 
   /**
-   * boardId → board key. ref(`rocky#12`) 조립에 쓴다.
+   * boardId → board key. ref(`rocky-12`) 조립에 쓴다.
    *
    * "보드가 없음"과 "key 가 빈 문자열인 보드"를 구분해서 돌려준다 — 전자는 FK 가 깨진
    * 상태라 호출자가 실패시켜야 하고, 후자는 (레거시 데이터로만 가능한) malformed key 라
@@ -1125,7 +1144,7 @@ export class TodoStore {
   // ── comments ──────────────────────────────────────────────────────────────
 
   /**
-   * todo 에 댓글을 단다. `ref` 는 todo 참조 문법(`#12` / `rocky#12` / id / id prefix).
+   * todo 에 댓글을 단다. `ref` 는 todo 참조 문법(`rocky-12` / 레거시 입력 `#12`·`rocky#12` / id / id prefix).
    *
    * 히스토리는 **부모 todo 의 것으로**(`entity='todo'`) 기록한다 — `history` 의
    * `CHECK (entity IN (...))` 를 건드리지 않으면서 상세 조회(`listHistory({entityId})`),
@@ -1185,7 +1204,7 @@ export class TodoStore {
   }
 
   /**
-   * 댓글 본문 수정. 대상은 **댓글 id 로만** 지정한다 — 댓글은 보드별 번호(`#N`)를 갖지
+   * 댓글 본문 수정. 대상은 **댓글 id 로만** 지정한다 — 댓글은 보드별 번호(`rocky-N` 같은 ref)를 갖지
    * 않는다(번호 공간이 하나 더 늘면 `resolveRef` 의 모호성만 커진다).
    * @throws 본문이 공백뿐이거나 댓글을 못 찾으면.
    */
@@ -1577,23 +1596,32 @@ export class TodoStore {
   // ── helpers ───────────────────────────────────────────────────────────────
 
   /**
-   * 참조 문자열을 행으로 해석한다. 순서대로:
-   *   `rocky#12` → 그 보드의 12번 · `#12`/`12` → currentBoardId 의 12번
-   *   (notes 이고 currentBoardId 없으면 → 전역 note 공간의 12번)
-   *   `921gvwnr`(ID_LENGTH 자 base36) → id 정확 일치 · 그 외 → 유일한 id prefix
+   * 참조 문자열을 행으로 해석한다. 다섯 분기를 **이 순서로**(계약 — 순서를 바꾸면 아래
+   * 서술과 `refs.ts`/`AGENTS.md` 의 분기 설명이 같이 깨진다) 시도한다:
+   *   1. 레거시 스코프 `rocky#12` → 그 보드의 12번. 보드를 못 찾으면 `undefined`.
+   *   2. 신규 스코프 `rocky-12` → 그 보드의 12번. `note-3` 은 예약 접두사라 board 조회보다
+   *      먼저 매칭돼 전역 note 공간의 3번을 가리킨다(`GLOBAL_NOTE_PREFIX`, todos 테이블이면
+   *      전역 번호 공간이 없으므로 `undefined`). 그 외에는 보드를 못 찾으면 `undefined`.
+   *   3. 맨숫자 `12`/`#12` → `currentBoardId` 의 12번(notes 이고 `currentBoardId` 없으면
+   *      전역 note 공간의 12번, todos 는 board context 없이 못 풀리므로 throw).
+   *   4. `921gvwnr`(ID_LENGTH 자 base36) → id 정확 일치.
+   *   5. 그 외 → 유일한 id prefix.
    *
    * 길이 기준으로 번호와 id 를 가르므로, id 길이를 바꾸면 ID_LENGTH 만 고치면 된다.
    * notes 는 board_id IS NULL 인 전역 행을 가질 수 있어 자체 번호 시퀀스를 갖지만(부분 유니크
    * 인덱스 `idx_notes_number_global`), todos 는 항상 보드에 속하므로 전역 번호 공간이 없다.
    *
-   * `rocky#12` 스코프 매칭의 board key 부분은 `sanitizeKey`(`src/actor.ts`)가 만들 수 있는
+   * 두 스코프 분기(1, 2)의 board key 부분은 `sanitizeKey`(`src/actor.ts`)가 만들 수 있는
    * 모든 키를 받아야 한다 — `[a-zA-Z0-9_-]` 를 보존하므로 대문자로 시작하거나(`MyProject`)
-   * `_`/`-` 로 시작하는(`_private`) 키도 나올 수 있다. 그래서 패턴은 `#` 와 공백만 제외한
-   * `[^#\s]+` 를 쓴다 — 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에
-   * 복사하는 문자열을 이 함수가 못 읽으면(과거 `/^([a-z0-9][\w.-]*)#(\d+)$/` 가 그랬다)
-   * 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다. 이 분기는 wildcard 가드(아래
-   * `[%_]` 거부)보다 먼저 매칭돼 빠져나가므로, board 부분에 `%`/`_` 가 섞여도(예:
-   * `_private#1`) LIKE 가드에 걸리지 않고 board 조회로 간다 — 가드는 id-prefix 분기 전용이다.
+   * `_`/`-` 로 시작하는(`_private`) 키도 나올 수 있다. 레거시 분기는 `#` 와 공백만 제외한
+   * `[^#\s]+`, 신규 분기는 `\S+` 를 가장 오른쪽 `-` 에서 가른다 — 둘 다 board key 검증
+   * 없이 문법만 본다. 이 두 분기는 wildcard 가드(5번, `[%_]` 거부)보다 먼저 매칭돼
+   * 빠져나가므로, board 부분에 `%`/`_` 가 섞여도(예: `_private-1`) 그 가드에 걸리지 않고
+   * board 조회로 간다 — 가드는 4/5번(id/id-prefix) 분기 전용이다. 신규 분기가 board 를
+   * 못 찾았을 때도 4/5번으로 흘려보내지 않고 `undefined` 를 명시적으로 반환한다(위 코드의
+   * `return undefined` 참고) — `_` 를 담은 board key(`my_board-1`)가 아래로 흘러가면
+   * LIKE 와일드카드 가드에 걸려 레거시 분기(`my_board#1` → `undefined`)와 다른 에러
+   * (`invalid id prefix`)를 내는 모순이 생긴다.
    *
    * board key 조회는 대소문자를 구분한다(SQLite 기본) — 정규식이 대소문자를 가리지 않고
    * 넓게 받아도(`/i` 없음) `WHERE key = ?` 조회 자체가 대소문자를 구분해 `ROCKY#1` 은
@@ -1632,6 +1660,51 @@ export class TodoStore {
       );
     }
 
+    // 신규 스코프 표기 `<board>-<number>` (`rocky-12`). `\S+` 가 greedy 라 **가장
+    // 오른쪽** `-` 에서 갈린다 — board key 에 `-` 가 흔해서(`rocky-todo`) 왼쪽에서
+    // 자르면 존재하지 않는 보드를 찾게 된다. 공백을 배제하는 이유는 위 레거시 분기의
+    // `[^#\s]+` 와 같다: 공백 든 레거시 보드는 스코프 참조로 가리킬 수 없고 raw id 로
+    // 폴백한다(`refOf` 의 `isRefSafeBoardKey` 게이트).
+    //
+    // id 분기를 잡아먹지 않는다 — id 는 base36 8자(`ID_ALPHABET`)라 `-` 를 못 담는다.
+    const dashed = /^(\S+)-(\d+)$/.exec(trimmed);
+    if (dashed?.[1] && dashed[2]) {
+      const number = Number(dashed[2]);
+      if (dashed[1] === GLOBAL_NOTE_PREFIX) {
+        // 예약 접두사가 board 조회보다 먼저다 — `note` 라는 이름의 레거시 보드가
+        // 있어도 `note-3` 은 전역 메모를 가리킨다(결정론). 그 보드의 항목은 raw id 로만
+        // 가리킬 수 있고, `refOf` 도 그 보드에는 raw id 를 내보낸다.
+        if (table !== 'notes') {
+          // 전역 todo 번호 공간은 존재하지 않는다 — todos 는 언제나 보드에 속한다.
+          return undefined;
+        }
+        return (
+          this.db
+            .query<Row, [number]>(`SELECT * FROM ${table} WHERE board_id IS NULL AND number = ?`)
+            .get(number) ?? undefined
+        );
+      }
+      const board = this.db
+        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
+        .get(dashed[1]);
+      if (board) {
+        return (
+          this.db
+            .query<Row, [string, number]>(
+              `SELECT * FROM ${table} WHERE board_id = ? AND number = ?`,
+            )
+            .get(board.id, number) ?? undefined
+        );
+      }
+      // 보드를 못 찾으면 여기서 명시적으로 undefined 를 반환한다 — 흘려보내면(과거 코드)
+      // board key 에 `_` 가 섞인 흔한 모양(`sanitizeKey` 가 보존하는 문자, `_private` 처럼
+      // 실사용 사례가 있다)이 아래 id-prefix 분기의 LIKE 와일드카드 가드에 걸려
+      // `invalid id prefix` 로 400 이 난다 — `my_board#1`(레거시 분기, 보드 없으면 바로
+      // undefined) 과 `my_board-1`(이 분기)이 다른 에러를 내는 모순이었다. 두 표기가
+      // 같은 결과(undefined → 호출부에서 404 `todo not found`)를 내도록 여기서 끊는다.
+      return undefined;
+    }
+
     const bare = /^(#)?(\d+)$/.exec(trimmed);
     if (bare?.[2] && (bare[1] || bare[2].length < ID_LENGTH)) {
       if (!currentBoardId) {
@@ -1642,7 +1715,7 @@ export class TodoStore {
               .get(Number(bare[2])) ?? undefined
           );
         }
-        throw new Error(`board context required to resolve ${trimmed} — use board#number`);
+        throw new Error(`board context required to resolve ${trimmed} — use board-number`);
       }
       return (
         this.db

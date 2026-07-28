@@ -89,6 +89,16 @@ describe('surface', () => {
       );
     }
   });
+
+  // 전역 메모는 이제 `note-3` 으로 자기를 설명한다 — 도구 설명이 그 표기를 알려줘야
+  // 에이전트가 board 인자 유무로 다른 행을 잡는 옛 함정을 애초에 피할 수 있다.
+  test('note 도구 설명은 전역 메모 표기 note-N 을 알려준다', async () => {
+    const { tools } = await client.listTools();
+    for (const name of ['note_list', 'note_write'] as const) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.description).toMatch(/note-N/);
+    }
+  });
 });
 
 describe('todo_write / todo_list / todo_status', () => {
@@ -430,6 +440,10 @@ describe('number / ref 참조 문법', () => {
       )?.text;
       expect(text).toMatch(/board context required/);
       expect(text).not.toMatch(/unknown board/);
+      // 안내 문구가 이 브랜치에서 없앤 `board#number` 표기가 아니라 현재 표기
+      // (`board-number`) 를 가리켜야 한다.
+      expect(text).toMatch(/use board-number/);
+      expect(text).not.toMatch(/board#number/);
     });
 
     test('board 인자 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {
@@ -463,7 +477,7 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { board: 'rocky', title: 'ref 확인', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(created.ref).toBe('rocky#1');
+    expect(created.ref).toBe('rocky-1');
   });
 
   test('두 보드의 항목이 같은 number 를 가져도 ref 로 구분된다', async () => {
@@ -485,8 +499,8 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
 
     expect(rockyList.todos[0]?.number).toBe(1);
     expect(otherList.todos[0]?.number).toBe(1);
-    expect(rockyList.todos[0]?.ref).toBe('rocky#1');
-    expect(otherList.todos[0]?.ref).toBe('other#1');
+    expect(rockyList.todos[0]?.ref).toBe('rocky-1');
+    expect(otherList.todos[0]?.ref).toBe('other-1');
     expect(rockyList.todos[0]?.ref).not.toBe(otherList.todos[0]?.ref);
   });
 
@@ -501,7 +515,7 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
     const detail = resultJson(
       await client.callTool({ name: 'todo_list', arguments: { id: created.id } }),
     ) as { todo: { ref: string } };
-    expect(detail.todo.ref).toBe('rocky#1');
+    expect(detail.todo.ref).toBe('rocky-1');
 
     const status = resultJson(
       await client.callTool({
@@ -509,17 +523,17 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { id: created.id, action: 'start', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(status.ref).toBe('rocky#1');
+    expect(status.ref).toBe('rocky-1');
   });
 
-  test('보드 소속 메모는 rocky#1, 글로벌 메모는 #1 로 ref 가 구분된다', async () => {
+  test('보드 소속 메모는 rocky-1, 글로벌 메모는 note-1 로 ref 가 구분된다', async () => {
     const boardNote = resultJson(
       await client.callTool({
         name: 'note_write',
         arguments: { board: 'rocky', title: '보드 메모', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(boardNote.ref).toBe('rocky#1');
+    expect(boardNote.ref).toBe('rocky-1');
 
     const globalNote = resultJson(
       await client.callTool({
@@ -527,12 +541,12 @@ describe('MCP 응답의 ref 직렬화 (finding 3 회귀)', () => {
         arguments: { title: '글로벌 메모', actor: 'tester' },
       }),
     ) as { ref: string };
-    expect(globalNote.ref).toBe('#1');
+    expect(globalNote.ref).toBe('note-1');
 
     const list = resultJson(
       await client.callTool({ name: 'note_list', arguments: { board: 'rocky' } }),
     ) as { notes: { ref: string }[] };
-    expect(list.notes[0]?.ref).toBe('rocky#1');
+    expect(list.notes[0]?.ref).toBe('rocky-1');
   });
 });
 

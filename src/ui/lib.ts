@@ -178,6 +178,21 @@ export async function copyRef(
   }
 }
 
+/** 보드 스킬의 슬래시 커맨드 이름 — 플러그인 `rocky-todo` 의 `skills/board`. */
+const BOARD_SKILL_COMMAND = '/rocky-todo:board';
+
+/**
+ * 참조를 클립보드에 넣을 슬래시 커맨드로 감싼다 — `rocky-12` → `/rocky-todo:board rocky-12`.
+ *
+ * 참조만 복사하면 세션에 붙여넣었을 때 에이전트가 "이 문자열로 뭘 하라는 건지" 를 모른다.
+ * 커맨드까지 함께 복사하면 붙여넣기 한 번이 곧 "이 항목을 맡아라" 가 된다. 화면에 보이는
+ * 글자는 참조 그대로 두고 클립보드 값만 넓히는 것이 요점이다 — 버튼에 커맨드 전문을
+ * 그리면 행이 읽히지 않는다.
+ */
+export function boardCommand(ref: string): string {
+  return `${BOARD_SKILL_COMMAND} ${ref}`;
+}
+
 /** copyRefWithFeedback 이 복사 성공 후 몇 ms 뒤에 copied 플래그를 지우는지 — 기존
  * TodoItem/NotesRail/DetailDrawer(todo·note) 네 호출부가 각각 하드코딩했던 1200ms 를
  * 여기 하나로 고정한다. */
@@ -219,8 +234,9 @@ function defaultCopyRefWithFeedbackEnv(): CopyRefWithFeedbackEnv {
  * 테스트할 수 있다(신규 React 테스트 의존성 불필요). `env` 는 `copyRef` 와 같은 패턴으로
  * clipboard/document/prompt/setTimeout 접근을 주입한다 — 생략하면 실제 전역을 쓴다.
  *
- * title/aria-label 렌더링은 손대지 않는다 — 버튼의 보이는 텍스트(`#12`)만으로는
- * 스크린리더가 제대로 안내하지 못한다는 과거 리뷰 지적으로 각 호출부가 이미 명시적
+ * title/aria-label 렌더링은 손대지 않는다 — 버튼의 보이는 텍스트(목록 행에서는 맨숫자,
+ * 드로어에서는 전체 ref)만으로는 스크린리더가 제대로 안내하지 못한다는 과거 리뷰
+ * 지적으로 각 호출부가 이미 명시적
  * `aria-label` 을 달아 두었고, 그건 이 헬퍼가 반환하는 `copied` 상태를 그대로 읽는
  * 호출부(JSX)의 책임으로 남긴다.
  */

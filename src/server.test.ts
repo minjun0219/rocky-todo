@@ -334,7 +334,7 @@ describe('number / ref 직렬화', () => {
     });
     const todo = (await created.json()) as { number: number; ref: string };
     expect(todo.number).toBe(1);
-    expect(todo.ref).toBe('rocky#1');
+    expect(todo.ref).toBe('rocky-1');
   });
 
   test('번호 참조로 조회된다', async () => {
@@ -346,7 +346,7 @@ describe('number / ref 직렬화', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { todo: { title: string; ref: string } };
     expect(body.todo.title).toBe('번호 확인');
-    expect(body.todo.ref).toBe('rocky#1');
+    expect(body.todo.ref).toBe('rocky-1');
   });
 
   test('GET /api/todos 목록도 각 항목에 ref 를 싣는다', async () => {
@@ -355,7 +355,7 @@ describe('number / ref 직렬화', () => {
       body: JSON.stringify({ board: 'rocky', title: '목록 확인' }),
     });
     const list = (await (await req('/api/todos?board=rocky')).json()) as { ref: string }[];
-    expect(list[0]?.ref).toBe('rocky#1');
+    expect(list[0]?.ref).toBe('rocky-1');
   });
 
   test('노트 응답에도 number 와 ref 가 실린다 (보드 소속 / 글로벌)', async () => {
@@ -365,12 +365,12 @@ describe('number / ref 직렬화', () => {
         body: JSON.stringify({ board: 'rocky', title: '보드 메모' }),
       })
     ).json()) as { number: number; ref: string };
-    expect(boardNote.ref).toBe('rocky#1');
+    expect(boardNote.ref).toBe('rocky-1');
 
     const globalNote = (await (
       await req('/api/notes', { method: 'POST', body: JSON.stringify({ title: '글로벌 메모' }) })
     ).json()) as { number: number; ref: string };
-    expect(globalNote.ref).toBe('#1');
+    expect(globalNote.ref).toBe('note-1');
   });
 
   test('보드 컨텍스트 없이 맨숫자 참조를 조회하면 500 이 아닌 4xx 를 반환한다', async () => {
@@ -391,7 +391,7 @@ describe('number / ref 직렬화', () => {
     const res = await req('/api/todos/1?board=rocky');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { todo: { ref: string } };
-    expect(body.todo.ref).toBe('rocky#1');
+    expect(body.todo.ref).toBe('rocky-1');
   });
 
   // finding C: `?board=` 가 알려지지 않은 키로 안 풀리면(오타 등) currentBoardIdOf 가
@@ -470,6 +470,10 @@ describe('number / ref 직렬화', () => {
       const body = (await res.json()) as { error: string };
       expect(body.error).toMatch(/board context required/);
       expect(body.error).not.toMatch(/unknown board/);
+      // 안내 문구가 이 브랜치에서 없앤 `board#number` 표기가 아니라 현재 표기
+      // (`board-number`) 를 가리켜야 한다.
+      expect(body.error).toMatch(/use board-number/);
+      expect(body.error).not.toMatch(/board#number/);
     });
 
     test('board 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {

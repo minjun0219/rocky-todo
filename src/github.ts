@@ -1,3 +1,4 @@
+import { refOf } from './refs';
 import type { Todo, TodoStore } from './store';
 
 /**
@@ -236,7 +237,7 @@ export function createIssueForTodo(
   if (!repo) {
     throw new Error(noRepoMessage(board.key));
   }
-  const boardRef = `${board.key}#${todo.number}`;
+  const boardRef = refOf(store, todo.boardId, todo.number, todo.id);
   const result = createIssue(
     { repo, title: todo.title, body: issueBody(todo.description, boardRef) },
     options.run,

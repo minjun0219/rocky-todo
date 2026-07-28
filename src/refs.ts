@@ -4,7 +4,7 @@ import { ID_LENGTH } from './ids';
 import type { Note, Todo, TodoStore } from './store';
 
 /**
- * REST 와 MCP 가 공유하는 ref 직렬화 — 저장 모델에 사람이 읽는 참조(`rocky#12`)를 얹는다.
+ * REST 와 MCP 가 공유하는 ref 직렬화 — 저장 모델에 사람이 읽는 참조(`rocky-12`)를 얹는다.
  *
  * 원래 `server.ts` 안에 `buildTodoServer` 클로저로만 있었다. MCP 도구가 store 모델을
  * 그대로 반환해 REST 와 응답 계약이 갈라졌던 문제(설계 스펙: REST·MCP 모두 number/ref 를
@@ -13,7 +13,7 @@ import type { Note, Todo, TodoStore } from './store';
 
 /** 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)와 댓글 집계를 얹은 형태. */
 export interface TodoView extends Todo {
-  /** `rocky#12` — 보드 접두사를 포함한 완전 참조. */
+  /** `rocky-12` — 보드 접두사를 포함한 완전 참조. */
   ref: string;
   /** 보관되지 않은 댓글 수 — 목록의 배지용. */
   commentCount: number;
@@ -21,34 +21,63 @@ export interface TodoView extends Todo {
   lastCommentAt?: string;
 }
 
-/** 응답 전용 note. 글로벌 메모는 보드 접두사가 없어 `#3` 이 된다. */
+/** 응답 전용 note. 글로벌 메모는 보드 대신 예약 접두사가 붙어 `note-3` 이 된다. */
 export interface NoteView extends Note {
   ref: string;
 }
 
 /**
- * board key 가 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)이 되읽을 수 있는
- * `<key>#<number>` 를 만들 수 있는 모양인지 판별한다. `refNeedsBoardContext` 와 같은
- * 방식으로 `resolveRef` 의 조건을 손으로 옮긴 predicate 다(공유는 안 하고 계약 테스트로
- * 고정) — key 캡처 그룹이 거부하는 두 문자 부류(공백, `#`)와 빈 문자열만 걸러내면 된다.
+ * 보드에 속하지 않는 글로벌 메모의 참조 접두사 — `note-3`.
  *
- * `ensureBoard` 는 board key 검증을 **새 보드 생성**에만 적용한다(`src/store.ts`) — 검증
- * 도입 전 구버전 데몬이 `my repo` 같은 malformed key 로 만들어둔 보드는 조회로 계속
- * 살아남는다. 그런 레거시 보드의 항목에 `refOf` 가 `my repo#1` 같은, `resolveRef` 스스로
- * 못 읽는 ref 를 내보내면 웹 UI 가 그대로 보여주고 복사해도 붙여넣기가 항상 실패한다 —
- * 이 predicate 로 그 경우를 감지해 `refOf` 가 raw id 로 폴백하게 한다.
+ * 구분자가 `-` 가 되면서 접두사 없는 참조를 `-3` 으로 쓸 수 없게 됐다(음수로 읽힌다).
+ * 그래서 전역 번호 공간에 이름을 붙였다. 이 접두사는 **예약어**다: `note-N` 은 board
+ * 컨텍스트와 무관하게 언제나 전역 메모를 가리킨다(`TodoStore.resolveRef`). `note` 라는
+ * 이름의 board 자체는 막지 않는다(`TodoStore.ensureBoard` — board key 는 레포 이름에서
+ * 유추되는 값이라 `api`/`mcp` 처럼 생성을 막지 않는 게 원칙이다) — 대신 그 보드의 항목은
+ * {@link isRefSafeBoardKey} 가 걸러 `refOf` 가 `note-N` 대신 raw id 를 내보낸다.
+ *
+ * `store.ts` 가 이 값을 import 해도 순환이 되지 않는다 — 이 모듈은 store 에서
+ * **타입만** 가져오기 때문이다(파일 상단 주석 참고).
+ */
+export const GLOBAL_NOTE_PREFIX = 'note';
+
+/**
+ * board key 가 `resolveRef` 의 신규 스코프 정규식(`^(\S+)-(\d+)$`)이 되읽을 수 있는
+ * `<key>-<number>` 를 만들 수 있는 모양인지 판별한다. `refNeedsBoardContext` 와 같은
+ * 방식으로 `resolveRef` 의 조건을 손으로 옮긴 predicate 다(공유는 안 하고 계약 테스트로
+ * 고정).
+ *
+ * 거르는 것은 셋이다:
+ * - 빈 문자열 · 공백 포함 — 정규식의 `\S+` 가 못 받는다.
+ * - `#` 포함 — 레거시 `#` 분기가 먼저 매칭돼 다른 뜻이 된다.
+ * - `note` — 전역 메모 참조({@link GLOBAL_NOTE_PREFIX})의 예약 접두사라, 이 키로
+ *   `note-1` 을 내보내면 전역 메모 1번과 구분되지 않는 참조가 된다.
+ *
+ * `ensureBoard` 는 공백/`#` 를 포함하는 key 는 **새 보드 생성**에서만 막는다(`src/store.ts`)
+ * — 검증 도입 전 구버전 데몬이 `my repo` 같은 키로 만들어둔 보드는 조회로 계속 살아남는다.
+ * `note` 는 다르다: 레포 이름에서 유추되는 값이라 생성 자체는 지금도 막지 않고(`api`/`mcp`
+ * 와 같은 원칙), 대신 이 predicate 가 매번 걸러 `refOf` 가 raw id 로 폴백하게 한다. 두
+ * 경우 모두, 그런 보드의 항목에 `refOf` 가 스스로 못 읽는(혹은 다른 행을 가리키는) ref 를
+ * 내보내면 웹 UI 가 그대로 보여주고 복사해도 붙여넣기가 어긋난다 — 그 사고를 막는다.
  */
 export function isRefSafeBoardKey(key: string): boolean {
-  return key !== '' && !/[#\s]/.test(key);
+  return key !== '' && !/[#\s]/.test(key) && key !== GLOBAL_NOTE_PREFIX;
 }
 
 /**
- * boardId + number 로 사람이 읽는 참조 문자열을 만든다. board key 가
- * {@link isRefSafeBoardKey} 를 만족하지 않으면(레거시 malformed key) `resolveRef` 가
- * 못 읽는 문자열을 내보내는 대신 `id` 로 폴백한다 — raw id 는 항상 `resolveRef` 의 id/
- * id-prefix 분기로 되읽히므로 클릭 복사→붙여넣기 왕복이 깨지지 않는다. 덜 예쁠 뿐이다.
+ * boardId + number 로 사람이 읽는 참조 문자열을 만든다 — `rocky-12`, 보드에 속하지 않는
+ * 글로벌 메모는 `note-3`.
+ *
+ * 구분자로 `-` 를 쓰는 이유: 예전 표기 `rocky#12` 의 `#` 가 GitHub 이슈 번호와 겹쳐,
+ * 보드가 이슈를 만들어 붙일 수 있는(`todo_write.createIssue`) 지금 한 항목에 두 종류의
+ * `#N` 이 같이 나타나면 사람도 에이전트도 매번 되짚어야 했다.
+ *
+ * board key 가 {@link isRefSafeBoardKey} 를 만족하지 않으면(레거시 malformed key, 또는
+ * 예약어 `note`) 못 읽거나 다른 행을 가리키는 문자열을 내보내는 대신 `id` 로 폴백한다 —
+ * raw id 는 항상 `resolveRef` 의 id/id-prefix 분기로 되읽히므로 클릭 복사→붙여넣기
+ * 왕복이 깨지지 않는다. 덜 예쁠 뿐이다.
  * @throws boardId 는 있는데 그 보드가 store 에 없으면(FK 가 깨진 상태) — 조용히
- *   `#12` 같은 위조 글로벌 참조를 만들면 다른(진짜 글로벌) 엔티티를 가리키는 것과
+ *   `note-12` 같은 위조 참조를 만들면 다른(진짜 글로벌) 엔티티를 가리키는 것과
  *   구분이 안 돼 사고를 부르므로 명시적으로 실패시킨다.
  */
 export function refOf(
@@ -58,7 +87,7 @@ export function refOf(
   id: string,
 ): string {
   if (!boardId) {
-    return `#${number}`;
+    return `${GLOBAL_NOTE_PREFIX}-${number}`;
   }
   const key = store.boardKeyOf(boardId);
   if (key === undefined) {
@@ -67,18 +96,18 @@ export function refOf(
   if (!isRefSafeBoardKey(key)) {
     return id;
   }
-  return `${key}#${number}`;
+  return `${key}-${number}`;
 }
 
 /**
  * ref 가 board 컨텍스트(`currentBoardId`)를 실제로 소비하는 "맨숫자" 꼴인지 판별한다.
- * `TodoStore.resolveRef` 의 네 분기(`rocky#12` 스코프 / 맨숫자 / id 정확 일치 / id
- * prefix) 중 맨숫자 분기만 `currentBoardId` 를 쓴다 — 나머지 세 분기는 완전히
- * 무시한다. 그래서 `?board=`/MCP `board` 인자가 안 풀릴 때(오타 등) 에러를 던져야
- * 하는지는 ref 모양에 달려 있다: 스코프/id/id-prefix ref 에 안 풀리는 board 를 얹고
- * 무조건 던지면(과거 버그 — 리뷰에서 지적됨) `rocky#12` 를 그대로 복사해 쓰거나 raw
- * id 로 조회하는, board 컨텍스트가 애초에 필요 없는 요청까지 무관한 board 오타에
- * 막혀버린다. 판정 로직은 `resolveRef` 의 bare 정규식·길이 조건과 반드시 같아야
+ * `TodoStore.resolveRef` 의 다섯 분기(`rocky#12` 레거시 스코프 / `rocky-12` 신규 스코프 /
+ * 맨숫자 / id 정확 일치 / id prefix) 중 맨숫자 분기만 `currentBoardId` 를 쓴다 — 나머지
+ * 네 분기는 완전히 무시한다. 그래서 `?board=`/MCP `board` 인자가 안 풀릴 때(오타 등)
+ * 에러를 던져야 하는지는 ref 모양에 달려 있다: 스코프/id/id-prefix ref 에 안 풀리는
+ * board 를 얹고 무조건 던지면(과거 버그 — 리뷰에서 지적됨) `rocky-12` 를 그대로 복사해
+ * 쓰거나(옛 `rocky#12` 도 마찬가지) raw id 로 조회하는, board 컨텍스트가 애초에 필요
+ * 없는 요청까지 무관한 board 오타에 막혀버린다. 판정 로직은 `resolveRef` 의 bare 정규식·길이 조건과 반드시 같아야
  * 한다(짧은 순수 숫자는 번호, `ID_LENGTH` 이상 길이의 순수 숫자는 id/id-prefix 로
  * 갈리는 경계까지 포함) — 어긋나면 이 판별이 "board 없이도 되는 ref" 인데 던지거나,
  * 반대로 "board 가 꼭 필요한 ref" 인데 조용히 넘기는 새로운 wrong-row 구멍이 된다.

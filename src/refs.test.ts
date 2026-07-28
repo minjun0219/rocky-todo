@@ -161,9 +161,18 @@ describe('isRefSafeBoardKey', () => {
   test('빈 key 는 불안전', () => {
     expect(isRefSafeBoardKey('')).toBe(false);
   });
+
+  test('예약어 `note` 는 불안전 (전역 메모 참조와 충돌)', () => {
+    expect(isRefSafeBoardKey('note')).toBe(false);
+  });
+
+  test('`note` 로 시작할 뿐인 key 는 안전', () => {
+    expect(isRefSafeBoardKey('notes')).toBe(true);
+    expect(isRefSafeBoardKey('note-taking')).toBe(true);
+  });
 });
 
-describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)', () => {
+describe('refOf / withRef — 레거시 malformed board key 폴백 + 예약어 `note` board key (finding 1)', () => {
   let dir: string;
   let store: TodoStore;
 
@@ -249,24 +258,44 @@ describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)',
     expect(() => withRef(store, orphan)).toThrow(/board not found/);
   });
 
-  test('정상 board 는 영향 없음 — ref === "rocky#1" 이고 왕복된다', () => {
+  test('정상 board 는 영향 없음 — ref === "rocky-1" 이고 왕복된다', () => {
     const todo = store.createTodo({ board: 'rocky', title: '평범한 작업' }, 'tester');
 
     const view = withRef(store, todo);
-    expect(view.ref).toBe('rocky#1');
+    expect(view.ref).toBe('rocky-1');
 
     const resolved = store.getTodo(view.ref);
     expect(resolved?.id).toBe(todo.id);
   });
 
-  test('글로벌 note 는 여전히 `#N` 을 받는다', () => {
+  test('글로벌 note 는 `note-N` 을 받는다', () => {
     const note = store.createNote({ title: '글로벌 메모' }, 'tester');
 
     const view = withRef(store, note);
-    expect(view.ref).toBe(`#${note.number}`);
+    expect(view.ref).toBe(`note-${note.number}`);
 
     const resolved = store.getNote(view.ref);
     expect(resolved?.id).toBe(note.id);
+  });
+
+  /**
+   * `note` 는 legacy 가 아니다 — `ensureBoard` 는 `note` 라는 key 의 board 생성을 막지
+   * 않는다(레포 이름이 `note` 인 사용자를 브릭시키지 않으려는 의도적 설계, `api`/`mcp`
+   * 와 같은 원칙). 그래서 위의 malformed-key 테스트들과 달리 `seedLegacyBoard` 로 옛
+   * 상태를 흉내낼 필요가 없다 — public API(`createTodo`)만으로 지금 바로 재현된다.
+   *
+   * `note-3` 이 항상 전역 메모를 가리킨다는 보장은 이제 전적으로
+   * `isRefSafeBoardKey('note') === false`(`src/refs.ts`) 하나에 달려 있다 — `refOf` 가
+   * 이 predicate 를 보고 `note` 보드의 항목에는 `note-N` 대신 raw id 를 낸다. "board key
+   * 가 `note` 인 사례는 흔치 않으니 정리해도 되지 않나" 하고 이 분기를 지우면, 그 순간
+   * `note` 보드의 todo 와 진짜 전역 메모가 같은 ref 를 공유하게 된다 — 지우면 안 된다.
+   */
+  test('`note` board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다 (전역 note-N 과 충돌 방지)', () => {
+    const todo = store.createTodo({ board: 'note', title: 'note 보드 작업' }, 'tester');
+
+    const view = withRef(store, todo);
+    expect(view.ref).toBe(todo.id);
+    expect(store.getTodo(view.ref)?.id).toBe(todo.id);
   });
 });
 
@@ -298,7 +327,7 @@ describe('withRef comment stats', () => {
   test('note view is unaffected', () => {
     const note = store.createNote({ board: 'rocky', title: '메모' }, 'logan');
     const view = withRef(store, note);
-    expect(view.ref).toBe(`rocky#${note.number}`);
+    expect(view.ref).toBe(`rocky-${note.number}`);
     expect('commentCount' in view).toBe(false);
   });
 });

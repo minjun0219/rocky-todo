@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -264,7 +265,28 @@ describe('createIssueForTodo', () => {
     expect(store.getTodo(todo.id)?.links).toHaveLength(1);
     // 본문에 설명과 백링크가 함께 들어간다
     expect(run.calls[0]?.stdin).toContain('설명');
-    expect(run.calls[0]?.stdin).toContain(`rocky#${todo.number}`);
+    expect(run.calls[0]?.stdin).toContain(`rocky-${todo.number}`);
+  });
+
+  // refOf 가 board 참조를 만든다 — 공백이 섞인 legacy board key(`ensureBoard` 를 거치지
+  // 않은 구버전 데이터, seedLegacyBoard 로 재현)는 `isRefSafeBoardKey` 를 통과하지 못해
+  // `<key>#<number>`/`<key>-<number>` 대신 todo 의 raw id 로 폴백한다. 손으로 문자열을
+  // 이어붙이면(예전 코드) `my repo#1` 처럼 resolveRef 가 되읽지 못하는 참조가 이슈 본문에
+  // 영구히 남는다 — 이 테스트는 그 회귀를 막는다.
+  test('legacy board key 에 공백이 있으면 이슈 본문은 raw id 로 폴백한다', () => {
+    const raw = new Database(join(dir, 'todo.db'));
+    raw
+      .query('INSERT INTO boards (id, key, title, created_at) VALUES (?, ?, ?, ?)')
+      .run('legacy-space-board', 'my repo', 'my repo', new Date().toISOString());
+    raw.close();
+    store.setBoardRepo('my repo', 'o/n', 'tester');
+    const todo = store.createTodo({ board: 'my repo', title: '작업' }, 'tester');
+    const run = fakeRun({ code: 0, stdout: 'https://github.com/o/n/issues/7\n', stderr: '' });
+
+    createIssueForTodo(store, todo.id, { actor: 'tester', run });
+
+    expect(run.calls[0]?.stdin).toContain(todo.id);
+    expect(run.calls[0]?.stdin).not.toContain('my repo#1');
   });
 
   test('refuses when the board has no repo', () => {

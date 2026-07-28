@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { withRef } from './refs';
 import { TodoStore } from './store';
 import { buildPath } from './ui/route';
 
@@ -48,15 +49,36 @@ describe('boards', () => {
     expect(board.title).toBe('로키 보드');
   });
 
-  // finding: board key 가 공백/`#` 를 포함하면 서버가 스스로 만든 스코프 ref
-  // (`refOf` → `<key>#<number>`) 를 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)
-  // 이 못 읽어 조용히 undefined 로 끝난다. 조용한 wrong-row 대신 생성 시점에 막는다.
+  // finding: board key 가 공백/`#` 를 포함하면 `refOf` 가 만드는 신규 스코프 ref
+  // (`<key>-<number>`) 를 `resolveRef` 의 신규 스코프 정규식(`^(\S+)-(\d+)$`) 이 못 읽어
+  // 조용히 undefined 로 끝난다(공백 있는 key 는 애초에 `\S+` 에 안 걸리고, `#` 있는 key 는
+  // 레거시 분기가 먼저 먹어 다른 뜻이 된다). 조용한 wrong-row 대신 생성 시점에 막는다.
   test('ensureBoard rejects a key containing whitespace', () => {
     expect(() => store.ensureBoard('my repo', { actor: 'tester' })).toThrow(/whitespace/);
   });
 
   test("ensureBoard rejects a key containing '#'", () => {
     expect(() => store.ensureBoard('a#b', { actor: 'tester' })).toThrow(/#/);
+  });
+
+  // `note` 는 전역 메모 참조(`note-3`)의 예약 접두사지만, board key 는 레포 이름에서
+  // 유추되는 값이라(`boardKeyFrom`, `src/actor.ts`) `api`/`mcp` 와 같은 원칙으로 생성을
+  // 막지 않는다 — 레포 이름이 정말 `note` 인 사용자를 브릭시킬 이유가 없다. 대신
+  // `isRefSafeBoardKey('note') === false` 라 `refOf` 가 이 보드의 항목에는 `note-N` 대신
+  // raw id 를 낸다 — `note-3` 은 board 존재 여부와 무관하게 늘 전역 메모를 가리킨다는
+  // 계약(`resolveRef` 의 예약 접두사 분기)은 그대로 지켜진다.
+  test('ensureBoard accepts the key "note" and its items serialize to a raw id', () => {
+    const board = store.ensureBoard('note', { actor: 'tester' });
+    expect(board.key).toBe('note');
+    const todo = store.createTodo({ board: 'note', title: '작업' }, 'tester');
+    expect(withRef(store, todo).ref).toBe(todo.id);
+  });
+
+  // 예약어는 정확히 일치할 때만이다 — `notes`/`note-taking` 은 멀쩡한 보드 이름이고
+  // `notes-1` 은 greedy 파싱이 보드 `notes` 로 정확히 읽는다.
+  test('ensureBoard allows keys that merely start with "note"', () => {
+    expect(() => store.ensureBoard('notes', { actor: 'tester' })).not.toThrow();
+    expect(() => store.ensureBoard('note-taking', { actor: 'tester' })).not.toThrow();
   });
 
   test('ensureBoard rejects an empty key', () => {
@@ -692,8 +714,10 @@ describe('참조 해석', () => {
 
   // finding A: sanitizeKey(src/actor.ts) 는 `[a-zA-Z0-9_-]` 를 보존하므로 대문자로
   // 시작하거나(`MyProject`) `_`/`-` 로 시작하는(`_private`) board key 도 나올 수 있다.
-  // 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에 복사하는 값이라,
-  // resolveRef 가 이 형태를 못 읽으면 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다.
+  // 이 테스트는 레거시 입력(`board#N`)이 여전히 파싱되는지를 고정한다 — 지금 `refOf` 가
+  // 실제로 내보내는 형태는 `MyProject-1`(신규 스코프)이고 웹 UI 가 클립보드에 복사하는
+  // 것도 그 값이지만, 레거시 `#` 표기도 입력으로는 계속 받아야 하므로 resolveRef 가 이
+  // 형태를 못 읽으면 안 된다.
   test('대문자로 시작하는 board key 의 board#N 참조가 resolve 된다', () => {
     store.ensureBoard('MyProject', { actor: 'tester' });
     const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
@@ -708,6 +732,73 @@ describe('참조 해석', () => {
     // 참조를 제품이 못 먹는 정도가 아니라 크래시까지 났다).
     expect(() => store.getTodo('_private#1')).not.toThrow();
     expect(store.getTodo('_private#1')?.id).toBe(t.id);
+  });
+
+  // 레거시 `#` 표기는 대문자 시작/밑줄 시작 board key 에 대한 회귀 테스트를 갖고 있었지만
+  // (finding A, 바로 위 두 테스트), 신규 `-` 표기는 그런 커버리지가 없었다. 둘 다 오늘은
+  // 문제없이 왕복하지만(대문자는 board 조회가 그대로 대소문자 구분, `_` 는 이 분기가
+  // wildcard 가드보다 먼저 매칭돼 안전) — 회귀로 굳힌다.
+  test('대문자로 시작하는 board key 의 신규 표기(board-N)가 resolve 된다', () => {
+    store.ensureBoard('MyProject', { actor: 'tester' });
+    const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
+    expect(store.getTodo('MyProject-1')?.id).toBe(t.id);
+  });
+
+  test('밑줄로 시작하는 board key 의 신규 표기(board-N)가 resolve 된다 — id-prefix 와일드카드 가드를 타지 않는다', () => {
+    store.ensureBoard('_private', { actor: 'tester' });
+    const t = store.createTodo({ board: '_private', title: '대상' }, 'tester');
+    expect(() => store.getTodo('_private-1')).not.toThrow();
+    expect(store.getTodo('_private-1')?.id).toBe(t.id);
+  });
+
+  test('rocky-12 형태(신규 표기)로 보드를 지정해 찾는다', () => {
+    const t = store.createTodo({ board: 'rocky', title: '신규 표기' }, 'tester');
+    expect(store.getTodo(`rocky-${t.number}`)?.id).toBe(t.id);
+  });
+
+  // board key 에 `-` 가 흔하다(`rocky-todo`). greedy 파싱이 **가장 오른쪽** `-` 에서
+  // 갈라야 `rocky-todo-1` 이 보드 `rocky-todo` 의 1번으로 읽힌다 — 왼쪽에서 자르면
+  // 존재하지 않는 보드 `rocky` 를 찾다 undefined 가 된다.
+  test('board key 에 `-` 가 있어도 가장 오른쪽 `-` 에서 갈린다', () => {
+    const t = store.createTodo({ board: 'rocky-todo', title: '하이픈 보드' }, 'tester');
+    expect(store.getTodo(`rocky-todo-${t.number}`)?.id).toBe(t.id);
+  });
+
+  test('없는 보드를 가리키는 신규 표기는 undefined 다', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(store.getTodo('no-such-board-1')).toBeUndefined();
+  });
+
+  // 회귀: board key 에 `_` 가 섞여 있으면(`sanitizeKey` 가 보존하는 문자, `_private` 처럼
+  // 실사용 사례가 있다) `-` 로 못 찾은 board 를 id/id-prefix 분기로 흘려보낼 때 `_` 가 SQL
+  // LIKE 와일드카드로 해석돼 `invalid id prefix` 를 던졌다 — 같은 뜻의 레거시 `#` 표기는
+  // undefined 였는데 신규 표기만 다른 종류의 실패(400 대신 크래시성 에러)를 냈다. 두
+  // 표기가 같은 결과를 내야 한다.
+  test('없는 `_` 섞인 board 를 가리키면 두 표기(`-`/`#`) 모두 던지지 않고 undefined 다', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(() => store.getTodo('my_board-1')).not.toThrow();
+    expect(store.getTodo('my_board-1')).toBeUndefined();
+    expect(() => store.getTodo('my_board#1')).not.toThrow();
+    expect(store.getTodo('my_board#1')).toBeUndefined();
+  });
+
+  // `note-N` 은 언제나 전역 메모 번호 공간이다 — 보드 컨텍스트를 줘도 무시한다.
+  test('note-N 은 전역 메모를 가리키고 board 컨텍스트를 무시한다', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    const globalNote = store.createNote({ title: '전역 메모' }, 'tester');
+    expect(store.getNote(`note-${globalNote.number}`)?.id).toBe(globalNote.id);
+    expect(store.getNote(`note-${globalNote.number}`, board.id)?.id).toBe(globalNote.id);
+  });
+
+  test('note-N 은 todos 에서는 풀리지 않는다 (전역 todo 번호 공간은 없다)', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(store.getTodo('note-1')).toBeUndefined();
+  });
+
+  // 구 표기는 입력으로 계속 받는다 — 대화·댓글·히스토리에 이미 박혀 있다.
+  test('구 표기 rocky#12 는 계속 풀린다', () => {
+    const t = store.createTodo({ board: 'rocky', title: '구 표기' }, 'tester');
+    expect(store.getTodo(`rocky#${t.number}`)?.id).toBe(t.id);
   });
 });
 
@@ -859,7 +950,7 @@ describe('handoffs', () => {
 
     const claimed = store.claimHandoff('sess-1', 'stop');
     expect(claimed?.todoTitle).toBe('첫째');
-    expect(claimed?.todoRef).toBe('rocky-todo#1');
+    expect(claimed?.todoRef).toBe('rocky-todo-1');
     expect(claimed?.remaining).toBe(1);
     expect(claimed?.handoff.status).toBe('delivered');
     expect(claimed?.handoff.deliveredVia).toBe('stop');
