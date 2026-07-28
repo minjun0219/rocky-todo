@@ -180,8 +180,12 @@
   inset: 0;
 }
 
-/* ── doing badge — 두 대기의 온도 ─────────────────── */
-
+/*
+ * ── 행위자 온도 마커 — 두 대기 ──────────────────────
+ * `tone-${actorTone(actor)}` 동적 조합으로 붙는다(TodoItem 뱃지, Timeline 의
+ * 히스토리 점·작성자). 동적이라 Tailwind 정적 스캔이 못 잡으므로 유틸이 아닌
+ * CSS 로 남는다 — 죽은 셀렉터 grep 에도 리터럴이 안 걸리니 지우지 말 것.
+ */
 .tone-warm {
   color: var(--warm);
 }
@@ -190,6 +194,9 @@
   color: var(--cool);
 }
 
+/*
+ * ── 마크다운 렌더 — 후손 셀렉터(code/a)라 유틸로 표현하지 않고 존치 ──
+ */
 .md-line {
   margin: 0 0 4px;
   overflow-wrap: anywhere;
@@ -218,5 +225,3 @@
     }
   }
 }
-
-/* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */

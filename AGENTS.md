@@ -10,7 +10,7 @@ AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo �
 
 **rocky-todo** — rocky 의 동반 Claude Code 플러그인(별도 레포). 시스템 유일 상주 데몬
 (127.0.0.1:8636, `bun:sqlite`)이 공유 todo/스크래치패드 보드를 들고, 네 표면을 서빙한다:
-`/` React 웹 UI(Bun fullstack 자동 번들 + SSE 실시간), `/api/*` REST, `/api/events` SSE,
+`/` React 웹 UI(기동 시 Bun.build 번들 → 정적 서빙 + SSE 실시간), `/api/*` REST, `/api/events` SSE,
 `/mcp` streamable HTTP MCP(5도구 `todo_list` / `todo_write` / `todo_status` / `note_list` /
 `note_write`). CLI(`rocky-todo`, `bin/rocky-todo` → `src/cli.ts`)는 얇은 HTTP 클라이언트로
 데몬을 온디맨드 자동 기동한다. **이 플러그인 설치가 곧 활성화** — `todo.enabled` 스위치는
@@ -38,7 +38,7 @@ rocky-todo/
 ├── tsconfig.json / biome.json
 ├── bin/rocky-todo                  # #!/usr/bin/env bun → src/cli.ts 의 runCli
 ├── src/
-│   ├── daemon.ts                   # Bun fullstack 진입 — 단일 인스턴스 가드 + / + /api/* + /mcp + '/*' fallback(퍼머링크)
+│   ├── daemon.ts                   # 데몬 진입 — 단일 인스턴스 가드 + 기동 시 UI 번들(ui/build.ts) + / + /api/* + /mcp + '/*' fallback(퍼머링크)
 │   ├── server.ts                   # buildTodoServer — REST 라우트 + SSE 허브 (DI)
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
 │   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 댓글 + 아카이브 + history + change 이벤트
@@ -55,7 +55,7 @@ rocky-todo/
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
 │   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
 │   ├── local-request.ts            # 요청 출처 판별(루프백 + 프록시 헤더 없음) — 이슈 생성 게이트
-│   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
+│   ├── ui/                         # React 웹 UI — index.html + main.tsx + build.ts(Bun.build+Tailwind, 기동 시 1회) + styles.css(토큰·존치분만, 스타일은 Tailwind 유틸) + zustand store + route.ts + components/
 │   │   ├── happydom.ts             # 렌더 테스트 preload (GlobalRegistrator) — test:dom 에서만 로드
 │   │   └── test-support.tsx        # 렌더 테스트 픽스처/헬퍼 (todoFixture / boardFixture / renderWithStore)
 │   └── *.test.ts(x)                # 순수 실행(.ts) / happy-dom 렌더 실행(.tsx) — 확장자가 실행 모드를 가른다
@@ -147,7 +147,9 @@ rocky-todo/
 - **Imports**: `.js`/`.ts` 확장자 붙이지 않는다 (`moduleResolution: Bundler`). 모두 상대경로.
 - **ESM safety**: `__dirname` 금지. `import.meta.dir` / `import.meta.url` 사용.
 - **Dependencies**: 최소화. 현재 prod-dep: `@modelcontextprotocol/sdk`(MCP), `react`+`react-dom`+
-  `zustand`(웹 UI — Bun fullstack 이 서빙 시 자동 번들, 데몬 전용), `zod`(MCP 툴 스키마).
+  `zustand`(웹 UI, 데몬 전용), `zod`(MCP 툴 스키마), `tailwindcss`+`bun-plugin-tailwind`
+  (기동 시 번들 — 자동 번들 경로에선 클래스 스캔이 안 돼 Bun.build 로 명시 호출),
+  `@radix-ui/react-dialog`(드로어 셸 — 포커스 트랩/aria).
   `bun:sqlite`/`bun:test` 는 내장. HTTP 는 Bun native `fetch`. 신규 런타임 dep 은 별도 논의.
 - **Tests**: 테스트는 소스 옆에 두고 `bun run test`. fs 의존 테스트는 `mkdtempSync` 로 격리.
   **확장자가 실행 모드를 가른다** — `*.test.ts` 는 순수 실행(DOM 없음), `*.test.tsx` 는

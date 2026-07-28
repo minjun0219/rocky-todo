@@ -328,9 +328,11 @@ mono 마이크로라벨은 자간을 넓힌다(`0.14em`~`0.22em`). 대문자 mon
 2. **반경이 8종이다** — §5 의 다섯으로 수렴시켜야 한다
 3. **mono 가 무개성이다** — `ui-monospace` 는 OS 기본값이다. 번들 가변 mono 하나가
    구조 전체의 인상을 바꾼다 (조건: 가변 woff2, 오픈 라이선스, tabular 숫자)
-4. **컴포넌트 스타일링이 손으로 쓴 CSS 1100줄이다** — Tailwind + Radix 도입 검토는
-   `docs/superpowers/specs/2026-07-28-tailwind-shadcn-design.md` 참고. 도입하더라도 이
-   문서의 규칙이 상위다
+
+~~4. 컴포넌트 스타일링이 손으로 쓴 CSS 1100줄이다~~ — **해소(2026-07-28)**: Tailwind v4
+유틸 + Radix Dialog(드로어)로 이관 완료. `styles.css` 는 227줄(토큰·리셋·존치분)만 남았고,
+도입 spec 은 `docs/superpowers/specs/2026-07-28-tailwind-shadcn-design.md`. 이 문서의
+규칙이 여전히 상위다 — 유틸을 쓰더라도 값은 §2~§5 에서 나온다
 
 ---
 
