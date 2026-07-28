@@ -30,9 +30,11 @@ export interface NoteView extends Note {
  * 보드에 속하지 않는 글로벌 메모의 참조 접두사 — `note-3`.
  *
  * 구분자가 `-` 가 되면서 접두사 없는 참조를 `-3` 으로 쓸 수 없게 됐다(음수로 읽힌다).
- * 그래서 전역 번호 공간에 이름을 붙였다. 이 접두사는 **예약어**다: `note` 라는 이름의
- * 보드를 새로 만들 수 없고(`TodoStore.ensureBoard`), `note-N` 은 board 컨텍스트와
- * 무관하게 언제나 전역 메모를 가리킨다(`TodoStore.resolveRef`).
+ * 그래서 전역 번호 공간에 이름을 붙였다. 이 접두사는 **예약어**다: `note-N` 은 board
+ * 컨텍스트와 무관하게 언제나 전역 메모를 가리킨다(`TodoStore.resolveRef`). `note` 라는
+ * 이름의 board 자체는 막지 않는다(`TodoStore.ensureBoard` — board key 는 레포 이름에서
+ * 유추되는 값이라 `api`/`mcp` 처럼 생성을 막지 않는 게 원칙이다) — 대신 그 보드의 항목은
+ * {@link isRefSafeBoardKey} 가 걸러 `refOf` 가 `note-N` 대신 raw id 를 내보낸다.
  *
  * `store.ts` 가 이 값을 import 해도 순환이 되지 않는다 — 이 모듈은 store 에서
  * **타입만** 가져오기 때문이다(파일 상단 주석 참고).
@@ -51,11 +53,12 @@ export const GLOBAL_NOTE_PREFIX = 'note';
  * - `note` — 전역 메모 참조({@link GLOBAL_NOTE_PREFIX})의 예약 접두사라, 이 키로
  *   `note-1` 을 내보내면 전역 메모 1번과 구분되지 않는 참조가 된다.
  *
- * `ensureBoard` 는 board key 검증을 **새 보드 생성**에만 적용한다(`src/store.ts`) — 검증
- * 도입 전 구버전 데몬이 `my repo` 나 `note` 같은 키로 만들어둔 보드는 조회로 계속
- * 살아남는다. 그런 레거시 보드의 항목에 `refOf` 가 스스로 못 읽는(혹은 다른 행을 가리키는)
- * ref 를 내보내면 웹 UI 가 그대로 보여주고 복사해도 붙여넣기가 어긋난다 — 이 predicate 로
- * 그 경우를 감지해 `refOf` 가 raw id 로 폴백하게 한다.
+ * `ensureBoard` 는 공백/`#` 를 포함하는 key 는 **새 보드 생성**에서만 막는다(`src/store.ts`)
+ * — 검증 도입 전 구버전 데몬이 `my repo` 같은 키로 만들어둔 보드는 조회로 계속 살아남는다.
+ * `note` 는 다르다: 레포 이름에서 유추되는 값이라 생성 자체는 지금도 막지 않고(`api`/`mcp`
+ * 와 같은 원칙), 대신 이 predicate 가 매번 걸러 `refOf` 가 raw id 로 폴백하게 한다. 두
+ * 경우 모두, 그런 보드의 항목에 `refOf` 가 스스로 못 읽는(혹은 다른 행을 가리키는) ref 를
+ * 내보내면 웹 UI 가 그대로 보여주고 복사해도 붙여넣기가 어긋난다 — 그 사고를 막는다.
  */
 export function isRefSafeBoardKey(key: string): boolean {
   return key !== '' && !/[#\s]/.test(key) && key !== GLOBAL_NOTE_PREFIX;

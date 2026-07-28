@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { withRef } from './refs';
 import { TodoStore } from './store';
 import { buildPath } from './ui/route';
 
@@ -59,10 +60,17 @@ describe('boards', () => {
     expect(() => store.ensureBoard('a#b', { actor: 'tester' })).toThrow(/#/);
   });
 
-  // `note` 는 전역 메모 참조(`note-3`)의 예약 접두사다 — 같은 이름의 보드가 생기면
-  // `note-3` 이 두 행(전역 메모 3번 / 그 보드의 3번)을 가리키는 모호한 참조가 된다.
-  test('ensureBoard rejects the reserved key "note"', () => {
-    expect(() => store.ensureBoard('note', { actor: 'tester' })).toThrow(/reserved/i);
+  // `note` 는 전역 메모 참조(`note-3`)의 예약 접두사지만, board key 는 레포 이름에서
+  // 유추되는 값이라(`boardKeyFrom`, `src/actor.ts`) `api`/`mcp` 와 같은 원칙으로 생성을
+  // 막지 않는다 — 레포 이름이 정말 `note` 인 사용자를 브릭시킬 이유가 없다. 대신
+  // `isRefSafeBoardKey('note') === false` 라 `refOf` 가 이 보드의 항목에는 `note-N` 대신
+  // raw id 를 낸다 — `note-3` 은 board 존재 여부와 무관하게 늘 전역 메모를 가리킨다는
+  // 계약(`resolveRef` 의 예약 접두사 분기)은 그대로 지켜진다.
+  test('ensureBoard accepts the key "note" and its items serialize to a raw id', () => {
+    const board = store.ensureBoard('note', { actor: 'tester' });
+    expect(board.key).toBe('note');
+    const todo = store.createTodo({ board: 'note', title: '작업' }, 'tester');
+    expect(withRef(store, todo).ref).toBe(todo.id);
   });
 
   // 예약어는 정확히 일치할 때만이다 — `notes`/`note-taking` 은 멀쩡한 보드 이름이고

@@ -532,9 +532,6 @@ export class TodoStore {
     if (key.includes('#')) {
       throw new Error(`board key must not contain '#': ${JSON.stringify(key)}`);
     }
-    if (key === GLOBAL_NOTE_PREFIX) {
-      throw new Error(`board key ${JSON.stringify(key)} is reserved for global note refs (note-N)`);
-    }
     const board: Board = {
       id: newId(),
       key,

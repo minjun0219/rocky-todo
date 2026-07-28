@@ -107,8 +107,11 @@ rocky-todo/
   **가장 오른쪽** `-` 에서 갈린다(`rocky-todo-1` = 보드 `rocky-todo` 의 1번). 옛 표기
   `rocky#12`/`#12` 는 **입력으로만** 계속 받는다 — 제품이 내보내는 문자열은 전부 `-`
   형태다. notes 만 board 없이도 존재할 수 있어(글로벌 메모) 전역 번호 공간을 따로 갖고
-  예약 접두사를 붙여 `note-3` 으로 렌더된다 — `note` 는 새 보드 key 로 쓸 수 없고,
-  `note-N` 은 board 인자와 무관하게 늘 전역 메모다. todos 는 항상 보드에 속하므로 보드
+  예약 접두사를 붙여 `note-3` 으로 렌더된다 — `note-N` 은 board 인자와 무관하게 늘
+  전역 메모다. `note` 도 board key 로 만들 수 있다(`api`/`mcp` 와 같은 원칙 — board key 는
+  레포 이름에서 유추되는 값이라 생성을 막지 않는다). 다만 `isRefSafeBoardKey('note') ===
+  false` 라 그 보드의 항목은 `refOf` 가 `note-N` 대신 raw id 로 폴백한다. todos 는 항상
+  보드에 속하므로 보드
   컨텍스트 없는 맨숫자는 에러다. 번호는 보드 안에서 `MAX(number)+1` 로 발급되어
   아카이브해도 회수(재사용)되지 않는다. **댓글은 이 번호 체계 밖이다** — 보드별
   순번 없이 댓글 id 로만 지정한다(`PATCH /api/comments/:id` 등). mutation 은 부모 todo 의
