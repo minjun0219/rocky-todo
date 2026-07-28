@@ -59,6 +59,19 @@ describe('boards', () => {
     expect(() => store.ensureBoard('a#b', { actor: 'tester' })).toThrow(/#/);
   });
 
+  // `note` 는 전역 메모 참조(`note-3`)의 예약 접두사다 — 같은 이름의 보드가 생기면
+  // `note-3` 이 두 행(전역 메모 3번 / 그 보드의 3번)을 가리키는 모호한 참조가 된다.
+  test('ensureBoard rejects the reserved key "note"', () => {
+    expect(() => store.ensureBoard('note', { actor: 'tester' })).toThrow(/reserved/i);
+  });
+
+  // 예약어는 정확히 일치할 때만이다 — `notes`/`note-taking` 은 멀쩡한 보드 이름이고
+  // `notes-1` 은 greedy 파싱이 보드 `notes` 로 정확히 읽는다.
+  test('ensureBoard allows keys that merely start with "note"', () => {
+    expect(() => store.ensureBoard('notes', { actor: 'tester' })).not.toThrow();
+    expect(() => store.ensureBoard('note-taking', { actor: 'tester' })).not.toThrow();
+  });
+
   test('ensureBoard rejects an empty key', () => {
     expect(() => store.ensureBoard('', { actor: 'tester' })).toThrow(/empty/);
   });
