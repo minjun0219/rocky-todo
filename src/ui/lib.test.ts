@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { DETAIL_HISTORY_EXCLUDED as STORE_DETAIL_HISTORY_EXCLUDED } from '../store';
 import type { Comment, HistoryEntry } from '../store';
 import {
+  boardCommand,
   COPY_FEEDBACK_MS,
   DETAIL_HISTORY_EXCLUDED,
   formatStamp,
@@ -361,5 +362,21 @@ describe('seen cursor', () => {
   test('readSeen ignores a non-object payload', () => {
     expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': '["a"]' }))).toEqual({});
     expect(readSeen(fakeStorage({ 'rocky-todo-seen-comments': 'null' }))).toEqual({});
+  });
+});
+
+describe('boardCommand', () => {
+  test('참조를 보드 스킬 슬래시 커맨드로 감싼다', () => {
+    expect(boardCommand('rocky-12')).toBe('/rocky-todo:board rocky-12');
+  });
+
+  test('글로벌 메모 참조도 같은 모양이다', () => {
+    expect(boardCommand('note-3')).toBe('/rocky-todo:board note-3');
+  });
+
+  // 레거시 malformed board key 의 항목은 ref 가 raw id 로 폴백한다(`refOf`) — 그것도
+  // 그대로 감싼다. 스킬은 raw id 도 참조 문법으로 받는다.
+  test('raw id 폴백 ref 도 그대로 감싼다', () => {
+    expect(boardCommand('921gvwnr')).toBe('/rocky-todo:board 921gvwnr');
   });
 });

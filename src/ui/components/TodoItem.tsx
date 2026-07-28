@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TodoView } from '../../server';
 import {
   actorTone,
+  boardCommand,
   copyRefWithFeedback,
   formatDue,
   formatElapsed,
@@ -34,7 +35,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
   // 리렌더가 걸리지 않아 배지 강조가 다음 refetch 까지 안 풀린다.
   const unread = hasUnreadComments(todo, seenComments);
 
-  const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
+  const handleCopyRef = () => copyRefWithFeedback(boardCommand(todo.ref), setCopied);
 
   return (
     <div
@@ -58,7 +59,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
         title={copied ? '복사됨' : `${todo.ref} 복사`}
         aria-label={copied ? '복사됨' : `${todo.ref} 복사`}
       >
-        {copied ? '✓' : `#${todo.number}`}
+        {copied ? '✓' : todo.number}
       </button>
       <button type="button" className="todo-title" onClick={() => void openTodoDetail(todo.id)}>
         {todo.title}

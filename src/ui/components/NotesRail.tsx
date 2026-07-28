@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { NoteView } from '../../server';
-import { copyRefWithFeedback, formatElapsed } from '../lib';
+import { boardCommand, copyRefWithFeedback, formatElapsed } from '../lib';
 import { useUiStore } from '../store';
 
 /** 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영. */
@@ -57,9 +57,9 @@ function NoteCard({ note }: { note: NoteView }) {
     void saveNote(note.id, { title, content });
   };
 
-  // 글로벌 메모는 note.ref 가 `#3` 처럼 보드 접두사 없이 오는데, copyRefWithFeedback 은
-  // 그 문자열을 그대로 복사하므로 별도 분기가 없다.
-  const handleCopyRef = () => copyRefWithFeedback(note.ref, setCopied);
+  // 글로벌 메모는 note.ref 가 `note-3` 으로 오고 보드 메모는 `rocky-3` 으로 온다 —
+  // 어느 쪽이든 boardCommand 가 그대로 감싸므로 별도 분기가 없다.
+  const handleCopyRef = () => copyRefWithFeedback(boardCommand(note.ref), setCopied);
 
   return (
     <div className={`note-card ${note.archivedAt ? 'is-archived' : ''}`}>
@@ -71,7 +71,7 @@ function NoteCard({ note }: { note: NoteView }) {
           title={copied ? '복사됨' : `${note.ref} 복사`}
           aria-label={copied ? '복사됨' : `${note.ref} 복사`}
         >
-          {copied ? '✓' : `#${note.number}`}
+          {copied ? '✓' : note.number}
         </button>
         <input
           className="note-title"

@@ -178,6 +178,21 @@ export async function copyRef(
   }
 }
 
+/** 보드 스킬의 슬래시 커맨드 이름 — 플러그인 `rocky-todo` 의 `skills/board`. */
+const BOARD_SKILL_COMMAND = '/rocky-todo:board';
+
+/**
+ * 참조를 클립보드에 넣을 슬래시 커맨드로 감싼다 — `rocky-12` → `/rocky-todo:board rocky-12`.
+ *
+ * 참조만 복사하면 세션에 붙여넣었을 때 에이전트가 "이 문자열로 뭘 하라는 건지" 를 모른다.
+ * 커맨드까지 함께 복사하면 붙여넣기 한 번이 곧 "이 항목을 맡아라" 가 된다. 화면에 보이는
+ * 글자는 참조 그대로 두고 클립보드 값만 넓히는 것이 요점이다 — 버튼에 커맨드 전문을
+ * 그리면 행이 읽히지 않는다.
+ */
+export function boardCommand(ref: string): string {
+  return `${BOARD_SKILL_COMMAND} ${ref}`;
+}
+
 /** copyRefWithFeedback 이 복사 성공 후 몇 ms 뒤에 copied 플래그를 지우는지 — 기존
  * TodoItem/NotesRail/DetailDrawer(todo·note) 네 호출부가 각각 하드코딩했던 1200ms 를
  * 여기 하나로 고정한다. */

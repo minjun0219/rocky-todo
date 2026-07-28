@@ -4,6 +4,7 @@ import { findIssueLink } from '../../github';
 import type { Comment, HistoryEntry } from '../../store';
 import {
   actorTone,
+  boardCommand,
   copyRefWithFeedback,
   formatElapsed,
   formatStamp,
@@ -116,7 +117,7 @@ function TodoDetail() {
     return null;
   }
 
-  const handleCopyRef = () => copyRefWithFeedback(todo.ref, setCopied);
+  const handleCopyRef = () => copyRefWithFeedback(boardCommand(todo.ref), setCopied);
   const boardSections = sections.filter((s) => s.boardId === todo.boardId);
 
   const pending = handoffs.find((h) => h.todoId === todo.id && h.status === 'pending');
@@ -613,9 +614,9 @@ function NoteDetail() {
     return null;
   }
 
-  // 글로벌 메모는 note.ref 가 `#3` 처럼 보드 접두사 없이 오는데, copyRefWithFeedback 은
-  // 그 문자열을 그대로 복사하므로 별도 분기가 없다.
-  const handleCopyRef = () => copyRefWithFeedback(note.ref, setCopied);
+  // 글로벌 메모는 note.ref 가 `note-3` 으로 오고 보드 메모는 `rocky-3` 으로 온다 —
+  // 어느 쪽이든 boardCommand 가 그대로 감싸므로 별도 분기가 없다.
+  const handleCopyRef = () => copyRefWithFeedback(boardCommand(note.ref), setCopied);
 
   return (
     <div className="drawer-body">

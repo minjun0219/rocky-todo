@@ -63,3 +63,21 @@ describe('TodoItem doing 배지', () => {
     expect(screen.getByTitle('처리중').textContent).toContain('claude-code');
   });
 });
+
+describe('TodoItem 참조 복사 버튼', () => {
+  test('클립보드에는 슬래시 커맨드가 들어가고 버튼에는 번호만 보인다', async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (t: string) => void written.push(t) },
+    });
+
+    mountItem(todoFixture({ number: 12, ref: 'rocky-12' }));
+
+    const button = screen.getByRole('button', { name: 'rocky-12 복사' });
+    expect(button.textContent).toBe('12');
+
+    await userEvent.click(button);
+    expect(written).toEqual(['/rocky-todo:board rocky-12']);
+  });
+});
