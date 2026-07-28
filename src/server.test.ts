@@ -470,6 +470,10 @@ describe('number / ref 직렬화', () => {
       const body = (await res.json()) as { error: string };
       expect(body.error).toMatch(/board context required/);
       expect(body.error).not.toMatch(/unknown board/);
+      // 안내 문구가 이 브랜치에서 없앤 `board#number` 표기가 아니라 현재 표기
+      // (`board-number`) 를 가리켜야 한다.
+      expect(body.error).toMatch(/use board-number/);
+      expect(body.error).not.toMatch(/board#number/);
     });
 
     test('board 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {

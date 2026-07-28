@@ -440,6 +440,10 @@ describe('number / ref 참조 문법', () => {
       )?.text;
       expect(text).toMatch(/board context required/);
       expect(text).not.toMatch(/unknown board/);
+      // 안내 문구가 이 브랜치에서 없앤 `board#number` 표기가 아니라 현재 표기
+      // (`board-number`) 를 가리켜야 한다.
+      expect(text).toMatch(/use board-number/);
+      expect(text).not.toMatch(/board#number/);
     });
 
     test('board 인자 없는 전역 메모 맨숫자 #N 은 그대로 전역 메모로 풀린다', async () => {

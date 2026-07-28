@@ -1696,7 +1696,7 @@ export class TodoStore {
               .get(Number(bare[2])) ?? undefined
           );
         }
-        throw new Error(`board context required to resolve ${trimmed} — use board#number`);
+        throw new Error(`board context required to resolve ${trimmed} — use board-number`);
       }
       return (
         this.db
