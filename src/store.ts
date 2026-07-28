@@ -147,7 +147,7 @@ export interface CreateSpawnedHandoffInput {
 /** claim 결과 — 훅이 주입문을 만드는 데 필요한 것을 한 번에 준다. */
 export interface ClaimedHandoff {
   handoff: Handoff;
-  /** `rocky-todo#11` 형태의 사람이 읽는 참조. */
+  /** `rocky-todo-11` 형태의 사람이 읽는 참조 (`refOf` 가 만든다). */
   todoRef: string;
   todoTitle: string;
   /** 이 세션 앞에 아직 남은 pending 건수. */
@@ -499,11 +499,30 @@ export class TodoStore {
   // ── boards ────────────────────────────────────────────────────────────────
 
   /**
-   * board key 를 만든다. `resolveRef` 의 스코프 ref 정규식(`^([^#\s]+)#(\d+)$`)이
-   * key 부분에서 공백과 `#` 를 허용하지 않으므로, 그 두 문자(부류)가 섞인 key 를
-   * 저장하면 `refOf` 가 만든 `<key>#<number>` 를 서버 스스로 못 읽는 모순이 생긴다
-   * (예: `my repo#1` → scoped 정규식 불일치 → `resolveRef` 가 undefined; `a#b#1` 도
-   * 동일). `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
+   * board key 를 만든다. `refOf`(`src/refs.ts`)는 이제 `<key>-<number>` 를 만든다.
+   * 공백/`#` 를 막는 이유는 두 문자가 서로 다르다 — 공백은 지금도 구조적으로 못 읽고,
+   * `#` 는 사실 dashed 분기가 제대로 읽는다(직접 검증함, 아래).
+   *
+   * - **공백**: `resolveRef` 의 신규 스코프 정규식(`^(\S+)-(\d+)$`)은 `\S+` 라 공백을
+   *   포함하는 key 는 애초에 매칭 자체가 안 된다(`my repo-1` → 불일치 → undefined). 이
+   *   문자는 여전히 구조적으로 안전하지 않다.
+   * - **`#`**: 겉보기엔 레거시 스코프 분기(`^([^#\s]+)#(\d+)$`)가 먼저 먹어 다른 뜻이
+   *   될 것 같지만, 실제로는 그렇지 않다 — `refOf` 가 항상 `<key>-<number>` 꼴로
+   *   `-<숫자>` 를 마지막에 붙이므로, key 안의 첫 `#` 뒤 나머지가 끝까지 순수 숫자여야
+   *   하는 레거시 정규식의 조건을 그 `-` 가 항상 깨뜨린다 — 즉 레거시 분기는 **절대
+   *   매칭되지 않는다**(예: `a#b-1` 에 대해 `scoped.exec()` 는 `null`). 대신 신규
+   *   dashed 분기가 오른쪽 끝 `-` 로 정확히 갈라 key `a#b` 를 찾아낸다 — 즉 board 가
+   *   실제로 존재한다면 `refOf` 가 만든 `#` 섞인 ref 는 지금도 올바르게 왕복된다.
+   *   그런데도 여전히 막는 이유는 정확성이 아니라 정책이다: {@link isRefSafeBoardKey}
+   *   (`src/refs.ts`, `note` 예약어와 같은 안전장치)가 `#` 섞인 key 를 이미 안전하지
+   *   않다고 걸러 `refOf` 가 절대 `<key>-<number>` 를 내보내지 않고 raw id 로만
+   *   폴백한다 — 그러니 `#` 섞인 새 board 를 허용해봤자 그 보드는 영원히 예쁜 번호
+   *   참조를 못 받는다(무용지물). 게다가 여전히 INPUT 으로 살아있는 레거시
+   *   `rocky#12` 표기, 그리고 `#` 를 그대로 쓰는 GitHub 이슈 번호 라벨(`src/github.ts`,
+   *   `src/ui/lib.ts`)과 시각적으로 겹쳐 사람이 헷갈리기 쉽다 — 그래서 생성 시점에
+   *   막아 애초에 그런 무용한 board 가 생기지 않게 한다.
+   *
+   * `sanitizeKey`(`src/actor.ts`)가 유추하는 key 는 이미 안전하지만, board 는
    * REST(`POST /api/boards`)·MCP(`todo_write`/`note_write` 의 `board`)로 직접
    * 들어오기도 해 여기서 한 번 더 막는다. 조용히 정규화(공백→`-` 치환 등)하지 않는다
    * — `my repo` 를 요청했는데 다른 이름의 보드가 말없이 만들어지면 더 혼란스럽다.

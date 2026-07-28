@@ -172,7 +172,7 @@ describe('isRefSafeBoardKey', () => {
   });
 });
 
-describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)', () => {
+describe('refOf / withRef — 레거시 malformed board key 폴백 + 예약어 `note` board key (finding 1)', () => {
   let dir: string;
   let store: TodoStore;
 
@@ -279,13 +279,19 @@ describe('refOf / withRef — 레거시 malformed board key 폴백 (finding 1)',
   });
 
   /**
-   * `ensureBoard` 의 예약어 검증은 CREATE 에만 걸린다 — 검증 도입 전에 만들어진 `note`
-   * 보드가 있을 수 있다. 그 보드의 항목에 `note-1` 을 내보내면 전역 메모 1번과 구분되지
-   * 않는 위조 참조가 되므로 raw id 로 폴백해야 한다.
+   * `note` 는 legacy 가 아니다 — `ensureBoard` 는 `note` 라는 key 의 board 생성을 막지
+   * 않는다(레포 이름이 `note` 인 사용자를 브릭시키지 않으려는 의도적 설계, `api`/`mcp`
+   * 와 같은 원칙). 그래서 위의 malformed-key 테스트들과 달리 `seedLegacyBoard` 로 옛
+   * 상태를 흉내낼 필요가 없다 — public API(`createTodo`)만으로 지금 바로 재현된다.
+   *
+   * `note-3` 이 항상 전역 메모를 가리킨다는 보장은 이제 전적으로
+   * `isRefSafeBoardKey('note') === false`(`src/refs.ts`) 하나에 달려 있다 — `refOf` 가
+   * 이 predicate 를 보고 `note` 보드의 항목에는 `note-N` 대신 raw id 를 낸다. "board key
+   * 가 `note` 인 사례는 흔치 않으니 정리해도 되지 않나" 하고 이 분기를 지우면, 그 순간
+   * `note` 보드의 todo 와 진짜 전역 메모가 같은 ref 를 공유하게 된다 — 지우면 안 된다.
    */
-  test('legacy `note` board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다', () => {
-    seedLegacyBoard('legacy-note-board', 'note');
-    const todo = store.createTodo({ board: 'note', title: '레거시 note 보드 작업' }, 'tester');
+  test('`note` board key: ref 는 raw id 로 폴백하고 getTodo(ref) 가 왕복된다 (전역 note-N 과 충돌 방지)', () => {
+    const todo = store.createTodo({ board: 'note', title: 'note 보드 작업' }, 'tester');
 
     const view = withRef(store, todo);
     expect(view.ref).toBe(todo.id);
