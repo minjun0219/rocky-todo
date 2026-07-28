@@ -82,9 +82,16 @@ prod dep 5 → 8. `lucide-react` 는 이번 범위 밖(미룬 것 참고).
 
 ## 알려진 함정
 
-- **`bunfig.toml` 은 `src/ui/` 에** — `daemon.ts` 가 `Bun.serve` 전에
-  `process.chdir(join(import.meta.dir, 'ui'))` 하므로 루트의 bunfig 는 못 찾는다.
-  `package.json` `files` 에 `src` 가 있어 배포엔 포함된다
+- **`bunfig.toml [serve.static]` 경로는 쓸 수 없다 (스파이크 실증, 2026-07-28)** —
+  런타임 HTML import 자동 번들에서 bun-plugin-tailwind 의 클래스 스캔이 돌지 않아
+  **유틸리티가 0개** 생성된다 (Bun 1.3.14 + plugin 0.0.15, `development` true/false 모두).
+  `Bun.build()` API 에 `plugins` 를 명시하면 전부 동작한다(유틸·`var()` 참조·`color-mix`
+  임의값). 따라서 데몬 서빙을 **시작 시 `Bun.build` 번들 + 정적 서빙**으로 바꾼다 —
+  "설치 후 빌드 스텝 없음"은 유지된다(지금도 시작 시 번들하며, 방식만 바뀐다).
+  부수 효과: `process.chdir(src/ui)` 와 그 이유였던 public path 문제가 사라진다
+- **preflight 금지** — `@import "tailwindcss"` 전체는 요소 리셋을 끌고 와 화면을 바꾼다.
+  `@layer` + `theme.css`/`utilities.css` 레이어 임포트만 쓴다 (스파이크로 검증 — 유틸은
+  다 나오고 요소 리셋은 안 들어온다)
 - **클래스 치환 시 시맨틱 클래스명이 사라진다** — DOM 테스트와 `main.tsx` 등에서
   `.todo-row` 같은 셀렉터를 쓰는 곳이 있다. `querySelector` 의존을 함께 정리하거나
   식별용 클래스만 남긴다 (계획 단계에서 전수 조사)
