@@ -105,9 +105,9 @@ function App() {
   }, [themePref, setThemePref]);
 
   return (
-    <div className="app">
+    <div className="app flex h-screen flex-col">
       <TopBar />
-      <div className="layout">
+      <div className="layout grid min-h-0 flex-1 grid-cols-[200px_1fr_300px] max-[900px]:flex max-[900px]:flex-col max-[900px]:overflow-y-auto max-[900px]:[-webkit-overflow-scrolling:touch]">
         <Sidebar />
         <TodoPane />
         <NotesRail />

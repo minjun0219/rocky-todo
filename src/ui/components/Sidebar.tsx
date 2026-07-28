@@ -40,11 +40,13 @@ export function Sidebar() {
   };
 
   return (
-    <nav className="sidebar">
-      <div className="sidebar-label">BOARDS</div>
+    <nav className="sidebar flex flex-col gap-0.5 overflow-y-auto border-r border-(--line) px-2.5 py-4 max-[900px]:shrink-0 max-[900px]:flex-row max-[900px]:flex-nowrap max-[900px]:items-center max-[900px]:gap-1.5 max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden max-[900px]:border-r-0 max-[900px]:border-b max-[900px]:px-3 max-[900px]:py-2">
+      <div className="sidebar-label px-2.5 pb-1.5 font-(family-name:--mono) text-[11px] tracking-[0.22em] text-(--faint) max-[900px]:hidden">
+        BOARDS
+      </div>
       <button
         type="button"
-        className={`board-item ${selected === 'all' ? 'is-active' : ''}`}
+        className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-(--muted) hover:bg-(--surface) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:shrink-0 max-[900px]:whitespace-nowrap ${selected === 'all' ? 'is-active bg-(--surface-2) font-semibold text-(--text)' : ''}`}
         onClick={() => setSelected('all')}
       >
         전체
@@ -53,17 +55,22 @@ export function Sidebar() {
         <button
           key={board.id}
           type="button"
-          className={`board-item ${selected === board.key ? 'is-active' : ''}`}
+          className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-(--muted) hover:bg-(--surface) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:shrink-0 max-[900px]:whitespace-nowrap ${selected === board.key ? 'is-active bg-(--surface-2) font-semibold text-(--text)' : ''}`}
           onClick={() => setSelected(board.key)}
         >
           {board.title}
-          {doingBoards.has(board.id) && <span className="doing-dot" title="처리중인 항목 있음" />}
+          {doingBoards.has(board.id) && (
+            <span
+              className="doing-dot size-1.5 rounded-full bg-(--warm) [animation:pulse_2.4s_ease-in-out_infinite]"
+              title="처리중인 항목 있음"
+            />
+          )}
         </button>
       ))}
       {adding ? (
-        <div className="board-add">
+        <div className="board-add py-0.5">
           <input
-            className="board-add-input"
+            className="board-add-input w-full rounded-md border border-(--warm-dim) bg-(--surface) px-2.5 py-1.5 text-[13px] text-(--text)"
             value={key}
             placeholder="보드 이름 (레포 이름 권장)"
             aria-label="새 보드 이름"
@@ -83,13 +90,20 @@ export function Sidebar() {
           />
           {/* 생성 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
           {error && (
-            <div className="board-add-error" role="alert">
+            <div
+              className="board-add-error px-0.5 pt-1 text-xs leading-[1.4] text-(--p1)"
+              role="alert"
+            >
               {error}
             </div>
           )}
         </div>
       ) : (
-        <button type="button" className="board-item board-add-open" onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          className="board-item board-add-open flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-(--faint) hover:bg-(--surface) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:shrink-0 max-[900px]:whitespace-nowrap"
+          onClick={() => setAdding(true)}
+        >
           + 새 보드
         </button>
       )}

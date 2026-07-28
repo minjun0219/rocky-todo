@@ -135,12 +135,6 @@
   }
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
 /* ── 공용 애니메이션 (topbar 링크 펄스·doing 점이 공유) ── */
 @keyframes pulse {
   0%,
@@ -150,63 +144,6 @@
   50% {
     opacity: 0.25;
   }
-}
-
-/* ── layout ─────────────────────────────────────── */
-
-.layout {
-  display: grid;
-  grid-template-columns: 200px 1fr 300px;
-  flex: 1;
-  min-height: 0;
-}
-
-/* ── sidebar ────────────────────────────────────── */
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 16px 10px;
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
-}
-
-.sidebar-label {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  color: var(--faint);
-  padding: 0 10px 6px;
-}
-
-.board-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  padding: 6px 10px;
-  border-radius: 6px;
-  color: var(--muted);
-}
-
-.board-item:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.board-item.is-active {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.doing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warm);
-  animation: pulse 2.4s ease-in-out infinite;
 }
 
 /* ── main pane ──────────────────────────────────── */
@@ -824,42 +761,21 @@ body.is-drawer-open {
   flex-shrink: 0;
 }
 
-/* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
-
+/*
+ * iOS Safari 의 동적 툴바 대응 — 모바일에서 100vh 대신 100dvh. dvh 미지원 브라우저는
+ * 위 h-screen(100vh)이 유지된다. @supports 중첩이라 유틸로 표현하지 않고 CSS 존치.
+ */
 @media (max-width: 900px) {
-  /* iOS Safari 의 동적 툴바 대응 — dvh 미지원 브라우저는 베이스의 100vh 유지 */
   @supports (height: 100dvh) {
     .app {
       height: 100dvh;
     }
   }
-  .layout {
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  /* 사이드바 → 가로 스크롤 보드 칩 행 */
-  .sidebar {
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    padding: 8px 12px;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .sidebar-label {
-    display: none;
-  }
-  .board-item {
-    white-space: nowrap;
-    flex-shrink: 0;
-    min-height: 44px;
-  }
+}
+
+/* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
+
+@media (max-width: 900px) {
   .todo-pane {
     padding: 14px 14px 6px;
     overflow-y: visible;
@@ -1022,31 +938,6 @@ body.is-drawer-open {
   font-weight: 700;
   margin: 4px 0 10px;
   line-height: 1.35;
-}
-
-.board-add-open {
-  color: var(--faint);
-}
-
-.board-add {
-  padding: 2px 0;
-}
-
-.board-add-input {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--warm-dim);
-  border-radius: 6px;
-  padding: 6px 10px;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.board-add-error {
-  color: var(--p1);
-  font-size: 12px;
-  line-height: 1.4;
-  padding: 4px 2px 0;
 }
 
 .drawer-section-pick {
