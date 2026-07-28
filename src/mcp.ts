@@ -46,13 +46,13 @@ const linkSchema = z.object({ url: z.string(), title: z.string().optional() });
  * `ref` 가 실제로 board 컨텍스트를 쓰는 맨숫자 꼴(`refNeedsBoardContext`)일 때만 에러를
  * 던진다. 그 경우 폴백을 허용하면 todos 는 우연히 "board context required" 로 에러가
  * 나지만(맨숫자가 전역 번호 공간이 없어서), notes 는 전역 메모 번호 공간으로 조용히
- * 재해석돼(`note_list { id: "#3", board: "typo-board" }` 가 board 없이 준 것처럼
- * GLOBAL note #3 을 반환) 엉뚱한 행을 조용히 돌려주게 된다.
+ * 재해석돼(`note_list { id: "3", board: "typo-board" }` 가 board 없이 준 것처럼
+ * GLOBAL note 3 을 반환) 엉뚱한 행을 조용히 돌려주게 된다.
  *
- * 반대로 `rocky#12`/raw id/id-prefix 처럼 board 컨텍스트를 아예 안 쓰는 `ref` 에는
+ * 반대로 `rocky-12`/raw id/id-prefix 처럼 board 컨텍스트를 아예 안 쓰는 `ref` 에는
  * 안 풀리는 `board` 를 무시한다 — `resolveRef` 의 스코프/id/id-prefix 세 분기가
  * `currentBoardId` 를 참조조차 안 하니, 이 값이 뭐든 결과에 영향이 없다. 안 풀린다고
- * 무조건 던지면(과거 버그) `rocky#12` 를 그대로 넘기면서 무관한 board 오타(또는 CLI 가
+ * 무조건 던지면(과거 버그) `rocky-12` 를 그대로 넘기면서 무관한 board 오타(또는 CLI 가
  * cwd 로 유추해 붙인, 아직 안 만들어진 보드 key)에 막혀버린다.
  */
 function resolveBoardId(
@@ -82,18 +82,18 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_list',
     {
       description:
-        '공유 todo 보드 조회. board 로 보드 하나, 생략 시 전체. id 를 주면 해당 todo 상세 + 히스토리, boards:true 면 보드 목록. 필터: status / label / includeArchived. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 조회하려면 board 를 함께 줘야 한다.',
+        '공유 todo 보드 조회. board 로 보드 하나, 생략 시 전체. id 를 주면 해당 todo 상세 + 히스토리, boards:true 면 보드 목록. 필터: status / label / includeArchived. id 는 참조 문법(12, rocky-12, id, id prefix)을 받는다 — 맨숫자 12 로 조회하려면 board 를 함께 줘야 한다. 옛 표기(#12, rocky#12)도 계속 받는다.',
       inputSchema: {
         board: z
           .string()
           .optional()
           .describe(
-            'board key (usually the repo name) — also scopes a bare #12 in id when id has no board prefix',
+            'board key (usually the repo name) — also scopes a bare 12 in id when id has no board prefix',
           ),
         id: z
           .string()
           .optional()
-          .describe('todo ref — number (#12), board-scoped (rocky#12), or raw id'),
+          .describe('todo ref — number (12), board-scoped (rocky-12), or raw id'),
         boards: z.boolean().optional().describe('true → list boards instead of todos'),
         status: z.enum(['todo', 'doing', 'done']).optional(),
         label: z.string().optional(),
@@ -131,19 +131,19 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_write',
     {
       description:
-        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 수정하려면 board 를 함께 줘야 한다. 진행 상황·중간 보고·사용자에게 묻고 싶은 것은 description 을 덮어쓰지 말고 comment 로 남긴다 — description 은 "이 할 일이 무엇인가"의 자리이고, comment 는 사용자와 주고받는 타임라인이다. createIssue: true 를 주면 이 todo 를 GitHub 이슈로 올리고 그 URL 을 links 에 붙인다 (보드에 repo 가 설정돼 있어야 한다).',
+        'todo 생성/수정. id 없으면 생성(board + title 필수), 있으면 부분 수정. section 은 이름으로 자동 upsert. links 에 GitHub 이슈 / Todoist URL 을 첨부해 맥락을 연결한다. 삭제는 없다 — todo_status 의 archive 를 쓴다. id 는 참조 문법(12, rocky-12, id, id prefix)을 받는다 — 맨숫자 12 로 수정하려면 board 를 함께 줘야 한다. 옛 표기(#12, rocky#12)도 계속 받는다. 진행 상황·중간 보고·사용자에게 묻고 싶은 것은 description 을 덮어쓰지 말고 comment 로 남긴다 — description 은 "이 할 일이 무엇인가"의 자리이고, comment 는 사용자와 주고받는 타임라인이다. createIssue: true 를 주면 이 todo 를 GitHub 이슈로 올리고 그 URL 을 links 에 붙인다 (보드에 repo 가 설정돼 있어야 한다).',
       inputSchema: {
         id: z
           .string()
           .optional()
           .describe(
-            'omit to create; todo ref — number (#12), board-scoped (rocky#12), or raw id — to patch',
+            'omit to create; todo ref — number (12), board-scoped (rocky-12), or raw id — to patch',
           ),
         board: z
           .string()
           .optional()
           .describe(
-            'board key — required when creating; also scopes a bare #12 in id when patching',
+            'board key — required when creating; also scopes a bare 12 in id when patching',
           ),
         title: z.string().optional().describe('required when creating'),
         description: z.string().optional().describe('markdown detail'),
@@ -242,10 +242,10 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'todo_status',
     {
       description:
-        'todo 상태 전이. start=처리 시작(누가 작업중인지 웹 UI 에 표시됨 — 작업 착수 시 반드시 호출), stop=중단, done=완료, reopen=재오픈, archive/unarchive=보관/복원. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다 — 맨숫자 #12 로 지정하려면 board 를 함께 줘야 한다.',
+        'todo 상태 전이. start=처리 시작(누가 작업중인지 웹 UI 에 표시됨 — 작업 착수 시 반드시 호출), stop=중단, done=완료, reopen=재오픈, archive/unarchive=보관/복원. id 는 참조 문법(12, rocky-12, id, id prefix)을 받는다 — 맨숫자 12 로 지정하려면 board 를 함께 줘야 한다. 옛 표기(#12, rocky#12)도 계속 받는다.',
       inputSchema: {
-        id: z.string().describe('todo ref — number (#12), board-scoped (rocky#12), or raw id'),
-        board: z.string().optional().describe('board key that scopes a bare #12 in id'),
+        id: z.string().describe('todo ref — number (12), board-scoped (rocky-12), or raw id'),
+        board: z.string().optional().describe('board key that scopes a bare 12 in id'),
         action: z.enum(['start', 'stop', 'done', 'reopen', 'archive', 'unarchive']),
         actor: actorSchema,
       },
@@ -265,20 +265,20 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'note_list',
     {
       description:
-        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모 목록. id 를 주면 상세 + 히스토리. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다. 주의: 맨숫자 #12 는 board 인자 유무로 완전히 다른 행을 가리킨다 — board 를 생략하면 전역(보드 미소속) 메모 번호 공간, board 를 주면 그 보드의 번호 공간이다. 웹 UI 가 보드 접두사 없이 보여주는 #N(전역 메모)을 그대로 조회하려면 board 를 절대 넘기지 않는다.',
+        '스크래치패드/메모 조회. board 로 보드 소속, global:true 로 보드 미소속 메모 목록. id 를 주면 상세 + 히스토리. id 는 참조 문법(note-3, rocky-12, 12, id, id prefix)을 받는다. 전역(보드 미소속) 메모는 note-N 으로 지정하는 것이 가장 안전하다 — 이 접두사는 예약어라 board 인자와 무관하게 늘 전역 메모를 가리킨다. 반면 맨숫자 12 는 board 인자 유무로 완전히 다른 행이 된다: board 를 생략하면 전역 번호 공간, 주면 그 보드의 번호 공간이다. 옛 표기(#12, rocky#12)도 계속 받는다.',
       inputSchema: {
         board: z
           .string()
           .optional()
           .describe(
-            'board key — scopes id to that board\'s number space. OMIT this when id is a prefix-less "#N" copied from the UI as a global note ref — passing board would resolve a different row (that board\'s own #N), not the global note',
+            "board key — scopes id to that board's number space. A global note ref (note-3) ignores this argument; prefer note-N over a bare number when you mean a global note",
           ),
         global: z.boolean().optional(),
         id: z
           .string()
           .optional()
           .describe(
-            "note ref — number (#12: resolves in the GLOBAL note space when board is omitted, or in board's space when board is given), board-scoped (rocky#12), or raw id",
+            "note ref — global note (note-3), board-scoped (rocky-12), bare number (12: GLOBAL note space when board is omitted, that board's space when board is given), or raw id",
           ),
         includeArchived: z.boolean().optional(),
       },
@@ -307,19 +307,19 @@ export function buildTodoMcpServer(options: TodoMcpOptions): McpServer {
     'note_write',
     {
       description:
-        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(#12, rocky#12, id, id prefix)을 받는다. 주의: 수정 시 맨숫자 #12 는 board 인자 유무로 완전히 다른 행을 가리킨다 — board 를 생략하면 전역(보드 미소속) 메모, board 를 주면 그 보드의 메모다. 웹 UI 가 보드 접두사 없이 보여주는 #N(전역 메모)을 그대로 archive/수정하려면 board 를 절대 넘기지 않는다 — 넘기면 그 보드의 같은 번호 메모가 대신 수정/보관된다(엉뚱한 행, 에러 없이 조용히).',
+        '스크래치패드/메모 작성. id 없으면 생성(title 필수), 있으면 수정. mode: set=content 교체(기본) / append=뒤에 이어붙임 / archive=보관 / unarchive=복원. 삭제는 없다. id 는 참조 문법(note-3, rocky-12, 12, id, id prefix)을 받는다. 전역(보드 미소속) 메모를 수정/보관하려면 note-N 으로 지정한다 — 예약 접두사라 board 인자와 무관하게 늘 전역 메모다. 맨숫자 12 는 board 인자 유무로 완전히 다른 행을 가리킨다: board 를 생략하면 전역 메모, 주면 그 보드의 같은 번호 메모가 대신 수정/보관된다(에러 없이 조용히). 옛 표기(#12, rocky#12)도 계속 받는다.',
       inputSchema: {
         id: z
           .string()
           .optional()
           .describe(
-            "omit to create; note ref — number (#12: GLOBAL note space when board is omitted, or board's space when board is given), board-scoped (rocky#12), or raw id — to update",
+            "omit to create; note ref — global note (note-3), board-scoped (rocky-12), bare number (12: GLOBAL note space when board is omitted, that board's space when board is given), or raw id — to update",
           ),
         board: z
           .string()
           .optional()
           .describe(
-            'omit for a global note when creating; when updating with a prefix-less "#N" id, OMIT this to target the global note space — passing board resolves that board\'s own #N instead (a different row)',
+            "omit for a global note when creating; when updating, a note-N id already targets the global note space and ignores this — but a bare number needs this OMITTED to mean the global note, otherwise it resolves that board's own N (a different row)",
           ),
         title: z.string().optional(),
         content: z.string().optional(),

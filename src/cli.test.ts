@@ -338,12 +338,11 @@ describe('formatTodoLine', () => {
 
   test('todo status glyph and number prefix', () => {
     const line = formatTodoLine(base, 0);
-    expect(line).toContain('○');
-    expect(line).toContain('#1');
+    expect(line).toContain('○ 1 ');
     expect(line).toContain('작업 제목');
   });
 
-  test('번호를 #N 으로 앞에 붙인다', () => {
+  test('번호를 접두사 없이 앞에 붙인다', () => {
     const line = formatTodoLine(
       {
         id: 'a1b2c3d4',
@@ -363,8 +362,8 @@ describe('formatTodoLine', () => {
       } as TodoView,
       0,
     );
-    expect(line).toContain('#12');
-    expect(line.indexOf('#12')).toBeLessThan(line.indexOf('보드·섹션 생성'));
+    expect(line).toContain('12');
+    expect(line.indexOf('12')).toBeLessThan(line.indexOf('보드·섹션 생성'));
   });
 
   test('doing shows actor, done shows check', () => {

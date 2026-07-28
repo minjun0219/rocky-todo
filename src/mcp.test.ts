@@ -89,6 +89,16 @@ describe('surface', () => {
       );
     }
   });
+
+  // 전역 메모는 이제 `note-3` 으로 자기를 설명한다 — 도구 설명이 그 표기를 알려줘야
+  // 에이전트가 board 인자 유무로 다른 행을 잡는 옛 함정을 애초에 피할 수 있다.
+  test('note 도구 설명은 전역 메모 표기 note-N 을 알려준다', async () => {
+    const { tools } = await client.listTools();
+    for (const name of ['note_list', 'note_write'] as const) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.description).toMatch(/note-N/);
+    }
+  });
 });
 
 describe('todo_write / todo_list / todo_status', () => {
