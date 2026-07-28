@@ -101,13 +101,13 @@ export function refOf(
 
 /**
  * ref 가 board 컨텍스트(`currentBoardId`)를 실제로 소비하는 "맨숫자" 꼴인지 판별한다.
- * `TodoStore.resolveRef` 의 네 분기(`rocky#12` 스코프 / 맨숫자 / id 정확 일치 / id
- * prefix) 중 맨숫자 분기만 `currentBoardId` 를 쓴다 — 나머지 세 분기는 완전히
- * 무시한다. 그래서 `?board=`/MCP `board` 인자가 안 풀릴 때(오타 등) 에러를 던져야
- * 하는지는 ref 모양에 달려 있다: 스코프/id/id-prefix ref 에 안 풀리는 board 를 얹고
- * 무조건 던지면(과거 버그 — 리뷰에서 지적됨) `rocky#12` 를 그대로 복사해 쓰거나 raw
- * id 로 조회하는, board 컨텍스트가 애초에 필요 없는 요청까지 무관한 board 오타에
- * 막혀버린다. 판정 로직은 `resolveRef` 의 bare 정규식·길이 조건과 반드시 같아야
+ * `TodoStore.resolveRef` 의 다섯 분기(`rocky#12` 레거시 스코프 / `rocky-12` 신규 스코프 /
+ * 맨숫자 / id 정확 일치 / id prefix) 중 맨숫자 분기만 `currentBoardId` 를 쓴다 — 나머지
+ * 네 분기는 완전히 무시한다. 그래서 `?board=`/MCP `board` 인자가 안 풀릴 때(오타 등)
+ * 에러를 던져야 하는지는 ref 모양에 달려 있다: 스코프/id/id-prefix ref 에 안 풀리는
+ * board 를 얹고 무조건 던지면(과거 버그 — 리뷰에서 지적됨) `rocky-12` 를 그대로 복사해
+ * 쓰거나(옛 `rocky#12` 도 마찬가지) raw id 로 조회하는, board 컨텍스트가 애초에 필요
+ * 없는 요청까지 무관한 board 오타에 막혀버린다. 판정 로직은 `resolveRef` 의 bare 정규식·길이 조건과 반드시 같아야
  * 한다(짧은 순수 숫자는 번호, `ID_LENGTH` 이상 길이의 순수 숫자는 id/id-prefix 로
  * 갈리는 경계까지 포함) — 어긋나면 이 판별이 "board 없이도 되는 ref" 인데 던지거나,
  * 반대로 "board 가 꼭 필요한 ref" 인데 조용히 넘기는 새로운 wrong-row 구멍이 된다.

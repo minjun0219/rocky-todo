@@ -49,9 +49,10 @@ describe('boards', () => {
     expect(board.title).toBe('로키 보드');
   });
 
-  // finding: board key 가 공백/`#` 를 포함하면 서버가 스스로 만든 스코프 ref
-  // (`refOf` → `<key>#<number>`) 를 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)
-  // 이 못 읽어 조용히 undefined 로 끝난다. 조용한 wrong-row 대신 생성 시점에 막는다.
+  // finding: board key 가 공백/`#` 를 포함하면 `refOf` 가 만드는 신규 스코프 ref
+  // (`<key>-<number>`) 를 `resolveRef` 의 신규 스코프 정규식(`^(\S+)-(\d+)$`) 이 못 읽어
+  // 조용히 undefined 로 끝난다(공백 있는 key 는 애초에 `\S+` 에 안 걸리고, `#` 있는 key 는
+  // 레거시 분기가 먼저 먹어 다른 뜻이 된다). 조용한 wrong-row 대신 생성 시점에 막는다.
   test('ensureBoard rejects a key containing whitespace', () => {
     expect(() => store.ensureBoard('my repo', { actor: 'tester' })).toThrow(/whitespace/);
   });
@@ -713,8 +714,10 @@ describe('참조 해석', () => {
 
   // finding A: sanitizeKey(src/actor.ts) 는 `[a-zA-Z0-9_-]` 를 보존하므로 대문자로
   // 시작하거나(`MyProject`) `_`/`-` 로 시작하는(`_private`) board key 도 나올 수 있다.
-  // 서버가 `ref: "MyProject#1"` 처럼 직렬화해 웹 UI 가 그대로 클립보드에 복사하는 값이라,
-  // resolveRef 가 이 형태를 못 읽으면 제품이 스스로 만든 참조를 스스로 못 먹는 꼴이 된다.
+  // 이 테스트는 레거시 입력(`board#N`)이 여전히 파싱되는지를 고정한다 — 지금 `refOf` 가
+  // 실제로 내보내는 형태는 `MyProject-1`(신규 스코프)이고 웹 UI 가 클립보드에 복사하는
+  // 것도 그 값이지만, 레거시 `#` 표기도 입력으로는 계속 받아야 하므로 resolveRef 가 이
+  // 형태를 못 읽으면 안 된다.
   test('대문자로 시작하는 board key 의 board#N 참조가 resolve 된다', () => {
     store.ensureBoard('MyProject', { actor: 'tester' });
     const t = store.createTodo({ board: 'MyProject', title: '대상' }, 'tester');
@@ -747,6 +750,19 @@ describe('참조 해석', () => {
   test('없는 보드를 가리키는 신규 표기는 undefined 다', () => {
     store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
     expect(store.getTodo('no-such-board-1')).toBeUndefined();
+  });
+
+  // 회귀: board key 에 `_` 가 섞여 있으면(`sanitizeKey` 가 보존하는 문자, `_private` 처럼
+  // 실사용 사례가 있다) `-` 로 못 찾은 board 를 id/id-prefix 분기로 흘려보낼 때 `_` 가 SQL
+  // LIKE 와일드카드로 해석돼 `invalid id prefix` 를 던졌다 — 같은 뜻의 레거시 `#` 표기는
+  // undefined 였는데 신규 표기만 다른 종류의 실패(400 대신 크래시성 에러)를 냈다. 두
+  // 표기가 같은 결과를 내야 한다.
+  test('없는 `_` 섞인 board 를 가리키면 두 표기(`-`/`#`) 모두 던지지 않고 undefined 다', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(() => store.getTodo('my_board-1')).not.toThrow();
+    expect(store.getTodo('my_board-1')).toBeUndefined();
+    expect(() => store.getTodo('my_board#1')).not.toThrow();
+    expect(store.getTodo('my_board#1')).toBeUndefined();
   });
 
   // `note-N` 은 언제나 전역 메모 번호 공간이다 — 보드 컨텍스트를 줘도 무시한다.
