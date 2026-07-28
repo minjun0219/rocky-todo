@@ -34,25 +34,30 @@ export function TopBar() {
   const [draft, setDraft] = useState(actor);
 
   return (
-    <header className="topbar">
-      <span className="wordmark">
-        ROCKY<span className="wordmark-dot">·</span>TODO
+    <header className="topbar flex items-center gap-4 border-b border-(--line) bg-(--surface) px-5 py-2.5 max-[900px]:flex-wrap max-[900px]:gap-2.5 max-[900px]:px-3.5">
+      <span className="wordmark font-(family-name:--mono) text-[13px] font-bold tracking-[0.22em]">
+        ROCKY<span className="text-(--warm)">·</span>TODO
       </span>
-      <span className={`link-status ${connected ? 'is-on' : 'is-off'}`} title="데몬 SSE 연결 상태">
-        <span className="link-pulse" />
+      <span
+        className={`link-status inline-flex items-center gap-1.5 font-(family-name:--mono) text-[11px] tracking-[0.18em] ${connected ? 'is-on text-(--warm)' : 'is-off text-(--faint)'}`}
+        title="데몬 SSE 연결 상태"
+      >
+        <span
+          className={`link-pulse size-1.5 rounded-full bg-current ${connected ? '[animation:pulse_2.4s_ease-in-out_infinite]' : ''}`}
+        />
         {connected ? 'LINK ♪' : 'NO LINK'}
       </span>
-      <div className="topbar-spacer" />
+      <div className="flex-1" />
       <button
         type="button"
-        className="theme-toggle"
+        className="theme-toggle inline-flex items-center justify-center font-(family-name:--mono) text-[13px] text-(--muted) hover:text-(--text) max-[900px]:min-h-11 max-[900px]:min-w-11"
         title={`테마 — ${THEME_LABEL[themePref]} (눌러서 ${THEME_LABEL[THEME_CYCLE[themePref]]})`}
         aria-label={`테마 — 현재 ${THEME_LABEL[themePref]}. 눌러서 ${THEME_LABEL[THEME_CYCLE[themePref]]}`}
         onClick={() => setThemePref(THEME_CYCLE[themePref])}
       >
         {THEME_GLYPH[themePref]}
       </button>
-      <label className="archived-toggle">
+      <label className="archived-toggle flex cursor-pointer items-center gap-1.5 text-xs text-(--muted) max-[900px]:min-h-11 max-[900px]:whitespace-nowrap">
         <input
           type="checkbox"
           checked={showArchived}
@@ -73,7 +78,7 @@ export function TopBar() {
           }}
         >
           <input
-            className="actor-input"
+            className="actor-input w-[120px] rounded-full border border-(--cool) bg-(--bg) px-3 py-[3px] font-(family-name:--mono) text-xs text-(--cool) max-[900px]:text-base"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             // biome-ignore lint/a11y/noAutofocus: 호출자 이름 편집 진입 시 즉시 입력
@@ -84,7 +89,7 @@ export function TopBar() {
       ) : (
         <button
           type="button"
-          className="actor-chip tone-cool"
+          className="actor-chip tone-cool rounded-full border border-(--cool-dim) px-3 py-[3px] font-(family-name:--mono) text-xs text-(--cool)"
           title="호출자 이름 — 웹에서의 편집은 이 이름으로 기록된다"
           onClick={() => {
             setDraft(actor);

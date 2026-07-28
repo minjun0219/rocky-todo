@@ -87,43 +87,52 @@
   --dim-stale: 0.65;
 }
 
-* {
-  box-sizing: border-box;
-}
+/*
+ * 수제 리셋은 base 레이어에 둔다 — 레이어 없는 CSS 는 @layer utilities 를 항상
+ * 이기므로(un-layered > layered), 리셋이 밖에 있으면 button/input 의 Tailwind
+ * 유틸(border·padding·font·color)이 전부 밀린다(마이그레이션 중 실측). base 로
+ * 내리면 유틸이 이기고, 아직 유틸로 옮기지 않은 컴포넌트 CSS(레이어 없음)는
+ * 여전히 리셋을 이겨 기존 화면이 유지된다.
+ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-html,
-body {
-  margin: 0;
-  height: 100%;
-}
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+  }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
-}
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
 
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
 
-input,
-textarea {
-  font: inherit;
-  color: inherit;
-}
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--warm);
-  outline-offset: 2px;
-  border-radius: 4px;
+  :focus-visible {
+    outline: 2px solid var(--warm);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 .app {
@@ -132,56 +141,7 @@ textarea {
   height: 100vh;
 }
 
-/* ── topbar ─────────────────────────────────────── */
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.wordmark {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-}
-
-.wordmark-dot {
-  color: var(--warm);
-}
-
-.link-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-}
-
-.link-status.is-on {
-  color: var(--warm);
-}
-
-.link-status.is-off {
-  color: var(--faint);
-}
-
-.link-pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.is-on .link-pulse {
-  animation: pulse 2.4s ease-in-out infinite;
-}
-
+/* ── 공용 애니메이션 (topbar 링크 펄스·doing 점이 공유) ── */
 @keyframes pulse {
   0%,
   100% {
@@ -190,31 +150,6 @@ textarea {
   50% {
     opacity: 0.25;
   }
-}
-
-.topbar-spacer {
-  flex: 1;
-}
-
-.actor-chip {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  /* actor 칩은 doing 뱃지와 같은 계열(행위자 표지)이라 같은 어법 — 테두리 알약. */
-  border: 1px solid var(--cool-dim);
-  color: var(--cool);
-}
-
-.actor-input {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--cool);
-  background: var(--bg);
-  color: var(--cool);
-  width: 120px;
 }
 
 /* ── layout ─────────────────────────────────────── */
@@ -272,28 +207,6 @@ textarea {
   border-radius: 50%;
   background: var(--warm);
   animation: pulse 2.4s ease-in-out infinite;
-}
-
-.theme-toggle {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.theme-toggle:hover {
-  color: var(--text);
-}
-
-.archived-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
 }
 
 /* ── main pane ──────────────────────────────────── */
@@ -926,11 +839,6 @@ body.is-drawer-open {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .topbar {
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px 14px;
-  }
   /* 사이드바 → 가로 스크롤 보드 칩 행 */
   .sidebar {
     flex-direction: row;
@@ -950,10 +858,6 @@ body.is-drawer-open {
   .board-item {
     white-space: nowrap;
     flex-shrink: 0;
-    min-height: 44px;
-  }
-  .archived-toggle {
-    white-space: nowrap;
     min-height: 44px;
   }
   .todo-pane {
@@ -1031,10 +935,6 @@ body.is-drawer-open {
     min-height: 44px;
     padding: 0 8px;
   }
-  .theme-toggle {
-    min-width: 44px;
-    min-height: 44px;
-  }
   /* 메타 칩 전반(`.comment-badge`, `.chip-link` 등)은 여기서 제외한다 — `.todo-row` 가
      줄바꿈되면 이들은 두 번째 줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로
      늘어나 행 높이가 두 배가 된다. 배지·링크가 여는 대상(드로어·이슈)은 이미 44px 바닥을
@@ -1062,7 +962,6 @@ body.is-drawer-open {
   .quick-add-input,
   .note-title,
   .note-content,
-  .actor-input,
   .drawer-desc-edit {
     font-size: 16px;
   }
