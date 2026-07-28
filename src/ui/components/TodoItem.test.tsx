@@ -67,17 +67,29 @@ describe('TodoItem doing 배지', () => {
 describe('TodoItem 참조 복사 버튼', () => {
   test('클립보드에는 슬래시 커맨드가 들어가고 버튼에는 번호만 보인다', async () => {
     const written: string[] = [];
+    // navigator.clipboard 는 원래 속성 서술자를 저장해두고 try/finally 로 되돌린다 —
+    // test:dom 은 src 전체를 한 프로세스에서 돌리므로, expect 가 먼저 throw 해도
+    // 이 스텁이 뒤에 실행되는 다른 *.test.tsx 로 새어나가면 안 된다.
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: async (t: string) => void written.push(t) },
     });
 
-    mountItem(todoFixture({ number: 12, ref: 'rocky-12' }));
+    try {
+      mountItem(todoFixture({ number: 12, ref: 'rocky-12' }));
 
-    const button = screen.getByRole('button', { name: 'rocky-12 복사' });
-    expect(button.textContent).toBe('12');
+      const button = screen.getByRole('button', { name: 'rocky-12 복사' });
+      expect(button.textContent).toBe('12');
 
-    await userEvent.click(button);
-    expect(written).toEqual(['/rocky-todo:board rocky-12']);
+      await userEvent.click(button);
+      expect(written).toEqual(['/rocky-todo:board rocky-12']);
+    } finally {
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+      }
+    }
   });
 });
