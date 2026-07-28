@@ -27,6 +27,19 @@ export interface NoteView extends Note {
 }
 
 /**
+ * 보드에 속하지 않는 글로벌 메모의 참조 접두사 — `note-3`.
+ *
+ * 구분자가 `-` 가 되면서 접두사 없는 참조를 `-3` 으로 쓸 수 없게 됐다(음수로 읽힌다).
+ * 그래서 전역 번호 공간에 이름을 붙였다. 이 접두사는 **예약어**다: `note` 라는 이름의
+ * 보드를 새로 만들 수 없고(`TodoStore.ensureBoard`), `note-N` 은 board 컨텍스트와
+ * 무관하게 언제나 전역 메모를 가리킨다(`TodoStore.resolveRef`).
+ *
+ * `store.ts` 가 이 값을 import 해도 순환이 되지 않는다 — 이 모듈은 store 에서
+ * **타입만** 가져오기 때문이다(파일 상단 주석 참고).
+ */
+export const GLOBAL_NOTE_PREFIX = 'note';
+
+/**
  * board key 가 `resolveRef` 의 스코프 정규식(`^([^#\s]+)#(\d+)$`)이 되읽을 수 있는
  * `<key>#<number>` 를 만들 수 있는 모양인지 판별한다. `refNeedsBoardContext` 와 같은
  * 방식으로 `resolveRef` 의 조건을 손으로 옮긴 predicate 다(공유는 안 하고 계약 테스트로

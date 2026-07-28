@@ -709,6 +709,43 @@ describe('참조 해석', () => {
     expect(() => store.getTodo('_private#1')).not.toThrow();
     expect(store.getTodo('_private#1')?.id).toBe(t.id);
   });
+
+  test('rocky-12 형태(신규 표기)로 보드를 지정해 찾는다', () => {
+    const t = store.createTodo({ board: 'rocky', title: '신규 표기' }, 'tester');
+    expect(store.getTodo(`rocky-${t.number}`)?.id).toBe(t.id);
+  });
+
+  // board key 에 `-` 가 흔하다(`rocky-todo`). greedy 파싱이 **가장 오른쪽** `-` 에서
+  // 갈라야 `rocky-todo-1` 이 보드 `rocky-todo` 의 1번으로 읽힌다 — 왼쪽에서 자르면
+  // 존재하지 않는 보드 `rocky` 를 찾다 undefined 가 된다.
+  test('board key 에 `-` 가 있어도 가장 오른쪽 `-` 에서 갈린다', () => {
+    const t = store.createTodo({ board: 'rocky-todo', title: '하이픈 보드' }, 'tester');
+    expect(store.getTodo(`rocky-todo-${t.number}`)?.id).toBe(t.id);
+  });
+
+  test('없는 보드를 가리키는 신규 표기는 undefined 다', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(store.getTodo('no-such-board-1')).toBeUndefined();
+  });
+
+  // `note-N` 은 언제나 전역 메모 번호 공간이다 — 보드 컨텍스트를 줘도 무시한다.
+  test('note-N 은 전역 메모를 가리키고 board 컨텍스트를 무시한다', () => {
+    const board = store.ensureBoard('rocky', { actor: 'tester' });
+    const globalNote = store.createNote({ title: '전역 메모' }, 'tester');
+    expect(store.getNote(`note-${globalNote.number}`)?.id).toBe(globalNote.id);
+    expect(store.getNote(`note-${globalNote.number}`, board.id)?.id).toBe(globalNote.id);
+  });
+
+  test('note-N 은 todos 에서는 풀리지 않는다 (전역 todo 번호 공간은 없다)', () => {
+    store.createTodo({ board: 'rocky', title: '있음' }, 'tester');
+    expect(store.getTodo('note-1')).toBeUndefined();
+  });
+
+  // 구 표기는 입력으로 계속 받는다 — 대화·댓글·히스토리에 이미 박혀 있다.
+  test('구 표기 rocky#12 는 계속 풀린다', () => {
+    const t = store.createTodo({ board: 'rocky', title: '구 표기' }, 'tester');
+    expect(store.getTodo(`rocky#${t.number}`)?.id).toBe(t.id);
+  });
 });
 
 describe('comments', () => {

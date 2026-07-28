@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ID_LENGTH, newId } from './ids';
 import { runMigrations } from './migrations';
-import { refOf } from './refs';
+import { GLOBAL_NOTE_PREFIX, refOf } from './refs';
 
 // id 생성과 그 길이는 `./ids` 가 소유한다 — `refs.ts` 도 `ID_LENGTH` 가 필요해서, 여기
 // 두면 store ↔ refs 런타임 순환이 된다. 기존 import 경로(`from './store'`)를 쓰던
@@ -1630,6 +1630,47 @@ export class TodoStore {
           .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
           .get(board.id, Number(scoped[2])) ?? undefined
       );
+    }
+
+    // 신규 스코프 표기 `<board>-<number>` (`rocky-12`). `\S+` 가 greedy 라 **가장
+    // 오른쪽** `-` 에서 갈린다 — board key 에 `-` 가 흔해서(`rocky-todo`) 왼쪽에서
+    // 자르면 존재하지 않는 보드를 찾게 된다. 공백을 배제하는 이유는 위 레거시 분기의
+    // `[^#\s]+` 와 같다: 공백 든 레거시 보드는 스코프 참조로 가리킬 수 없고 raw id 로
+    // 폴백한다(`refOf` 의 `isRefSafeBoardKey` 게이트).
+    //
+    // id 분기를 잡아먹지 않는다 — id 는 base36 8자(`ID_ALPHABET`)라 `-` 를 못 담는다.
+    const dashed = /^(\S+)-(\d+)$/.exec(trimmed);
+    if (dashed?.[1] && dashed[2]) {
+      const number = Number(dashed[2]);
+      if (dashed[1] === GLOBAL_NOTE_PREFIX) {
+        // 예약 접두사가 board 조회보다 먼저다 — `note` 라는 이름의 레거시 보드가
+        // 있어도 `note-3` 은 전역 메모를 가리킨다(결정론). 그 보드의 항목은 raw id 로만
+        // 가리킬 수 있고, `refOf` 도 그 보드에는 raw id 를 내보낸다.
+        if (table !== 'notes') {
+          // 전역 todo 번호 공간은 존재하지 않는다 — todos 는 언제나 보드에 속한다.
+          return undefined;
+        }
+        return (
+          this.db
+            .query<Row, [number]>(`SELECT * FROM ${table} WHERE board_id IS NULL AND number = ?`)
+            .get(number) ?? undefined
+        );
+      }
+      const board = this.db
+        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
+        .get(dashed[1]);
+      if (board) {
+        return (
+          this.db
+            .query<Row, [string, number]>(
+              `SELECT * FROM ${table} WHERE board_id = ? AND number = ?`,
+            )
+            .get(board.id, number) ?? undefined
+        );
+      }
+      // 보드를 못 찾으면 여기서 끝내지 않고 아래 id/id-prefix 분기로 흘려보낸다 —
+      // `-` 를 담은 문자열이 유효한 id 일 수는 없지만, 이 분기가 조기 return 하면
+      // 나중에 참조 문법이 늘 때 조용한 사각지대가 된다. 흘려보내면 최악이 undefined 다.
     }
 
     const bare = /^(#)?(\d+)$/.exec(trimmed);
