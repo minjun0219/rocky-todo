@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import tailwind from 'bun-plugin-tailwind';
 
 /**
  * 웹 UI 를 outdir 로 번들한다 — 데몬이 시작할 때 한 번 부른다.
@@ -13,6 +14,7 @@ export async function buildUi(outdir: string): Promise<void> {
   const result = await Bun.build({
     entrypoints: [join(import.meta.dir, 'index.html')],
     outdir,
+    plugins: [tailwind],
     minify: true,
     // 자산 참조를 루트 절대 경로로 — 퍼머링크(`/rocky/12`) 새로고침에서도 청크가 로드된다.
     publicPath: '/',

@@ -22,4 +22,25 @@ describe('buildUi', () => {
     const html = await Bun.file(join(out, 'index.html')).text();
     expect(html).toMatch(/(href|src)="\//);
   });
+
+  test('Tailwind 가 preflight 없이 연결된다', async () => {
+    const css = await bundledCss(out);
+    // preflight(요소 리셋)가 들어오면 수제 리셋과 겹쳐 화면이 바뀐다 — 시각 동결 위반.
+    // theme/utilities 레이어만 임포트하므로 요소 셀렉터 리셋이 없어야 한다.
+    expect(css).not.toMatch(/^\s*(html|body|button)\s*[,{]/m);
+    // 팔레트 토큰 블록은 그대로 살아 있어야 한다 (styles.test.ts 의 대비 가드가 소스를,
+    // 이 테스트가 번들 산출물을 지킨다).
+    expect(css).toContain('#16110c');
+    expect(css).toContain('#faf6f0');
+    // 파이프라인이 실제로 붙었다는 근거 — Tailwind theme 레이어의 시그니처 변수.
+    expect(css).toContain('--tw-');
+  });
 });
+
+async function bundledCss(outdir: string): Promise<string> {
+  const cssFile = readdirSync(outdir).find((f) => f.endsWith('.css'));
+  if (!cssFile) {
+    throw new Error('css chunk not found');
+  }
+  return Bun.file(join(outdir, cssFile)).text();
+}

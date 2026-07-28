@@ -4,6 +4,15 @@
  * 오프라인 제약(외부 리소스 금지)이라 시스템 폰트 스택 + mono 마이크로라벨로 콘솔 톤을 낸다.
  */
 
+/*
+ * Tailwind 는 preflight 없이 들어온다 — theme + utilities 레이어만. 전체
+ * `@import "tailwindcss"` 는 요소 리셋(preflight)을 끌고 와 아래 수제 리셋과
+ * 겹치며 화면을 바꾼다. 시각 동결이 이 마이그레이션의 성공 기준이다.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
 /* 테마와 무관한 토큰 — 두 팔레트가 공유한다. */
 :root {
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;

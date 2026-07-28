@@ -52,8 +52,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "bun-plugin-tailwind": "^0.0.15",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tailwindcss": "^4",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
