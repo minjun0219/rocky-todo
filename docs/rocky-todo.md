@@ -266,7 +266,7 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 | --- | --- | --- | --- |
 | (없음) | 이 머신만 | 127.0.0.1 | 기본값 |
 | `"lan"` | 같은 내부망의 모든 기기 (`http://<이 머신 IP>:8636`) | 0.0.0.0 | 무인증 — 집 등 신뢰망 전용. `rocky-todo open` 이 내부망 주소를 함께 출력 |
-| `"tailscale-serve"` | 테일넷에 연결된 내 기기들 (HTTPS) | 127.0.0.1 유지 | tailscaled 프록시가 중계, 기동 시 `tailscale serve` 자동 보장. 테일넷 Serve 기능 첫 사용 시 관리 콘솔 1회 승인 필요 |
+| `"tailscale-serve"` | 테일넷에 연결된 내 기기들 (HTTPS) | 127.0.0.1 유지 | tailscaled 프록시가 중계. **`serve` 설정은 자동이 아니다** — `rocky-todo tailscale on` 을 직접 실행해야 열린다 (채널은 의사 표시 + 주소 안내용). 테일넷 Serve 기능 첫 사용 시 관리 콘솔 1회 승인 필요 |
 
 - 핸드오프 "보내기"(`POST /api/todos/:ref/handoff`)와 세션 목록(`GET /api/sessions`)은
   노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기). **새 세션
@@ -286,8 +286,14 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
   헤더는 위조로 "있게" 만들 수는 있어도 "없게" 만들 수는 없다 — 위조는 요청을 덜
   신뢰하는 방향으로만 작용하므로 이 판정을 우회하는 데 쓸 수 없다.
 - env `ROCKY_TODO_EXPOSE`(콤마 구분)가 설정되면 config 를 통째로 덮어쓴다 — `off` 로 강제 차단.
-- `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
-  수동 제어: `rocky-todo tailscale on|off|status`.
+- **데몬은 어떤 경우에도 `tailscale serve` 를 자동으로 설정하지 않는다** — 채널을 켜두면
+  기동 로그로 안내만 하고, 실제 노출은 사용자가 직접 켠다: `rocky-todo tailscale on|off|status`.
+  자동화하지 않는 이유는 `serve` 의 노출 지점이 443 의 `/` **하나뿐인 공유 자원**이기 때문이다.
+  데몬의 단일 인스턴스 보장은 *같은 포트* 기준이라 설치본과 개발 워킹트리처럼 포트가 다른
+  인스턴스는 공존하는데, 이들이 각자 기동하며 serve 를 잡으면 남의 매핑을 말없이 교체해
+  "마지막에 뜬 데몬이 이긴다"가 된다 (실제로 개발 인스턴스가 설치본의 노출을 빼앗아
+  테일넷에서 빈 보드가 보인 적이 있다). 채널이 없으면 tailscale 은 상태 조회조차 하지 않는다
+  (회사 등 금지 환경).
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
 - 노출되는 것은 **보드**다. GitHub 이슈 생성은 어느 채널로도 열리지 않는다 — 로컬 요청
   전용이다 ([GitHub 이슈로 만들기](#github-이슈로-만들기) 참고).

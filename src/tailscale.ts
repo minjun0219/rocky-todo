@@ -2,10 +2,14 @@
  * tailscale serve 연동 (옵션) — 데몬을 테일넷 한정 HTTPS 로 노출한다.
  *
  * 기본은 **off**: 회사 등 tailscale 을 쓰면 안 되는 환경에서는 rocky-todo 가
- * tailscale 을 일절 건드리지 않는다. 켜는 경로는 둘:
- *   - 수동: `rocky-todo tailscale on|off|status`
- *   - 자동: user rocky.json 의 `todo.tailscale: true` → 데몬 기동 시 serve 보장
+ * tailscale 을 일절 건드리지 않는다. 켜는 경로는 **수동 하나뿐**이다:
+ *   `rocky-todo tailscale on|off|status`
  * 데몬 자체는 계속 127.0.0.1 만 바인딩한다 — 노출은 tailscaled 의 로컬 프록시가 담당.
+ *
+ * 기동 시 자동으로 serve 를 잡는 경로는 **의도적으로 없다**. `tailscale serve` 의 노출
+ * 지점은 443 의 `/` 하나뿐인 공유 자원이라, 포트가 다른 인스턴스들(설치본 / 개발 워킹트리)이
+ * 각자 기동할 때마다 잡으면 서로의 매핑을 말없이 교체한다. 여기 있는 함수는 전부 사용자가
+ * 직접 부른 명령에서만 호출된다 — 그래서 남의 설정을 덮어써도 되는 명시적 의사로 취급한다.
  */
 
 function tailscaleCmd(args: string[], timeoutMs = 10_000): { ok: boolean; out: string } {
@@ -52,21 +56,4 @@ export function tailscaleServeStatus(): string {
   return result.out === '' || result.out.includes('No serve config')
     ? 'tailscale serve: 미설정 (로컬 전용)'
     : result.out;
-}
-
-/**
- * 데몬 기동 시 자동 보장 경로 — serve 가 이미 설정돼 있으면 no-op, 실패는 로그만
- * 남기고 삼킨다 (fail-open: tailscale 문제로 데몬이 죽으면 안 된다).
- */
-export function ensureTailscaleServe(port: number): void {
-  const status = tailscaleCmd(['serve', 'status'], 5_000);
-  if (status.ok && status.out.includes('proxy') && status.out.includes(`:${port}`)) {
-    return; // 이미 이 포트로 serve 중
-  }
-  const result = tailscaleCmd(['serve', '--bg', String(port)]);
-  console.log(
-    result.ok
-      ? `tailscale serve 활성화됨 (todo.tailscale=true)\n${result.out}`
-      : `tailscale serve 자동 활성화 실패 (무시하고 계속): ${result.out.split('\n')[0]}`,
-  );
 }

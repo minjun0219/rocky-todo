@@ -24,7 +24,10 @@ GitHub 이슈 생성(웹 UI 버튼/CLI `issue`/MCP `todo_write.createIssue` — 
 아래 참고), **삭제 없음(아카이브만)**.
 설정은 user `rocky.json` 의 `todo` 블록만 읽는다(`src/rocky-config.ts` 경량 로더 — rocky 본체의
 `../core` 에 의존하지 않는다). project rocky.json 은 무시(전역 단일 인스턴스). 노출은 opt-in
-(`todo.expose`: `lan` / `tailscale-serve`, 기본 루프백).
+(`todo.expose`: `lan` / `tailscale-serve`, 기본 루프백). **데몬은 `tailscale serve` 를 자동
+설정하지 않는다** — 443 의 `/` 매핑이 머신 공유 자원이라 포트가 다른 인스턴스끼리 서로
+덮어쓰기 때문. `tailscale-serve` 채널은 의사 표시 + 주소 안내용이고, 실제 노출은 사용자가
+`rocky-todo tailscale on` 으로 켠다 (`src/tailscale.ts` 의 함수는 전부 수동 경로 전용).
 
 rocky 마켓플레이스가 이 레포를 github source 로 서빙한다 — 자체 marketplace.json 은 없다.
 `dependencies:["rocky"]` 명목 선언(같은 마켓 안이라 자동 해석).

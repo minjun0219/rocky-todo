@@ -6,7 +6,6 @@ import { loadTodoConfig } from './rocky-config';
 import { createMcpFetchHandler } from './mcp';
 import { buildTodoServer } from './server';
 import { TodoStore } from './store';
-import { ensureTailscaleServe } from './tailscale';
 
 /**
  * rocky-todo 데몬 — 시스템 유일 인스턴스, 단일 writer.
@@ -25,6 +24,13 @@ import { ensureTailscaleServe } from './tailscale';
  * (`src/local-request.ts`).
  * 설정은 env > user rocky.json 의 `todo` 블록 > 기본값 — project rocky.json 은
  * 보지 않는다 (어디서 기동돼도 같은 데몬이어야 하므로).
+ *
+ * **데몬은 tailscale 을 건드리지 않는다.** 위 단일성 보장은 *같은 포트* 기준이라, 설치본과
+ * 개발 워킹트리처럼 포트만 다른 인스턴스는 얼마든지 공존한다. 그런데 `tailscale serve` 의
+ * 노출 지점은 443 의 `/` 하나뿐이라 공유 자원이다 — 데몬이 기동할 때마다 이걸 자기 포트로
+ * 잡으면 남이 쓰던 매핑을 말없이 교체해 "마지막에 뜬 데몬이 이긴다"가 된다. 실제로 개발
+ * 인스턴스가 설치본의 노출을 빼앗아, 테일넷에서 빈 보드가 보이는 사고가 났다.
+ * 그래서 노출은 사용자가 명시적으로 켠다: `rocky-todo tailscale on|off|status`.
  */
 
 async function isAlreadyRunning(port: number): Promise<boolean> {
@@ -104,9 +110,13 @@ export async function startDaemon(): Promise<void> {
     console.log('      (GitHub 이슈 생성은 예외 — 로컬 요청만 허용된다)');
   }
 
-  // 옵션: expose 에 tailscale 채널이 있을 때만 serve 보장 — 없으면 tailscale 을 일절 안 건드린다 (회사 환경 대비)
+  // 데몬은 tailscale 을 절대 건드리지 않는다 — 상태 조회조차 하지 않는다. 이유는 위 주석 참고.
+  // 채널이 켜져 있어도 안내만 하고, 실제 serve 설정은 사용자가 명시적으로 한다.
   if (runtime.expose.includes('tailscale-serve')) {
-    ensureTailscaleServe(runtime.port);
+    console.log('tailscale-serve 채널 활성 — 단, 데몬은 serve 를 설정하지 않는다');
+    console.log(
+      '      노출하려면 직접: rocky-todo tailscale on   (해제: rocky-todo tailscale off)',
+    );
   }
 }
 
