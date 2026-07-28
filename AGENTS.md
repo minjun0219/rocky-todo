@@ -51,11 +51,14 @@ rocky-todo/
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
 │   ├── sessions.ts                 # claude agents --json 래퍼 (활성 세션 목록 + 보드 매칭)
 │   ├── handoff.ts                  # 핸드오프 주입문 생성 (순수)
+│   ├── spawn.ts                    # 백그라운드 세션 기동 (워크트리 이름 규약 + claude --bg)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
 │   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
 │   ├── local-request.ts            # 요청 출처 판별(루프백 + 프록시 헤더 없음) — 이슈 생성 게이트
 │   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
-│   └── *.test.ts                   # store / server / mcp / cli / actor / config / rocky-config 테스트
+│   │   ├── happydom.ts             # 렌더 테스트 preload (GlobalRegistrator) — test:dom 에서만 로드
+│   │   └── test-support.tsx        # 렌더 테스트 픽스처/헬퍼 (todoFixture / boardFixture / renderWithStore)
+│   └── *.test.ts(x)                # 순수 실행(.ts) / happy-dom 렌더 실행(.tsx) — 확장자가 실행 모드를 가른다
 ├── hooks/
 │   ├── hooks.json                  # SessionStart→ensure-daemon(startup), UserPromptSubmit→notify-todo, Stop→handoff-stop
 │   ├── ensure-daemon.ts (+test)    # health→없으면 spawn / 구버전이면 stop 후 재기동 (fail-open, DI)
@@ -116,6 +119,27 @@ rocky-todo/
   보내고 아니면 사용자가 고른다. 대기 중인 요청에 TTL 은 없다 — 대상 세션이 사라지면
   "세션 없음"(stale)으로 표시만 하고 큐에는 남는다. **MCP 도구는 늘리지 않았다(5개 유지)**
   — 사람이 에이전트에게 넘기는 기능이지 에이전트끼리 일을 미루는 경로가 아니다.
+- **새 세션 띄우기(보드 → 새 워크트리)**: 실행 중인 세션이 없으면 보드가 `claude --bg
+  --worktree todo-<번호>` 로 새 백그라운드 세션을 띄운다(`src/spawn.ts`). 워크트리 생성·
+  재사용·정리는 전부 Claude Code 몫이고(`<repo>/.claude/worktrees/`, 정리는 `claude rm
+  <id>`), 데몬은 이름을 결정론적으로 계산할 뿐이라 "이 todo 의 워크트리" 를 저장하지
+  않는다. 대상 레포 경로는 `boards.path`(user_version 4). 그 워크트리에서 이미 도는
+  세션이 있으면 **띄우지 않고** 기존 handoff 큐로 넘긴다 — 두 에이전트가 한 워크트리를
+  같이 고치는 것을 막는 가드다. 이 가드는 두 겹이다: (1) 이 라우트만 **캐시 없는** 세션
+  목록(`spawnSessions` 기본 `listSessions`)을 본다 — TTL 3초 캐시로 보면 spawn 이전
+  스냅샷으로 판정하게 된다, (2) `worktreePath → 띄운 시각` 을 60초 기억해
+  (`createRecentSpawns`, 데몬 수명 클로저) 그 창 안의 재요청은 **409** 다 — 재사용 분기로
+  보내면 짧은 8자 id 로 pending 이 만들어져 full UUID 로 claim 하는 `Stop` 훅에 영영
+  배달되지 않는다. (2)는 **실행 전에 잡는 예약**이다(`remember` → 실패 시 `forget`) —
+  `await spawnSession` 뒤로 미루면 겹쳐 들어온 두 요청이 게이트를 나란히 통과한다.
+  `boards.path` 는 절대경로만 받고 `realpathSync` 로 정규화해 워크트리
+  경로 계산·spawn cwd·보드 저장에 **같은 값**을 쓴다(cwd 비교가 정확 문자열 일치다).
+  `claude --bg` 실행은 비동기(`Bun.spawn` + await)다 — 최악 30초를 데몬 전체가 멎으면
+  안 된다. 파이프는 `new Response(stream).text()` 로 읽지 않는다(detach 된 손자가 fd 를
+  물면 영원히 매달린다) — 자식 종료 + 짧은 유예, 또는 timeout 에서 끊는다(`runInDir`).
+  `--permission-mode` 는 넘기지 않는다(사용자 기본 설정).
+  **이슈 생성과 같은 로컬 요청 전용**(`isLocalRequest`, 403) — 보드 쓰기 권한이 프로세스를
+  띄우는 권한으로 확대되는 지점이다. MCP 도구는 여전히 5개다.
 
 ## Coding rules
 
@@ -125,8 +149,37 @@ rocky-todo/
 - **Dependencies**: 최소화. 현재 prod-dep: `@modelcontextprotocol/sdk`(MCP), `react`+`react-dom`+
   `zustand`(웹 UI — Bun fullstack 이 서빙 시 자동 번들, 데몬 전용), `zod`(MCP 툴 스키마).
   `bun:sqlite`/`bun:test` 는 내장. HTTP 는 Bun native `fetch`. 신규 런타임 dep 은 별도 논의.
-- **Tests**: `*.test.ts` 를 소스 옆에 두고 `bun test`. fs 의존 테스트는 `mkdtempSync` 로 격리.
+- **Tests**: 테스트는 소스 옆에 두고 `bun run test`. fs 의존 테스트는 `mkdtempSync` 로 격리.
+  **확장자가 실행 모드를 가른다** — `*.test.ts` 는 순수 실행(DOM 없음), `*.test.tsx` 는
+  happy-dom 을 preload 한 렌더 실행. 자세한 건 아래 "웹 UI 렌더 테스트".
 - **JSDoc**: exported 함수/클래스에 작성. 한국어 주석 OK (코드 식별자/경로/명령/URL 은 영어 원형).
+
+## 웹 UI 렌더 테스트
+
+React 컴포넌트를 실제로 렌더해 상호작용을 검증한다 — 클릭 → input 전환, Enter 저장 /
+Esc 취소, 인라인 폼의 에러 표시처럼 로직을 순수 함수로 뽑아도 "그 상호작용이 실제로
+되는가" 를 증명하지 못하는 자리들. 러너는 **`bun:test` 그대로**다 (vitest 없음).
+
+- devDep 3개: `@happy-dom/global-registrator` + `@testing-library/react` +
+  `@testing-library/user-event`. preload 는 `src/ui/happydom.ts` (3줄).
+- 픽스처/헬퍼는 `src/ui/test-support.tsx` — `todoFixture` / `boardFixture` /
+  `renderWithStore`. zustand 스토어는 모듈 싱글턴이라 테스트끼리 같은 인스턴스를 공유한다 —
+  `renderWithStore` 가 매 렌더마다 `replace: true` 로 초기 상태를 깔고 인자로 받은 필드만
+  얹어 격리한다. 그래도 각 테스트는 자기가 읽는 필드를 명시한다. `afterEach(cleanup)` 필수.
+- 렌더 밖에서 스토어를 직접 바꿀 땐 `act()` 로 감싼다 — 안 그러면 리렌더가 flush 되지 않는다.
+
+**실행이 두 갈래인 이유 (중요).** happy-dom 의 `GlobalRegistrator` 는 `fetch` 등 HTTP
+전역을 갈아치운다. 이걸 전역 preload(`bunfig.toml` 의 `[test] preload`)로 걸면 데몬/CLI
+테스트가 그 fetch 를 타면서 무더기로 타임아웃한다(실측: 1.1s → 52s, 11 fail). `--isolate`
+로도 안 풀린다 — preload 가 파일마다 다시 돌기 때문이다. 그래서 확장자로 갈라 두 번 돌린다:
+
+```bash
+bun run test        # test:unit && test:dom — 이게 기본 진입점이다
+bun run test:unit   # *.test.tsx 제외 — 순수 실행
+bun run test:dom    # *.test.ts 제외 + happy-dom preload — 렌더 실행
+```
+
+`bun test` 를 맨손으로 부르면 두 갈래가 섞여 깨진다. 항상 `bun run test` 를 쓴다.
 
 ## Common commands
 
@@ -135,7 +188,7 @@ bun install
 bun run check       # Biome verify
 bun run fix         # Biome safe fix + format
 bun run typecheck   # tsc --noEmit
-bun test            # 모든 테스트
+bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 쓰지 않는다
 bunx changeset      # user-facing 변경의 버전 의도 선언
 ```
 
@@ -143,7 +196,7 @@ bunx changeset      # user-facing 변경의 버전 의도 선언
 
 1. `bun run check` 통과
 2. `bun run typecheck` 통과
-3. `bun test` 통과
+3. `bun run test` 통과 (unit + dom 양쪽)
 4. 사용자 표면(도구/env/CLI)이 바뀌면 **두 single source** 동기화 — `FEATURES.md`(사람) +
    이 `AGENTS.md`(에이전트) — 와 진입 페이지 `README.md`, 운영 문서 `docs/rocky-todo.md`.
 5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 + `FEATURES.md`

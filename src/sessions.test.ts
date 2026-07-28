@@ -28,6 +28,20 @@ const SAMPLE = JSON.stringify([
   },
 ]);
 
+const SAMPLE_BACKGROUND = JSON.stringify([
+  {
+    pid: 24075,
+    id: '5acaaaeb',
+    cwd: '/repo/.claude/worktrees/todo-16',
+    kind: 'background',
+    startedAt: 1785151478042,
+    sessionId: '5acaaaeb-1275-48d1-8f4c-3970c33ff6dc',
+    name: 'rocky-todo-16',
+    status: 'idle',
+    state: 'done',
+  },
+]);
+
 const runWith =
   (stdout: string, ok = true): RunCommand =>
   () => ({ ok, stdout, stderr: '' });
@@ -119,5 +133,19 @@ describe('createCachedListSessions', () => {
     cached();
 
     expect(calls).toBe(2);
+  });
+});
+
+describe('listSessions — background 필드', () => {
+  test('id 와 state 를 싣는다', () => {
+    const result = listSessions(runWith(SAMPLE_BACKGROUND));
+    expect(result.sessions[0]?.id).toBe('5acaaaeb');
+    expect(result.sessions[0]?.state).toBe('done');
+  });
+
+  test('interactive 세션처럼 id/state 가 없으면 undefined 로 둔다', () => {
+    const result = listSessions(runWith(SAMPLE));
+    expect(result.sessions[0]?.id).toBeUndefined();
+    expect(result.sessions[0]?.state).toBeUndefined();
   });
 });

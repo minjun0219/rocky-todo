@@ -36,6 +36,8 @@ export interface Board {
   title: string;
   /** `owner/name` — GitHub 이슈 생성 대상. 설정 전에는 undefined. */
   repo?: string;
+  /** 메인 레포의 절대경로 — 백그라운드 세션을 띄우는 자리. 설정 전에는 undefined. */
+  path?: string;
   createdAt: string;
   archivedAt?: string;
 }
@@ -96,8 +98,11 @@ export interface Comment {
 }
 
 export type HandoffStatus = 'pending' | 'delivered' | 'cancelled';
-/** 어느 훅이 집어갔는지 — `Stop`(자동 착수) 인지 `UserPromptSubmit`(사용자가 말을 걸 때) 인지. */
-export type HandoffVia = 'stop' | 'prompt';
+/**
+ * 어느 경로로 배달됐는지 — `Stop`(자동 착수) · `UserPromptSubmit`(사용자가 말을 걸 때) ·
+ * `spawn`(데몬이 새 백그라운드 세션을 띄우며 프롬프트로 직접 넣은 것).
+ */
+export type HandoffVia = 'stop' | 'prompt' | 'spawn';
 
 /** 보드에서 실행 중인 Claude Code 세션으로 넘긴 작업 요청 한 건. */
 export interface Handoff {
@@ -121,6 +126,19 @@ export interface CreateHandoffInput {
   sessionId: string;
   sessionName?: string;
   sessionCwd?: string;
+  note?: string;
+  actor: string;
+  currentBoardId?: string;
+}
+
+export interface CreateSpawnedHandoffInput {
+  /** todo 참조 문법 (`#12` / `rocky#12` / id / id prefix). */
+  ref: string;
+  /** 짧은 id(8자) — 사용자가 `claude attach/logs/stop/rm` 에 그대로 넣는 값이다. */
+  sessionId: string;
+  sessionName: string;
+  /** 워크트리 경로. `via='spawn'` 인 행에서는 표시용이 아니라 재사용 대상을 가리킨다. */
+  sessionCwd: string;
   note?: string;
   actor: string;
   currentBoardId?: string;
@@ -286,6 +304,7 @@ interface BoardRow {
   key: string;
   title: string;
   repo: string | null;
+  path: string | null;
   created_at: string;
   archived_at: string | null;
 }
@@ -338,6 +357,7 @@ CREATE TABLE IF NOT EXISTS boards (
   key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
   repo TEXT,
+  path TEXT,
   created_at TEXT NOT NULL,
   archived_at TEXT
 );
@@ -657,6 +677,11 @@ export class TodoStore {
     return row ? toBoard(row) : undefined;
   }
 
+  /** 보드 key 로 보드 한 건을 반환한다. 없으면 undefined. */
+  getBoard(key: string): Board | undefined {
+    return this.boardByKey(key);
+  }
+
   /**
    * 보드의 GitHub 레포(`owner/name`)를 설정한다.
    *
@@ -695,6 +720,38 @@ export class TodoStore {
       existing.id,
     );
     return { ...toBoard(existing), repo: normalized };
+  }
+
+  /**
+   * 보드의 메인 레포 경로를 설정한다 — 백그라운드 세션을 띄우는 자리다.
+   *
+   * `setBoardRepo` 와 같은 규칙: 값은 여기서 한 번 더 trim 하고, 같은 값이면 write 도
+   * 히스토리도 남기지 않는다(no-op). 경로가 실제로 존재하는지·git 레포인지는 여기서
+   * 보지 않는다 — 스토어는 파일시스템을 모르고, 그 판정은 spawn 라우트가 한다.
+   *
+   * @throws 없는 보드면 — 여기서 보드를 만들지 않는다(`setBoardRepo` 와 같은 판단).
+   */
+  setBoardPath(key: string, path: string, actor: string): Board {
+    const existing = this.db
+      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
+      .get(key);
+    if (!existing) {
+      throw new Error(`board not found: ${key}`);
+    }
+    const normalized = path.trim();
+    if (existing.path === normalized) {
+      return toBoard(existing);
+    }
+    this.db.query('UPDATE boards SET path = ? WHERE id = ?').run(normalized, existing.id);
+    this.recordHistory(
+      'board',
+      existing.id,
+      actor,
+      'update',
+      { path: [existing.path ?? null, normalized] },
+      existing.id,
+    );
+    return { ...toBoard(existing), path: normalized };
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────
@@ -1236,11 +1293,32 @@ export class TodoStore {
       status: 'pending',
       createdAt: nowIso(),
     };
+    this.insertHandoffRow(handoff);
+    this.recordHistory(
+      'todo',
+      todo.id,
+      input.actor,
+      'handoff',
+      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
+      todo.boardId,
+    );
+    return handoff;
+  }
+
+  /**
+   * `handoffs` 행 하나를 그대로 넣는다 — `createHandoff` / `createSpawnedHandoff` 공용.
+   *
+   * `deliveredAt`/`deliveredVia` 는 미배달(`pending`) 행에서 `undefined` 로 와 `null` 로
+   * 저장된다. 여기 모아둔 덕에 **INSERT 문 자체는** 두 호출부가 갈라지지 않는다 — 다만
+   * 컬럼이 실제로 늘면 `Handoff` · `HandoffRow` · `toHandoff` 도 함께 고쳐야 한다.
+   */
+  private insertHandoffRow(handoff: Handoff): void {
     this.db
       .query(
         `INSERT INTO handoffs
-           (id, todo_id, session_id, session_name, session_cwd, note, actor, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, todo_id, session_id, session_name, session_cwd, note, actor, status,
+            created_at, delivered_at, delivered_via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         handoff.id,
@@ -1252,13 +1330,48 @@ export class TodoStore {
         handoff.actor,
         handoff.status,
         handoff.createdAt,
+        handoff.deliveredAt ?? null,
+        handoff.deliveredVia ?? null,
       );
+  }
+
+  /**
+   * 새로 띄운 백그라운드 세션 앞으로의 배달을 기록한다.
+   *
+   * `createHandoff` 와 달리 pending 을 거치지 않는다 — 프롬프트로 이미 배달했기 때문에
+   * 생성 시점에 `delivered` 다. 그래서 claim 대상이 되지 않고, 큐를 소모하지도 않는다.
+   *
+   * 호출 순서가 중요하다: **spawn 이 성공한 뒤에** 부른다. 실패한 spawn 이 배달 기록을
+   * 남기면 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다.
+   *
+   * @throws todo 를 못 찾거나 아카이브됐으면.
+   */
+  createSpawnedHandoff(input: CreateSpawnedHandoffInput): Handoff {
+    const todo = this.mustGetTodo(input.ref, input.currentBoardId);
+    if (todo.archivedAt) {
+      throw new Error(`todo is archived: ${todo.id}`);
+    }
+    const at = nowIso();
+    const handoff: Handoff = {
+      id: newId(),
+      todoId: todo.id,
+      sessionId: input.sessionId,
+      sessionName: input.sessionName,
+      sessionCwd: input.sessionCwd,
+      note: (input.note ?? '').trim(),
+      actor: input.actor,
+      status: 'delivered',
+      createdAt: at,
+      deliveredAt: at,
+      deliveredVia: 'spawn',
+    };
+    this.insertHandoffRow(handoff);
     this.recordHistory(
       'todo',
       todo.id,
       input.actor,
-      'handoff',
-      { handoff: [null, handoff.sessionName ?? handoff.sessionId] },
+      'handoff-spawn',
+      { handoff: [null, handoff.sessionName] },
       todo.boardId,
     );
     return handoff;
@@ -1416,7 +1529,7 @@ export class TodoStore {
       .query<HistoryRow, [number, number]>(
         `SELECT * FROM history
           WHERE id > ?
-            AND action NOT IN ('handoff', 'handoff-delivered', 'handoff-cancel')
+            AND action NOT IN ('handoff', 'handoff-delivered', 'handoff-cancel', 'handoff-spawn')
           ORDER BY id ASC LIMIT ?`,
       )
       .all(sinceId, limit);
@@ -1565,6 +1678,7 @@ function toBoard(row: BoardRow): Board {
     key: row.key,
     title: row.title,
     repo: row.repo ?? undefined,
+    path: row.path ?? undefined,
     createdAt: row.created_at,
     archivedAt: row.archived_at ?? undefined,
   };

@@ -12,7 +12,8 @@
   빌려 인증하고, 만들어진 이슈 URL 은 그 todo 의 링크에 자동으로 붙는다 (로컬 요청 전용 —
   노출된 표면에서는 만들 수 없다)
 - 스크래치패드 note (보드 소속 or 글로벌)
-- 실행 중인 Claude Code 세션으로 작업 넘기기(보드 버튼 → 그 세션이 턴을 끝내며 자동 착수)
+- 실행 중인 Claude Code 세션으로 작업 넘기기(보드 버튼 → 그 세션이 턴을 끝내며 자동 착수) —
+  세션이 없으면 그 todo 전용 워크트리에 새로 띄울 수도 있다(로컬 전용)
 - 사람이 읽는 참조(`rocky#12`, 글로벌 메모는 `#3`)로 부른다 — 웹 UI에서는 그 참조를 클릭하면
   클립보드로 복사된다
 - 웹 UI 퍼머링크 — 주소가 화면을 담는다: `/`(전체) · `/{board}` · `/{board}/{number}`. 새로고침해도 유지되고 링크 공유 가능
@@ -52,7 +53,7 @@ claude plugin install rocky-todo@rocky-marketplace     # rocky 자동 동반 (de
 bun install
 bun run check       # Biome
 bun run typecheck   # tsc --noEmit
-bun test            # 모든 src/**/*.test.ts + hooks/**/*.test.ts
+bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 두 갈래가 섞여 깨진다
 ```
 
 rocky 본체는 별도 레포 [minjun0219/rocky](https://github.com/minjun0219/rocky).

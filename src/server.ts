@@ -1,3 +1,5 @@
+import { existsSync, realpathSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
 import {
   createIssueForTodo,
@@ -6,9 +8,25 @@ import {
   isRepoSlug,
   type RunCommand,
 } from './github';
-import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
-import { refNeedsBoardContext, withRef } from './refs';
-import { createCachedListSessions, matchBoard, type SessionsResult } from './sessions';
+import { buildHandoffPromptFrom } from './handoff';
+import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE, NON_LOCAL_SPAWN_MESSAGE } from './local-request';
+import { refNeedsBoardContext, refOf, withRef } from './refs';
+import {
+  createCachedListSessions,
+  listSessions,
+  matchBoard,
+  type SessionsResult,
+} from './sessions';
+import {
+  createRecentSpawns,
+  findLiveSessionAt,
+  type RecentSpawns,
+  type SpawnInput,
+  spawnBackgroundSession,
+  SpawnFailedError,
+  worktreeNameFor,
+  worktreePathFor,
+} from './spawn';
 import {
   DETAIL_HISTORY_EXCLUDED,
   type HandoffStatus,
@@ -35,6 +53,40 @@ export interface TodoServerOptions {
    * (테스트가 호출 횟수에 의존할 수 있고, 주입의 목적 자체가 결정론이다).
    */
   sessions?: () => SessionsResult;
+  /**
+   * spawn 라우트 전용 세션 조회 — 기본은 **캐시 없는** `listSessions` 다.
+   *
+   * 동시 실행 가드는 이 설계의 유일한 안전 속성인데, TTL 3초 캐시로 보면 spawn 직전
+   * 3초 안의 다른 요청이 채워둔 **spawn 이전 스냅샷**으로 판정하게 된다. spawn 은 사람이
+   * 버튼을 누를 때만 도는 드문 경로라 실측 ~220ms 를 매번 무는 편이 낫다.
+   *
+   * 생략하면 `sessions` 주입값을 그대로 쓴다 — 테스트가 `sessions` 만 넣었을 때 spawn
+   * 라우트도 그 결정론적 목록을 보게 하려는 것이다.
+   */
+  spawnSessions?: () => SessionsResult;
+  /**
+   * 백그라운드 세션 기동 — 테스트 주입용. 기본은 실제 `claude --bg` 를 띄운다.
+   * 짧은 id 를 돌려주고, 실패하면 던진다(reject).
+   */
+  spawn?: (input: SpawnInput) => Promise<string>;
+  /**
+   * 경로 존재 검사 — 테스트 주입용. 기본은 `existsSync`.
+   * spawn 라우트가 `boards.path` 가 실재하는 git 워크트리인지 보는 데만 쓴다.
+   */
+  pathExists?: (path: string) => boolean;
+  /**
+   * 경로 정규화 — 테스트 주입용. 기본은 `realpathSync`(없는 경로면 던진다).
+   *
+   * 심볼릭 링크나 `..` 이 섞인 `boards.path` 를 그대로 두면 `agents --json` 이 보고하는
+   * 실경로와 문자열이 달라 동시 실행 가드(`findLiveSessionAt` 의 정확 일치 비교)가
+   * 조용히 무력화된다.
+   */
+  realPath?: (path: string) => string;
+  /**
+   * 방금 띄운 워크트리 기억 — 테스트 주입용(시계를 통제하려면 `createRecentSpawns` 참고).
+   * 기본은 데몬 수명 동안만 사는 TTL 60초 창.
+   */
+  recentSpawns?: RecentSpawns;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -123,9 +175,32 @@ function toHttpError(error: unknown): Response {
   return errorResponse(message, 400);
 }
 
+/**
+ * spawn 라우트가 볼 세션 조회기를 고른다 — 이 배선 규칙이 사는 유일한 자리다.
+ *
+ * 주입이 하나도 없으면 **캐시 없는** `listSessions` 다. `daemon.ts` 가 나중에
+ * `sessions: createCachedListSessions()` 를 넘기더라도 spawn 라우트가 조용히 캐시된
+ * (= spawn 이전) 스냅샷으로 판정하는 일이 없게, 기본값을 `sessions` 와 분리해 둔다.
+ *
+ * @param list 기본 조회기 — 테스트가 호출 횟수를 세려고 주입한다. 기본은 매 호출
+ *   `claude agents --json` 을 새로 부르는 `listSessions`.
+ */
+export function resolveSpawnSessions(
+  options: Pick<TodoServerOptions, 'sessions' | 'spawnSessions'>,
+  list: () => SessionsResult = () => listSessions(),
+): () => SessionsResult {
+  return options.spawnSessions ?? options.sessions ?? list;
+}
+
 export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const { store, run } = options;
   const sessionsOf = options.sessions ?? createCachedListSessions();
+  // spawn 라우트만 캐시를 우회한다 — 가드가 spawn 이전 스냅샷을 보면 안 된다.
+  const spawnSessionsOf = resolveSpawnSessions(options);
+  const spawnSession = options.spawn ?? ((input: SpawnInput) => spawnBackgroundSession(input));
+  const pathExists = options.pathExists ?? existsSync;
+  const realPath = options.realPath ?? realpathSync;
+  const recentSpawns = options.recentSpawns ?? createRecentSpawns();
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -183,6 +258,9 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           version: pkg.version,
           pid: process.pid,
           issueCreateAllowed: local,
+          // spawn 도 이슈 생성과 같은 등급의 로컬 전용 게이트다 — UI 가 없는 버튼을
+          // 그리지 않도록 미리 보는 힌트일 뿐, 강제는 spawn 라우트 자신이 한다.
+          spawnAllowed: local,
         });
       }
 
@@ -212,12 +290,32 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const boardDetail = path.match(/^\/api\/boards\/([^/]+)$/);
       if (boardDetail?.[1] && method === 'PATCH') {
         const body = await readBody(req);
+        const key = decodeURIComponent(boardDetail[1]);
+        // 두 필드는 서로 독립이다 — 하나만 보내는 것이 정상이고, 둘 다 없으면 400.
+        // 어느 쪽을 고치려던 요청인지는 **키 존재 여부**로 가른다. 값 타입으로 가르면
+        // `{path: 123}` 이 repo 분기로 흘러 원인과 다른 에러("repo must look like ...")를
+        // 돌려주고, 아무것도 안 보낸 요청도 같은 말을 한다.
+        const hasPath = 'path' in body;
+        const hasRepo = 'repo' in body;
+        if (!hasPath && !hasRepo) {
+          return errorResponse('path or repo is required', 400);
+        }
+        // 둘 다 오면 거절한다. path 를 먼저 처리하면 repo 가 조용히 사라지고, 둘 다
+        // 쓰자니 store 호출이 둘로 갈려 한쪽만 적용된 채 실패할 수 있다 — 부분 적용은
+        // 이 보드에서 가장 나쁜 실패다. 보내는 쪽(UI·CLI)은 언제나 한 필드만 보낸다.
+        if (hasPath && hasRepo) {
+          return errorResponse('send path or repo, not both', 400);
+        }
+        if (hasPath) {
+          if (typeof body.path !== 'string' || body.path.trim() === '') {
+            return errorResponse('path must be a non-empty string', 400);
+          }
+          return json(store.setBoardPath(key, body.path.trim(), actor));
+        }
         if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
           return errorResponse('repo must look like OWNER/NAME', 400);
         }
-        return json(
-          store.setBoardRepo(decodeURIComponent(boardDetail[1]), body.repo.trim(), actor),
-        );
+        return json(store.setBoardRepo(key, body.repo.trim(), actor));
       }
 
       // ── sections ──
@@ -440,6 +538,164 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           currentBoardId,
         });
         return json(handoff, 201);
+      }
+
+      const todoSpawn = /^\/api\/todos\/([^/]+)\/spawn$/.exec(path);
+      if (todoSpawn?.[1] && method === 'POST') {
+        // 이슈 생성과 같은 등급의 게이트다 — 보드 쓰기 권한이 "이 기계에서 파일을 고치는
+        // 프로세스를 띄우는 권한" 으로 확대되는 지점이라 `todo.expose` 와 무관하게 막는다.
+        if (!local) {
+          return errorResponse(NON_LOCAL_SPAWN_MESSAGE, 403);
+        }
+        const ref = decodeURIComponent(todoSpawn[1]);
+        const body = await readOptionalBody(req);
+        const note = typeof body?.note === 'string' ? body.note : undefined;
+        const currentBoardId = currentBoardIdOf(url, ref);
+        const todo = store.getTodo(ref, currentBoardId);
+        if (!todo) {
+          return errorResponse(`todo not found: ${ref}`, 404);
+        }
+        if (todo.archivedAt) {
+          return errorResponse(`todo is archived: ${ref}`, 400);
+        }
+        if (store.pendingHandoffOf(todo.id)) {
+          return errorResponse(`이 항목은 이미 다른 세션 앞에 대기 중이다: ${ref}`, 409);
+        }
+
+        // path 는 선택 — 주면 이번 spawn 에 한해 boards.path 를 덮어쓰고, **spawn 이
+        // 성공한 뒤에만** 영구 저장한다(아래 persistPathIfGiven). `IssueAction`/
+        // `createIssueForTodo` 와 같은 모양이다 — 저장을 먼저 하면 오타난 경로가 spawn
+        // 실패와 무관하게 보드에 눌어붙어 다른 todo·다른 탭까지 같은 실패를 물려받는다.
+        let pathOverride: string | undefined;
+        if (body && 'path' in body) {
+          if (typeof body.path !== 'string' || body.path.trim() === '') {
+            return errorResponse('path must be a non-empty string', 400);
+          }
+          pathOverride = body.path.trim();
+        }
+
+        const board = store.listBoards(true).find((b) => b.id === todo.boardId);
+        const rawBoardPath = pathOverride ?? board?.path ?? '';
+        if (rawBoardPath === '') {
+          return errorResponse(
+            `보드 "${board?.key ?? ''}" 에 메인 레포 경로가 없다 — rocky-todo board path <절대경로> 로 설정하라`,
+            400,
+          );
+        }
+        // 상대경로는 데몬 프로세스의 cwd 기준으로 풀린다 — 데몬은 launchd/훅이 임의의
+        // 자리에서 띄우므로 사용자가 의도하지 않은 레포에서 세션이 뜬다. 막는다.
+        if (!isAbsolute(rawBoardPath)) {
+          return errorResponse(
+            `보드 경로는 절대경로여야 한다 — 데몬의 cwd 는 예측할 수 없다: ${rawBoardPath}`,
+            400,
+          );
+        }
+        // 심볼릭 링크·`..` 을 여기서 걷어낸다. 이 값 하나가 워크트리 경로 계산·spawn 실행
+        // cwd·보드 저장에 전부 쓰여야 `agents --json` 의 실경로와 문자열 비교가 성립한다.
+        // 워크트리는 아직 없을 수 있으므로 realpath 는 보드 경로에만 적용한다.
+        let boardPath: string;
+        try {
+          boardPath = realPath(rawBoardPath.replace(/\/+$/, ''));
+        } catch {
+          return errorResponse(`경로를 찾을 수 없다: ${rawBoardPath}`, 400);
+        }
+        if (!pathExists(`${boardPath.replace(/\/+$/, '')}/.git`)) {
+          return errorResponse(`git 워크트리가 아니다: ${boardPath}`, 400);
+        }
+
+        const worktreePath = worktreePathFor(boardPath, todo.number);
+
+        // 캐시를 우회해도 "새 세션이 `agents --json` 에 등록되기까지의 지연" 은 남는다.
+        // 그 창에서의 재요청은 409 로 끊는다 — 재사용 분기로 보내면 짧은 id 로 pending 이
+        // 만들어져 영영 배달되지 않는다(claim 은 full UUID 로 한다).
+        if (recentSpawns.isRecent(worktreePath)) {
+          return errorResponse(
+            `방금 이 워크트리에 세션을 띄웠다 — 잠시 후 다시 시도하라: ${worktreePath}`,
+            409,
+          );
+        }
+
+        // handoff 라우트와 같은 코드로 답한다 — 두 엔드포인트를 함께 쓰는 호출자가 같은
+        // 실패에 두 가지 코드를 다루지 않게.
+        const sessions = spawnSessionsOf();
+        if (!sessions.available) {
+          return errorResponse(sessions.reason ?? '활성 세션 목록을 가져올 수 없다', 409);
+        }
+
+        const todoRef = refOf(store, todo.boardId, todo.number, todo.id);
+
+        // pathOverride 가 주어졌고 여기까지 왔다는 건 그 값으로 워크트리 경로를 구성해
+        // 존재 검사까지 통과했다는 뜻이다 — 유효함이 입증됐으니 저장한다. 저장하는 값은
+        // 정규화된 쪽이다(보드에 남는 경로가 가드가 비교하는 경로와 같아야 한다). 재사용
+        // 분기도 예외가 아니다(그 경로로 워크트리를 찾아 살아있는 세션을 판정했으니 옳다).
+        const persistPathIfGiven = (): void => {
+          if (pathOverride !== undefined && board) {
+            store.setBoardPath(board.key, boardPath, actor);
+          }
+        };
+
+        // 그 워크트리에서 이미 도는 세션이 있으면 새로 띄우지 않는다 — 두 에이전트가 한
+        // 워크트리를 같이 고치는 것을 막는 가드이자, 곧 "세션 재사용" 이다. 이때는 평범한
+        // pending 핸드오프를 만들어 그 세션의 다음 Stop 훅이 집게 한다.
+        const live = findLiveSessionAt(sessions.sessions, worktreePath);
+        if (live) {
+          const handoff = store.createHandoff({
+            ref,
+            sessionId: live.sessionId,
+            sessionName: live.name,
+            sessionCwd: live.cwd,
+            note,
+            actor,
+            currentBoardId,
+          });
+          persistPathIfGiven();
+          return json({ handoff, reused: true, worktreePath }, 201);
+        }
+
+        const sessionName = `${board?.key ?? 'todo'}-${todo.number}`;
+        // 예약은 실행 **전에**, 이 동기 구간에서 잡는다. `await spawnSession` 뒤로 미루면
+        // 그 창에 겹쳐 들어온 두 요청이 위 게이트를 나란히 통과해 한 워크트리에 두
+        // 에이전트가 붙는다 — 이 설계의 유일한 안전 속성이 거기서 무너진다.
+        recentSpawns.remember(worktreePath);
+        let shortId: string;
+        try {
+          shortId = await spawnSession({
+            boardPath,
+            worktreeName: worktreeNameFor(todo.number),
+            sessionName,
+            prompt: buildHandoffPromptFrom({
+              actor,
+              note: (note ?? '').trim(),
+              todoRef,
+              todoTitle: todo.title,
+              remaining: 0,
+            }),
+          });
+        } catch (error) {
+          // 예약은 **확실히 안 떴을 때만** 되돌린다. "떴는지 모른다"(마감 초과·출력 형식
+          // 변화)에서 풀면, 세션은 떴는데 `agents --json` 에는 아직 안 보이는 창에 사용자가
+          // 다시 눌러 한 워크트리에 두 에이전트가 붙는다 — 예약이 있는 이유가 그 지연이다.
+          // 분류가 없는 에러(예기치 못한 버그)도 모르는 쪽으로 둔다: 헛되이 60초 기다리는
+          // 비용보다 동시 실행의 비용이 훨씬 크다.
+          if (error instanceof SpawnFailedError && error.started === false) {
+            recentSpawns.forget(worktreePath);
+          }
+          return errorResponse(error instanceof Error ? error.message : String(error), 400);
+        }
+
+        // 배달 기록·경로 저장은 spawn 이 성공한 뒤에만 남긴다 — 실패한 spawn 이 배달 기록을
+        // 남기면 보드가 "보냈다"고 말하는데 아무도 받지 않은 상태가 된다.
+        persistPathIfGiven();
+        const handoff = store.createSpawnedHandoff({
+          ref,
+          sessionId: shortId,
+          sessionName,
+          sessionCwd: worktreePath,
+          note,
+          actor,
+          currentBoardId,
+        });
+        return json({ handoff, reused: false, worktreePath, sessionShortId: shortId }, 201);
       }
 
       // ── comments ──

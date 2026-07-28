@@ -215,6 +215,49 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
   `note_list` / `note_write`). 핸드오프는 사람이 세션에 넘기는 경로이지, 에이전트가 호출하는
   도구가 아니다.
 
+## 보드 → 새 워크트리 세션 (spawn, 로컬 전용)
+
+실행 중인 세션이 없어도 보드에서 바로 새 작업을 시작시킬 수 있다 — 웹 UI 드로어의
+"새 세션 띄우기" 버튼, 또는 `rocky-todo spawn REF [--message "본문"]`. 데몬은 git 을
+전혀 만지지 않는다 — `claude --bg --worktree todo-<번호>` 를 실행해 **Claude Code 에게
+워크트리 생성을 맡긴다.**
+
+- **경로 설정**: 보드마다 메인 레포의 절대경로(`boards.path`)를 알아야 spawn 이 동작한다.
+  `rocky-todo board path [절대경로]`(인자 없으면 지금 있는 cwd) 또는 웹 UI 가 처음 누를 때
+  띄우는 입력창으로 설정한다 — GitHub 이슈의 `board repo` 와 같은 모양으로, spawn 이
+  성공한 뒤에만 보드에 저장된다(오타난 경로가 실패와 무관하게 눌어붙지 않는다).
+  **상대경로는 거부한다**(400) — 데몬은 launchd/훅이 임의의 자리에서 띄우므로 상대경로가
+  어느 레포로 풀릴지 알 수 없다. 심볼릭 링크와 `..` 은 실경로로 정규화해서 쓰고 저장한다
+  — 동시 실행 가드가 `claude agents --json` 의 cwd 와 문자열로 비교하기 때문이다.
+- **워크트리가 쌓이는 자리**: `<메인 레포>/.claude/worktrees/todo-<번호>`, 브랜치는
+  `worktree-todo-<번호>`. 같은 todo 번호로 다시 누르면 Claude Code 가 기존 워크트리를
+  재사용한다 — 워크트리 이름 자체가 "이 todo 의 워크트리" 라는 기억이라 데몬은 따로
+  저장하지 않는다.
+- **정리**: `claude rm <짧은 id>` 가 워크트리와 job state 를 함께 지운다. git 명령으로
+  직접 지우려면 Claude Code 가 걸어둔 lock 때문에 `git worktree remove -f -f` 가 필요하다.
+  **자동 삭제는 없다** — 커밋되지 않은 작업물이 조용히 사라지는 것이 이 기능에서 가장
+  나쁜 실패라, 워크트리는 명시적으로 지울 때까지 남는다.
+- **동시 실행 가드**: 그 워크트리에서 이미 도는 세션(백그라운드든 사람이 연 interactive
+  세션이든)이 있으면 새로 띄우지 않고 기존 핸드오프 큐로 넘긴다(`reused: true`) — 두
+  에이전트가 한 워크트리를 같이 고치는 사고를 막는다. 이 판정만은 **캐시 없는** 세션
+  목록으로 한다(다른 조회는 TTL 3초 캐시를 쓴다). 새 세션이 `agents --json` 에 등록되기
+  전의 틈은 데몬이 "방금 띄운 워크트리" 를 60초 기억해 메운다 — 그 창 안의 재요청은
+  409 다(버튼 두 번 누르기/두 탭). 잠시 후 다시 누르면 된다. 이 기억은 세션을 **띄우기
+  전에** 잡고 실패하면 되돌린다 — 그래야 두 탭에서 동시에 눌러도 하나만 통과하고,
+  실패한 시도가 60초 동안 재시도를 막지 않는다.
+- **로컬(루프백) 요청만** — GitHub 이슈 생성과 같은 등급의 게이트다. 보드 쓰기 권한이
+  "이 기계에서 파일을 고치는 프로세스를 띄우는 권한" 으로 확대되는 지점이라, `todo.expose`
+  로 `lan`/`tailscale-serve` 를 열어도 그 화면에는 "새 세션 띄우기" 버튼이 뜨지 않는다
+  (`/api/health` 의 `spawnAllowed` 를 보고 웹 UI 가 버튼 대신 이유를 보여준다 — 강제는
+  서버가 한다). 원격에서 띄우려면 그 머신에서 CLI(`rocky-todo spawn REF`)를 쓰거나
+  에이전트에게 시킨다.
+- **승인 프롬프트에서 멈춘 세션은 보드가 모른다** — `state` 가 그때도 `working` 으로
+  보인다. 드로어와 `rocky-todo sessions` 가 보여주는 짧은 id 로 `claude attach <id>` 하면
+  붙어서 승인을 처리할 수 있다.
+- **`--permission-mode` 는 넘기지 않는다** — 사용자 settings 의 `permissions.defaultMode`
+  를 그대로 따른다.
+- MCP 도구는 늘지 않았다 — spawn 은 사람이 보드에서 누르는 버튼으로만 남는다.
+
 ## 노출 범위 (`todo.expose` — 기본 이 머신만)
 
 보드에 **인증이 없으므로** 노출은 전부 opt-in 채널이다. user `rocky.json` 의
@@ -233,8 +276,10 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 | `"tailscale-serve"` | 테일넷에 연결된 내 기기들 (HTTPS) | 127.0.0.1 유지 | tailscaled 프록시가 중계, 기동 시 `tailscale serve` 자동 보장. 테일넷 Serve 기능 첫 사용 시 관리 콘솔 1회 승인 필요 |
 
 - 핸드오프 "보내기"(`POST /api/todos/:ref/handoff`)와 세션 목록(`GET /api/sessions`)은
-  노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기).
-  `claim`(`POST /api/handoffs/claim`)은 훅 전용이라 루프백(127.0.0.1/::1) 요청만 받는다 —
+  노출 채널을 그대로 타 원격에서도 된다 — 의도된 동작(폰에서 보드 보다 보내기). **새 세션
+  띄우기(`POST /api/todos/:ref/spawn`)는 다르다** — 이슈 생성과 같이 노출 설정과 무관하게
+  로컬 요청만 받는다(위 "보드 → 새 워크트리 세션" 참고). `claim`(`POST /api/handoffs/claim`)
+  은 훅 전용이라 루프백(127.0.0.1/::1) 요청만 받는다 —
   훅은 항상 로컬에서 붙으니 기능 손실은 없다. 판정은 이슈 생성과 같은 `isLocalRequest`
   를 쓴다 — **소스 주소가 루프백이고 동시에 중계 헤더가 없어야** 로컬로 본다. 주소만
   보면 부족하기 때문이다:
@@ -268,8 +313,9 @@ rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global|--note] · board ls|add|repo · section ls · open
+rocky-todo history REF [--global|--note] · board ls|add|repo|path · section ls · open
 rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
+rocky-todo spawn REF [--message "본문"]            # todo 전용 워크트리에 새 세션 띄우기 (로컬 전용)
 rocky-todo sessions
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
 rocky-todo tailscale on|off|status
