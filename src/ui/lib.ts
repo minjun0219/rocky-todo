@@ -234,8 +234,9 @@ function defaultCopyRefWithFeedbackEnv(): CopyRefWithFeedbackEnv {
  * 테스트할 수 있다(신규 React 테스트 의존성 불필요). `env` 는 `copyRef` 와 같은 패턴으로
  * clipboard/document/prompt/setTimeout 접근을 주입한다 — 생략하면 실제 전역을 쓴다.
  *
- * title/aria-label 렌더링은 손대지 않는다 — 버튼의 보이는 텍스트(`#12`)만으로는
- * 스크린리더가 제대로 안내하지 못한다는 과거 리뷰 지적으로 각 호출부가 이미 명시적
+ * title/aria-label 렌더링은 손대지 않는다 — 버튼의 보이는 텍스트(목록 행에서는 맨숫자,
+ * 드로어에서는 전체 ref)만으로는 스크린리더가 제대로 안내하지 못한다는 과거 리뷰
+ * 지적으로 각 호출부가 이미 명시적
  * `aria-label` 을 달아 두었고, 그건 이 헬퍼가 반환하는 `copied` 상태를 그대로 읽는
  * 호출부(JSX)의 책임으로 남긴다.
  */
