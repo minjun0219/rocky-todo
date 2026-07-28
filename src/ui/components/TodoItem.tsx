@@ -63,65 +63,83 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       <button type="button" className="todo-title" onClick={() => void openTodoDetail(todo.id)}>
         {todo.title}
       </button>
-      {todo.priority !== 'p4' && (
-        <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
-      )}
-      {todo.labels.map((label) => (
-        <span key={label} className="chip chip-label">
-          {label}
-        </span>
-      ))}
-      {todo.due && (
-        <span className={`chip chip-due ${!done && isOverdue(todo.due) ? 'is-overdue' : ''}`}>
-          {formatDue(todo.due)}
-        </span>
-      )}
-      {todo.links.map((link) => (
-        <a
-          key={link.url}
-          className="chip chip-link"
-          href={link.url}
-          target="_blank"
-          rel="noreferrer"
-          title={link.title ?? link.url}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {link.title ?? linkLabel(link.url)} ↗
-        </a>
-      ))}
-      {todo.commentCount > 0 && (
-        <button
-          type="button"
-          className={`comment-badge ${unread ? 'is-unread' : ''}`}
-          title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
-          aria-label={
-            unread
-              ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
-              : `댓글 ${todo.commentCount}개 — 눌러서 열기`
-          }
-          onClick={() => void openTodoDetail(todo.id)}
-        >
-          💬 {todo.commentCount}
-        </button>
-      )}
-      {pendingHandoff ? (
-        <span
-          className="chip chip-handoff"
-          title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
-        >
-          → {pendingHandoff.sessionName ?? '세션'}
-        </span>
-      ) : null}
-      {doing && todo.doingBy && (
-        <span
-          className={`doing-badge tone-${actorTone(todo.doingBy)} ${stale ? 'is-stale' : ''}`}
-          title={stale ? '30분 이상 갱신 없음' : '처리중'}
-        >
-          <span className="doing-pulse" />
-          {todo.doingBy} · {todo.doingSince ? formatElapsed(todo.doingSince) : ''}
-          {stale ? ' ⚠' : ''}
-        </span>
-      )}
+      {/* 메타(칩·뱃지)를 한 랩에 담는다. 데스크톱에선 display:contents 라 지금과 같은
+          한 줄 flex 이고, 모바일에선 이 랩이 통째로 둘째 줄이 되어 제목 시작선에
+          맞춰 들여쓰인다 — 랩이 없으면 줄바꿈된 칩이 체크박스 밑까지 흘러가
+          어느 항목 소속인지 모호해진다. 메타가 없으면 랩도 그리지 않는다(빈 줄 방지). */}
+      {(todo.priority !== 'p4' ||
+        todo.labels.length > 0 ||
+        todo.due ||
+        todo.links.length > 0 ||
+        todo.commentCount > 0 ||
+        pendingHandoff ||
+        (doing && todo.doingBy)) && <span className="todo-meta">{renderMeta()}</span>}
     </div>
   );
+
+  function renderMeta() {
+    return (
+      <>
+        {todo.priority !== 'p4' && (
+          <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
+        )}
+        {todo.labels.map((label) => (
+          <span key={label} className="chip chip-label">
+            {label}
+          </span>
+        ))}
+        {todo.due && (
+          <span className={`chip chip-due ${!done && isOverdue(todo.due) ? 'is-overdue' : ''}`}>
+            {formatDue(todo.due)}
+          </span>
+        )}
+        {todo.links.map((link) => (
+          <a
+            key={link.url}
+            className="chip chip-link"
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            title={link.title ?? link.url}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {link.title ?? linkLabel(link.url)} ↗
+          </a>
+        ))}
+        {todo.commentCount > 0 && (
+          <button
+            type="button"
+            className={`comment-badge ${unread ? 'is-unread' : ''}`}
+            title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
+            aria-label={
+              unread
+                ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
+                : `댓글 ${todo.commentCount}개 — 눌러서 열기`
+            }
+            onClick={() => void openTodoDetail(todo.id)}
+          >
+            💬 {todo.commentCount}
+          </button>
+        )}
+        {pendingHandoff ? (
+          <span
+            className="chip chip-handoff"
+            title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
+          >
+            → {pendingHandoff.sessionName ?? '세션'}
+          </span>
+        ) : null}
+        {doing && todo.doingBy && (
+          <span
+            className={`doing-badge tone-${actorTone(todo.doingBy)} ${stale ? 'is-stale' : ''}`}
+            title={stale ? '30분 이상 갱신 없음' : '처리중'}
+          >
+            <span className="doing-pulse" />
+            {todo.doingBy} · {todo.doingSince ? formatElapsed(todo.doingSince) : ''}
+            {stale ? ' ⚠' : ''}
+          </span>
+        )}
+      </>
+    );
+  }
 }

@@ -190,9 +190,10 @@ textarea {
 .actor-chip {
   font-family: var(--mono);
   font-size: 12px;
-  padding: 3px 12px;
+  padding: 4px 13px;
   border-radius: 999px;
-  border: 1px solid var(--cool-dim);
+  /* 사람의 손 — cool 틴트 면. 윤곽선을 두르지 않는다(DESIGN.md §6). */
+  background: color-mix(in srgb, var(--cool) 10%, transparent);
   color: var(--cool);
 }
 
@@ -348,11 +349,18 @@ textarea {
   background: var(--surface);
 }
 
+/* 메타(칩·뱃지) 랩 — 데스크톱에선 레이아웃에 투명하다(부모 flex 의 직접 자식처럼
+   흐른다). 모바일 블록이 이걸 실제 줄로 바꾼다. */
+.todo-meta {
+  display: contents;
+}
+
 .todo-check {
   appearance: none;
   width: 15px;
   height: 15px;
-  border: 1.5px solid var(--muted);
+  /* 조작 컨트롤 경계 — --line-strong 이 정확히 이 용도다(3.0 충족, --muted 4.98 은 과했다). */
+  border: 1.5px solid var(--line-strong);
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
@@ -557,8 +565,9 @@ textarea {
 }
 
 .doing-badge.tone-warm {
-  border: 1px solid var(--warm-dim);
-  background: color-mix(in srgb, var(--warm) 8%, transparent);
+  /* 뱃지도 면이다(DESIGN.md §6) — 칩과 같은 어법. 칩(10%)보다 살짝 진해
+     "지금 움직이는 중"이 옆 칩들 사이에서 한 톤 앞선다. */
+  background: color-mix(in srgb, var(--warm) 14%, transparent);
 }
 
 .tone-cool {
@@ -566,8 +575,7 @@ textarea {
 }
 
 .doing-badge.tone-cool {
-  border: 1px solid var(--cool-dim);
-  background: color-mix(in srgb, var(--cool) 8%, transparent);
+  background: color-mix(in srgb, var(--cool) 14%, transparent);
 }
 
 .doing-pulse {
@@ -926,6 +934,18 @@ body.is-drawer-open {
   .todo-row {
     flex-wrap: wrap;
     row-gap: 2px;
+  }
+  /* 메타 랩을 실제 줄로 — 통째로 둘째 줄이 되어 제목 시작선(x≈70px)에 맞춰
+     들여쓰인다. 랩 없이 개별 칩이 wrap 되면 체크박스 밑(행 왼쪽 끝)까지 흘러가
+     어느 항목 소속인지 모호해진다. 70px = 제목 시작 x (390px 실측 — width:100% 인
+     wrap 아이템이라 margin 값이 행 좌edge 기준 위치가 된다). */
+  .todo-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-left: 70px;
   }
   .todo-title {
     white-space: normal;
