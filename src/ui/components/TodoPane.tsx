@@ -62,10 +62,13 @@ export function TodoPane() {
   }
 
   return (
-    <main className="todo-pane">
+    <main className="todo-pane min-w-0 overflow-y-auto px-[26px] py-5 max-[900px]:shrink-0 max-[900px]:overflow-y-visible max-[900px]:px-3.5 max-[900px]:pt-3.5 max-[900px]:pb-1.5">
       {selected !== 'all' && (
         <form
-          className="quick-add"
+          // sticky 배경: .todo-pane 은 배경색이 없어 body 의 --bg 위라, 같은 색을 깔아
+          // 스크롤된 항목이 입력 뒤로 비쳐 보이지 않게 한다. 간격은 margin 대신 padding —
+          // margin 은 collapse 돼 칠해진 배경이 시각적 간격보다 짧게 끝난다.
+          className="quick-add sticky top-0 z-[1] bg-(--bg) pb-[18px]"
           onSubmit={(e) => {
             e.preventDefault();
             const title = draft.trim();
@@ -77,7 +80,7 @@ export function TodoPane() {
           }}
         >
           <input
-            className="quick-add-input"
+            className="quick-add-input w-full rounded-lg border border-(--line-strong) bg-(--surface) px-3.5 py-[9px] text-(--text) placeholder:text-(--faint) max-[900px]:text-base"
             placeholder="+ 새 작업 (Enter 로 추가)"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -86,7 +89,7 @@ export function TodoPane() {
       )}
 
       {groups.length === 0 && (
-        <div className="empty-state">
+        <div className="empty-state px-1 py-[18px] text-[13px] text-(--faint)">
           아직 항목이 없다.{' '}
           {selected === 'all'
             ? '보드를 골라 작업을 추가해 보자.'
@@ -95,8 +98,10 @@ export function TodoPane() {
       )}
 
       {groups.map((group) => (
-        <section key={group.key} className="todo-group">
-          <div className="group-eyebrow">{group.title}</div>
+        <section key={group.key} className="todo-group mb-[26px]">
+          <div className="group-eyebrow mb-1.5 border-b border-(--line) pb-[5px] font-(family-name:--mono) text-[11px] uppercase tracking-[0.22em] text-(--warm-dim)">
+            {group.title}
+          </div>
           {renderTree(group.items, 0)}
         </section>
       ))}

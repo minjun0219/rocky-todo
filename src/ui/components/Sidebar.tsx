@@ -61,7 +61,7 @@ export function Sidebar() {
           {board.title}
           {doingBoards.has(board.id) && (
             <span
-              className="doing-dot size-1.5 rounded-full bg-(--warm) [animation:pulse_2.4s_ease-in-out_infinite]"
+              className="doing-dot size-1.5 rounded-full bg-(--warm) [animation:pulse_2.4s_ease-in-out_infinite] motion-reduce:animate-none"
               title="처리중인 항목 있음"
             />
           )}

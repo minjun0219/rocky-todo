@@ -43,7 +43,7 @@ export function TopBar() {
         title="데몬 SSE 연결 상태"
       >
         <span
-          className={`link-pulse size-1.5 rounded-full bg-current ${connected ? '[animation:pulse_2.4s_ease-in-out_infinite]' : ''}`}
+          className={`link-pulse size-1.5 rounded-full bg-current ${connected ? '[animation:pulse_2.4s_ease-in-out_infinite] motion-reduce:animate-none' : ''}`}
         />
         {connected ? 'LINK ♪' : 'NO LINK'}
       </span>

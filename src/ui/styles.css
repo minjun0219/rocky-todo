@@ -146,76 +146,6 @@
   }
 }
 
-/* ── main pane ──────────────────────────────────── */
-
-.todo-pane {
-  padding: 20px 26px;
-  overflow-y: auto;
-  min-width: 0;
-}
-
-/* 목록을 스크롤해도 새 작업 입력이 따라온다. `.todo-pane` 은 배경색이 없어 body 의
-   `--bg` 위에 있으므로 같은 색을 깔아 아래 항목이 비쳐 보이지 않게 한다. */
-.quick-add {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--bg);
-  /* 간격을 margin 대신 padding 으로 — margin 은 이 폼에 border/overflow 가 없어 밖으로
-     collapse 돼 버려, 스티키 폼의 칠해진 배경이 시각적 간격보다 짧게 끝난다. */
-  padding-bottom: 18px;
-}
-
-.quick-add-input {
-  width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  padding: 9px 14px;
-  color: var(--text);
-  margin-bottom: 0;
-}
-
-.quick-add-input::placeholder {
-  color: var(--faint);
-}
-
-.todo-group {
-  margin-bottom: 26px;
-}
-
-.group-eyebrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--warm-dim);
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 5px;
-  margin-bottom: 6px;
-}
-
-.todo-row {
-  /* 제목 버튼의 ::after 오버레이(아래) 기준점 — 행 전체가 상세 열기 클릭 영역이 된다. */
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  min-height: 32px;
-}
-
-.todo-row:hover {
-  background: var(--surface);
-}
-
-/* 메타(칩·뱃지) 랩 — 데스크톱에선 레이아웃에 투명하다(부모 flex 의 직접 자식처럼
-   흐른다). 모바일 블록이 이걸 실제 줄로 바꾼다. */
-.todo-meta {
-  display: contents;
-}
-
 .todo-check {
   appearance: none;
   width: 15px;
@@ -241,39 +171,6 @@
   font-weight: 700;
 }
 
-.todo-ref {
-  flex: 0 0 auto;
-  /* 자릿수 정렬(tabular)을 위한 최소 폭 — `#999` 까지 담고, 그보다 넓히지 않는다.
-     오른쪽 정렬이라 박스가 넓을수록 숫자가 체크박스에서 멀어진다. */
-  min-width: 2.2em;
-  /* 행의 8px gap 을 이 자리에서만 상쇄한다. 체크박스 히트 영역(44px)과 이 버튼이
-     각자 시각 요소를 반대 끝에 두고 있어, gap 까지 더하면 둘 사이가 51px 로 벌어졌다.
-     히트 영역은 맞닿기만 하고 겹치지 않는다 — 겹치면 체크박스 탭을 이 버튼이 가로챈다. */
-  margin-left: -8px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 0.85em;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  cursor: pointer;
-}
-
-.todo-ref:hover {
-  color: var(--text);
-  text-decoration: underline;
-}
-
-.todo-title {
-  text-align: left;
-  color: var(--text);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* stretched-link — 제목 버튼의 클릭 영역을 행 전체로 넓힌다(마크업·JS 변경 없음,
    버튼 시맨틱 그대로). 제목 글자만 눌리면 목록에서 조준이 어렵다(사용자 지적).
    행 안의 다른 인터랙티브 요소는 z-index 로 오버레이 위에 올려 제 클릭을 지킨다. */
@@ -281,75 +178,6 @@
   content: "";
   position: absolute;
   inset: 0;
-}
-
-.todo-check-hit,
-.todo-ref,
-.chip-link,
-.comment-badge {
-  position: relative;
-  z-index: 1;
-}
-
-.todo-title:hover {
-  color: var(--warm);
-}
-
-.is-done .todo-title {
-  color: var(--faint);
-  text-decoration: line-through;
-}
-
-.is-archived {
-  opacity: var(--dim-archived);
-}
-
-/* ── chips ──────────────────────────────────────── */
-
-.chip {
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  /* 칩은 면이다 — 윤곽선을 두르지 않는다(DESIGN.md §6). 한 행에 다섯까지 붙는 자리라
-     선은 개수만큼 시끄럽다. currentColor 틴트라 색 클래스가 color 만 바꾸면 배경이
-     따라온다 — .doing-badge 의 8% 틴트와 같은 어법. */
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  color: var(--muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.prio-p1 {
-  color: var(--p1);
-}
-
-.prio-p2 {
-  color: var(--p2);
-}
-
-.prio-p3 {
-  color: var(--p3);
-}
-
-.chip-due.is-overdue {
-  color: var(--p1);
-}
-
-.chip-link {
-  text-decoration: none;
-  color: var(--cool);
-}
-
-.chip-link:hover {
-  background: color-mix(in srgb, currentColor 18%, transparent);
-}
-
-/* ── handoff — "보냈다"(파랑) 은 doing(앰버)과 다른 상태다 ─────────────── */
-
-.chip-handoff {
-  background: var(--handoff-dim);
-  color: var(--handoff);
 }
 
 .handoff-panel {
@@ -427,52 +255,12 @@
 
 /* ── doing badge — 두 대기의 온도 ─────────────────── */
 
-.doing-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
 .tone-warm {
   color: var(--warm);
 }
 
-.doing-badge.tone-warm {
-  /* doing 뱃지는 칩(면)과 달리 테두리+틴트다 — "지금 움직이는 중"은 정적 메타가
-     아니라 활성 상태라, 윤곽이 존재감을 지는 게 맞다(사용자 확인). 행에서 유일하게
-     테두리를 가진 메타 요소여서 시끄럽지 않다. */
-  border: 1px solid var(--warm-dim);
-  background: color-mix(in srgb, var(--warm) 8%, transparent);
-}
-
 .tone-cool {
   color: var(--cool);
-}
-
-.doing-badge.tone-cool {
-  border: 1px solid var(--cool-dim);
-  background: color-mix(in srgb, var(--cool) 8%, transparent);
-}
-
-.doing-pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: pulse 1.6s ease-in-out infinite;
-}
-
-.doing-badge.is-stale {
-  opacity: var(--dim-stale);
-}
-
-.doing-badge.is-stale .doing-pulse {
-  animation: none;
 }
 
 /* ── notes rail ─────────────────────────────────── */
@@ -551,14 +339,6 @@
   font-size: 11px;
   color: var(--faint);
   margin-top: 4px;
-}
-
-/* ── empty ──────────────────────────────────────── */
-
-.empty-state {
-  color: var(--faint);
-  font-size: 13px;
-  padding: 18px 4px;
 }
 
 /* ── drawer ─────────────────────────────────────── */
@@ -776,63 +556,6 @@ body.is-drawer-open {
 /* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
 
 @media (max-width: 900px) {
-  .todo-pane {
-    padding: 14px 14px 6px;
-    overflow-y: visible;
-    flex-shrink: 0;
-  }
-  /* 좁은 화면에서는 메타 칩이 다음 줄로 흐르게 */
-  .todo-row {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-  /* 메타 랩을 실제 줄로 — 통째로 둘째 줄이 되어 제목 시작선(x≈70px)에 맞춰
-     들여쓰인다. 랩 없이 개별 칩이 wrap 되면 체크박스 밑(행 왼쪽 끝)까지 흘러가
-     어느 항목 소속인지 모호해진다. 70px = 제목 시작 x (390px 실측 — width:100% 인
-     wrap 아이템이라 margin 값이 행 좌edge 기준 위치가 된다). */
-  .todo-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    margin-left: 70px;
-  }
-  .todo-title {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    /* 둘 다 필요하다 — 제목이 어느 flex 줄에 놓이느냐에 따라 모자라는 쪽이 다르다.
-       390px 실측(제목 길이를 늘려가며):
-
-         제목이 `.todo-ref` 와 같은 줄  → 줄 높이가 ref 의 44px 라 stretch 만으로 44px
-         제목이 자기 줄로 밀려 1줄      → 그 줄의 높이는 제목 자신뿐이라 21px (여기가 구멍)
-         제목이 자기 줄로 밀려 2줄      → 42px
-
-       stretch 는 "줄 높이를 채운다"일 뿐이라, 제목이 혼자인 줄에서는 채울 높이가 자기
-       높이다 — 21px 짜리 타깃이 남는다. min-height 가 그 바닥을 받친다.
-       반대로 min-height 만 쓰면 ref 와 같은 줄일 때 글자 위아래 여백을 안 먹는다.
-       함께 쓰면 같은 줄일 때는 이미 44px 라 행이 커지지 않고(공짜), 혼자인 줄에서만
-       44px 로 자란다 — 자라는 그 행은 원래 타깃이 진짜로 작던 행이다. */
-    align-self: stretch;
-    min-height: 44px;
-  }
-  /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
-     rocky-todo#1 에서 마무리했다(그 전에는 건드리는 컨트롤마다 그때그때 더해 왔다). */
-  .todo-check-hit {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
-    /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
-    margin: -8px 0 -8px -8px;
-  }
-  /* 세로만 44px 로 넓힌다. 가로까지 44px 이면 오른쪽 정렬된 번호가 박스 끝으로 밀려
-     체크박스와 51px 벌어진다 — 목록 밀도를 위해 가로 폭은 내용(2.2em)에 맡긴다.
-     26×44 는 WCAG 2.5.8(24×24)은 통과하지만 이 레포의 44×44 방침에서는 벗어난 예외다. */
-  .todo-ref {
-    min-height: 44px;
-  }
   .drawer-ref {
     display: inline-flex;
     align-items: center;
@@ -875,7 +598,6 @@ body.is-drawer-open {
     width: 100vw;
   }
   /* iOS Safari: 16px 미만 입력 필드 포커스 시 자동 확대 방지 */
-  .quick-add-input,
   .note-title,
   .note-content,
   .drawer-desc-edit {
@@ -1029,20 +751,6 @@ body.is-drawer-open {
   margin-top: 4px;
   font-size: 13px;
   line-height: 1.5;
-}
-
-.comment-badge {
-  background: none;
-  border: none;
-  padding: 0 2px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.comment-badge.is-unread {
-  color: inherit;
-  font-weight: 600;
 }
 
 /* ── GitHub 이슈 ──────────────────────────────────────────────────────────── */
