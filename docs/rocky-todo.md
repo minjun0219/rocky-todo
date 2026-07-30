@@ -98,6 +98,25 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 보안 컨텍스트(HTTPS 또는 루프백)에서만 동작하므로, 평문 LAN HTTP(`todo.expose: "lan"`)로
 접속했을 때는 `execCommand` 폴백을, 그마저 안 되면 복사할 텍스트를 보여주는 프롬프트를 띄운다.
 
+## 다음 작업 고르기 (`/rocky-todo:next`)
+
+브라우저를 열지 않고 세션에서 바로 고르는 경로. `/rocky-todo:next` 를 치면 착수 후보를
+랭킹해 보여주고, 고른 항목을 `start` 표시한 뒤 그 자리에서 시작한다. 참조를 알고 있으면
+`/rocky-todo:next rocky-12` 로 픽커를 건너뛴다.
+
+랭킹은 CLI(`rocky-todo next`)와 같은 판정을 쓴다 — **주인 없는 진행중**(세션이 사라졌거나
+멈춘 doing) → 마감(지남 > 오늘 > 7일 내) → 우선순위 → 최근 댓글. 살아 있는 세션이 붙들고
+있는 항목과 **열린 자식을 가진 우산 항목**은 후보에서 빠진다. 근거는 목록에 그대로 찍힌다:
+
+```
+$ rocky-todo next
+1. rocky-todo-22  데몬 라우트에 Origin 검사  — 이어받기(멈춤) · p2
+2. rocky-todo-21  웹 UI 라이트 모드 마이그레이션  — p2 · 최근 댓글
+```
+
+고른 항목의 보드가 지금 레포와 다르면 어디서 할지(여기서 / 새 세션 spawn / 다른 세션
+handoff)를 한 번 더 묻는다. 같은 레포면 묻지 않는다.
+
 ## 웹 UI — 퍼머링크
 
 주소가 지금 보고 있는 화면을 담는다: `/`(전체 보기) · `/{board}`(그 보드) · `/{board}/{number}`
@@ -308,6 +327,7 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 
 ```
 rocky-todo ls [--board K|--all] [--archived] [--json]
+rocky-todo next [--board K|--all] [--limit N] [--json]   # 착수 후보 랭킹 (다음에 뭘 할까)
 rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF

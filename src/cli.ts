@@ -6,6 +6,7 @@ import { buildContext, type CliContext, ensureDaemon, health, request } from './
 import { resolveTodoRuntimeConfig } from './config';
 import { isRepoSlug, parseRepoFromRemote } from './github';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
+import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext } from './next';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
 import type { AgentSession } from './sessions';
@@ -315,6 +316,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
 
 사용:
   rocky-todo ls [--board K|--all] [--archived] [--json]
+  rocky-todo next [--board K|--all] [--limit N] [--json]   착수 후보 랭킹 (다음에 뭘 할까)
   rocky-todo add "제목" [--board K] [--section S] [--parent REF] [--desc MD]
                        [--due YYYY-MM-DD] [--priority p1..p4] [--label a,b] [--link URL]
   rocky-todo show REF · update REF [플래그] [--title "새 제목"]
@@ -505,6 +507,23 @@ export async function runCli(): Promise<void> {
         ? []
         : await request<Section[]>(ctx, 'GET', `/api/sections?board=${encodeURIComponent(board)}`);
       print(todos, () => groupAndRender(todos, sections, boards, allView));
+      return;
+    }
+
+    case 'next': {
+      const allView = flags.all === true && str(flags.board) === undefined;
+      const qs = allView ? '' : `?board=${encodeURIComponent(board)}`;
+      // `ls` 와 같은 라우트다 — 서버가 doing 항목에 `doingState` 를 얹어 주므로 "주인 없는
+      // 진행중" 판정을 클라이언트에서 다시 하지 않는다.
+      const todos = await request<TodoView[]>(ctx, 'GET', `/api/todos${qs}`);
+      const limit = Number.parseInt(str(flags.limit) ?? '', 10);
+      const candidates = rankNext(todos, {
+        now: Date.now(),
+        limit: Number.isNaN(limit) ? NEXT_DEFAULT_LIMIT : limit,
+      });
+      print({ board: allView ? undefined : board, candidates }, () =>
+        formatNextCandidates(candidates),
+      );
       return;
     }
 

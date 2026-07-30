@@ -48,6 +48,7 @@ rocky-todo/
 │   ├── actor.ts                    # actor 감지 + board key 유추(git remote > toplevel > cwd)
 │   ├── actors.ts                   # AGENT_ACTORS/isAgentActor — 사람/에이전트 판정 단일 출처
 │   ├── doing.ts                    # doingState/handoffPhase/isUnstarted 판정 (순수, 세션 대조)
+│   ├── next.ts                     # 착수 후보 랭킹 + 렌더 (순수) — `next` CLI / :next 커맨드가 소비
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
@@ -66,10 +67,16 @@ rocky-todo/
 │   ├── ensure-daemon.ts (+test)    # health→없으면 spawn / 구버전이면 stop 후 재기동 (fail-open, DI)
 │   ├── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op) — 핸드오프 claim 도 같이 본다
 │   └── handoff-stop.ts (+test)     # Stop 훅 — 대기 중인 보드 요청을 집어 자동 착수 (fail-open, DI)
+├── commands/next.md                # /rocky-todo:next — 후보 랭킹 → 선택 → 착수 (규칙은 board 스킬)
 ├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
 └── .github/workflows/ + .husky/    # CI/release + git hooks (rocky 미러)
 ```
+
+**커맨드/스킬 경계**: `commands/*.md` 는 **얇은 진입점**이다 — 절차만 두고 보드 에티켓
+(start/comment/done, actor, 가드레일)은 `skills/board/SKILL.md` 를 로드해 따르게 한다. 규칙을
+커맨드로 복사하면 두 곳이 갈린다. 판정(랭킹 등)은 커맨드 본문이 아니라 `src/*.ts` 의 순수
+함수에 두고 CLI 로 노출한다 — 그래야 테스트가 붙고 사람도 같은 결과를 본다.
 
 **Import 규칙**: 전부 상대경로. `src/*` 는 서로 `./` 로, `hooks/*` 는 `../src/*` 로 import 한다.
 `../core` 같은 rocky 본체 참조는 없다 (self-contained). `@modelcontextprotocol/sdk/...js` 처럼
