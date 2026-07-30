@@ -6,7 +6,7 @@ import { buildContext, type CliContext, ensureDaemon, health, request } from './
 import { resolveTodoRuntimeConfig } from './config';
 import { isRepoSlug, parseRepoFromRemote } from './github';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
-import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext } from './next';
+import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext, toJsonCandidates } from './next';
 import { loadTodoConfig } from './rocky-config';
 import type { NoteView, TodoView } from './server';
 import type { AgentSession } from './sessions';
@@ -521,9 +521,21 @@ export async function runCli(): Promise<void> {
         now: Date.now(),
         limit: Number.isNaN(limit) ? NEXT_DEFAULT_LIMIT : limit,
       });
-      print({ board: allView ? undefined : board, candidates }, () =>
-        formatNextCandidates(candidates),
-      );
+      // JSON 은 컴팩트 형태로만 낸다 — 소비자가 모델이라 payload 가 곧 응답 지연이다
+      // (`toJsonCandidates` 주석 참고). 보드 목록은 ref 를 board key 로 되돌리기 위한 것.
+      const jsonOut = async () => {
+        const boards = await request<Board[]>(ctx, 'GET', '/api/boards');
+        const keyById = new Map(boards.map((b) => [b.id, b.key]));
+        return {
+          board: allView ? undefined : board,
+          candidates: toJsonCandidates(candidates, (id) => keyById.get(id)),
+        };
+      };
+      if (emitJson) {
+        console.log(JSON.stringify(await jsonOut(), null, 2));
+        return;
+      }
+      console.log(formatNextCandidates(candidates));
       return;
     }
 
