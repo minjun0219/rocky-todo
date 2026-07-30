@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext } from './next';
+import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext, toJsonCandidates } from './next';
 import type { TodoView } from './refs';
 
 /** 기준 시각 — 2026-07-30 09:00 로컬. 마감 라벨은 이 날짜를 "오늘" 로 읽는다. */
@@ -207,6 +207,51 @@ describe('rankNext — 깨진 입력', () => {
   });
 });
 
+describe('toJsonCandidates — payload 는 컴팩트해야 한다', () => {
+  const keyOf = (id: string) => (id === 'b1' ? 'rocky-todo' : undefined);
+
+  test('TodoView 전체가 아니라 고를 때 필요한 필드만 나간다', () => {
+    const item = todo({ title: '오리진 검사', priority: 'p2', description: '본문' });
+    const [row] = toJsonCandidates(rankNext([item], { now: NOW }), keyOf);
+    expect(row).toEqual({
+      ref: item.ref,
+      number: item.number,
+      board: 'rocky-todo',
+      title: '오리진 검사',
+      reason: 'p2',
+      priority: 'p2',
+      status: 'todo',
+      due: undefined,
+      labels: [],
+      commentCount: 0,
+      summary: '본문',
+    });
+    // 커맨드가 쓰지 않는 무거운 필드는 실리지 않는다 — 이게 응답 지연의 원인이었다.
+    expect(row).not.toHaveProperty('description');
+    expect(row).not.toHaveProperty('links');
+    expect(row).not.toHaveProperty('doingSessionId');
+  });
+
+  test('summary 는 여러 줄을 한 줄로 눌러 160자까지 자른다', () => {
+    const long = todo({ description: `첫 줄\n\n${'가'.repeat(300)}` });
+    const [row] = toJsonCandidates(rankNext([long], { now: NOW }), keyOf);
+    expect(row?.summary).toStartWith('첫 줄 가가가');
+    expect(row?.summary).toEndWith('…');
+    expect(row?.summary?.length).toBe(161); // 160자 + 말줄임표
+  });
+
+  test('description 이 비면 summary 필드 자체가 없다', () => {
+    const [row] = toJsonCandidates(rankNext([todo({ description: '' })], { now: NOW }), keyOf);
+    expect(row?.summary).toBeUndefined();
+  });
+
+  test('board key 를 못 찾아도 던지지 않고 빈 문자열로 둔다', () => {
+    const orphanBoard = todo({ boardId: 'unknown' });
+    const [row] = toJsonCandidates(rankNext([orphanBoard], { now: NOW }), keyOf);
+    expect(row?.board).toBe('');
+  });
+});
+
 describe('formatNextCandidates', () => {
   test('한 줄에 ref · 제목 · 근거', () => {
     const ranked = rankNext([todo({ title: '오리진 검사', priority: 'p2' })], { now: NOW });
@@ -217,7 +262,7 @@ describe('formatNextCandidates', () => {
     expect(formatNextCandidates([])).toContain('후보가 없다');
   });
 
-  test('기본 후보 수는 선택지 4개의 두 배다', () => {
+  test('기본 후보 수는 한 화면에서 훑을 만큼이다', () => {
     expect(NEXT_DEFAULT_LIMIT).toBe(8);
   });
 });

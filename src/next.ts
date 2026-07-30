@@ -1,10 +1,9 @@
 /**
  * "다음에 뭘 할까" 후보 랭킹 — 순수 함수.
  *
- * 보드를 그대로 들이밀면 고를 수 없다(실사용 보드가 이미 30건대다). 게다가 이걸 쓰는
- * 슬래시 커맨드의 선택지 UI 는 한 번에 넉넉히 4개라, **목록을 좁히는 판정**이 먼저 있어야
- * 한다. 그 판정을 출력 포맷·CLI 에서 떼어 둔 이유는 조합이 많아서다 — 상태 × 마감 ×
- * 우선순위 × 계층을 주입 없이 테스트하려면 순수해야 한다(`./doing` 과 같은 이유).
+ * 보드를 그대로 들이밀면 고를 수 없다(실사용 보드가 이미 30건대다). **목록을 좁히는 판정**이
+ * 먼저 있어야 한다. 그 판정을 출력 포맷·CLI 에서 떼어 둔 이유는 조합이 많아서다 — 상태 ×
+ * 마감 × 우선순위 × 계층을 주입 없이 테스트하려면 순수해야 한다(`./doing` 과 같은 이유).
  *
  * 여기서 하지 않는 것: 세션 대조. `doingState` 는 서버가 이미 `GET /api/todos` 응답에
  * 얹어 준다(`./doing` 의 `resolveDoingState`). 이 모듈은 그 판정을 **소비**만 한다.
@@ -16,7 +15,7 @@ import type { TodoView } from './refs';
 export interface NextCandidate {
   todo: TodoView;
   score: number;
-  /** 왜 위로 왔는지 (예: `이어받기(멈춤) · p2`). 선택지 설명에 그대로 쓴다. */
+  /** 왜 위로 왔는지 (예: `이어받기(멈춤) · p2`). 목록의 근거 칸에 그대로 쓴다. */
   reason: string;
 }
 
@@ -30,8 +29,8 @@ export interface RankNextOptions {
 /**
  * CLI 가 기본으로 보여줄 후보 수.
  *
- * 선택지 UI 가 4개까지라 고르는 것은 상위 4개지만, 그 위에 무엇이 밀려났는지 보이지 않으면
- * "왜 이 4개인가" 를 사람이 검증할 수 없다. 그래서 목록은 두 배까지 보여준다.
+ * 한 화면에서 훑고 고를 수 있는 상한이다. 더 넓히려면 `--limit` 을 준다 — 기본값을 올리면
+ * 목록이 스크롤을 먹어 "위에서 세 번째" 같은 판단이 되레 느려진다.
  */
 export const NEXT_DEFAULT_LIMIT = 8;
 
@@ -40,7 +39,7 @@ export const NEXT_DEFAULT_LIMIT = 8;
  *
  * 범주 점수를 그냥 더하면 문서화한 순서(주인 없는 진행중 → 마감 → 진행중 → 우선순위 →
  * 최근 댓글)가 깨진다. 첫 구현이 그랬다: `gone` 인 p4(100점)가 마감 지난 p1 + 최근 댓글
- * (70+30+12=112점)에게 밀려, 조용히 썩고 있는 작업이 선택지 밖으로 나갔다.
+ * (70+30+12=112점)에게 밀려, 조용히 썩고 있는 작업이 목록 밖으로 밀려났다.
  *
  * 그래서 각 범주를 **자리값이 다른 칸**에 나눠 담는다. 칸마다 0..99 만 쓰므로 하위 범주를
  * 전부 합쳐도 상위 범주의 한 칸을 넘지 못한다 — 합산의 편의를 유지하면서 사전식 순서가
@@ -227,6 +226,70 @@ export function rankNext(todos: readonly TodoView[], options: RankNextOptions): 
     })
     .sort(compareCandidates);
   return options.limit === undefined ? candidates : candidates.slice(0, options.limit);
+}
+
+/** `summary` 로 자를 길이. 항목이 무엇인지 알아볼 만큼만이고 그 이상은 소음이다. */
+const SUMMARY_MAX = 160;
+
+/**
+ * `--json` 이 내보내는 후보 하나 — **`TodoView` 전체가 아니다.**
+ *
+ * 이 JSON 이 답하는 질문은 "무엇을 고를까" 하나다. `TodoView` 를 그대로 실으면 `description`
+ * 만으로 수 KB 가 붙는데(실측: 후보 8건 10.8KB, 그중 description 3.2KB) 고르는 데 필요한 건
+ * 그게 아니다. 전문이 필요한 쪽은 `show REF` 를 부른다.
+ *
+ * `/rocky-todo:next` 커맨드는 이걸 쓰지 않는다 — 사람에게 보여줄 목록이 필요하니 텍스트
+ * 출력을 그대로 옮긴다. 이 형태는 스크립트와 Claude Code 아닌 호스트(CLI 를 직접 부르는
+ * Codex/opencode)를 위한 것이다.
+ */
+export interface NextCandidateJson {
+  ref: string;
+  number: number;
+  board: string;
+  title: string;
+  /** {@link NextCandidate.reason} 그대로 — 커맨드는 이 문구를 재작성하지 않는다. */
+  reason: string;
+  priority: TodoView['priority'];
+  status: TodoView['status'];
+  due?: string;
+  labels: string[];
+  commentCount: number;
+  /** `description` 을 한 줄로 눌러 {@link SUMMARY_MAX} 자까지. 없으면 필드 자체가 없다. */
+  summary?: string;
+}
+
+/** 여러 줄 markdown 을 한 줄로 눌러 `max` 자까지 자른다. 자르면 `…` 를 붙인다. */
+function condense(text: string, max: number): string | undefined {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat === '') {
+    return undefined;
+  }
+  return flat.length <= max ? flat : `${flat.slice(0, max).trimEnd()}…`;
+}
+
+/**
+ * 후보를 `--json` 출력용 컴팩트 형태로 옮긴다.
+ *
+ * @param boardKeyOf boardId → board key. 못 찾으면 빈 문자열 — 여기서 던지지 않는다
+ *   (보드 하나를 못 읽는 것 때문에 "다음 작업" 전체가 죽으면 안 된다).
+ */
+export function toJsonCandidates(
+  candidates: readonly NextCandidate[],
+  boardKeyOf: (boardId: string) => string | undefined,
+): NextCandidateJson[] {
+  return candidates.map(({ todo, reason }) => ({
+    ref: todo.ref,
+    number: todo.number,
+    board: boardKeyOf(todo.boardId) ?? '',
+    title: todo.title,
+    reason,
+    priority: todo.priority,
+    status: todo.status,
+    due: todo.due,
+    labels: todo.labels,
+    commentCount: todo.commentCount,
+    summary: condense(todo.description, SUMMARY_MAX),
+  }));
 }
 
 /**
