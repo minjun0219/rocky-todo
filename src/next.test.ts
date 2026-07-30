@@ -258,6 +258,15 @@ describe('formatNextCandidates', () => {
     expect(formatNextCandidates(ranked)).toBe(`1. ${ranked[0]?.todo.ref}  오리진 검사  — p2`);
   });
 
+  test('개행이 든 제목도 한 줄로 눌린다 — 한 줄 = 후보 하나', () => {
+    // 제목은 어디서도 다듬어지지 않는다(REST 는 빈 문자열만 거부, MCP 는 z.string()).
+    // 그대로 보간하면 후보 하나가 여러 줄로 쪼개져 사용자가 고른 번호와 ref 가 어긋난다.
+    const nasty = todo({ title: '앞줄\n2. 가짜 후보\t뒤줄' });
+    const out = formatNextCandidates(rankNext([nasty], { now: NOW }));
+    expect(out.split('\n')).toHaveLength(1);
+    expect(out).toContain('앞줄 2. 가짜 후보 뒤줄');
+  });
+
   test('후보가 없으면 이유를 말한다', () => {
     expect(formatNextCandidates([])).toContain('후보가 없다');
   });

@@ -1,5 +1,5 @@
 ---
-"@minjun0219/rocky-todo": patch
+"@minjun0219/rocky-todo": minor
 ---
 
 `/rocky-todo:next` 의 후보 목록이 늦게 나타나던 것을 고친다.
@@ -16,4 +16,5 @@ CLI 는 40ms 였고 병목이 아니었다. 커맨드가 `--json`(후보 8건 10
 - `next --json` 자체도 컴팩트 형태로 바꿨다(스크립트·CLI 를 직접 부르는 호스트용):
   `ref`·`number`·`board`·`title`·`reason`·`priority`·`status`·`due`·`labels`·`commentCount` +
   `description` 을 한 줄로 눌러 160자까지 자른 `summary`. 후보 8건 10.8KB → 4.5KB. 전문은
-  `show REF` 에서 본다. `score` 와 `todo` 중첩은 없어졌다.
+  `show REF` 에서 본다. `score` 와 `todo` 중첩은 없어졌다 — 0.9.0 의 그 모양에 기대는 스크립트는
+고쳐야 하므로 patch 가 아니라 minor 로 낸다.

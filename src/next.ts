@@ -258,9 +258,22 @@ export interface NextCandidateJson {
   summary?: string;
 }
 
+/**
+ * 공백류를 단일 공백으로 눌러 한 줄로 만든다.
+ *
+ * `title` 에도 쓴다. **개행이 든 제목이 실제로 저장될 수 있다** — REST 는 빈 문자열만 거부하고
+ * (`src/server.ts` 의 `POST /api/todos`), MCP 는 `z.string()` 이며, 스토어도 todo 제목을
+ * 다듬지 않는다. 목록이 "한 줄 = 후보 하나" 인 선택 프로토콜이 된 뒤로는 이게 표시 문제가
+ * 아니라 **오선택 문제**다: 제목 안의 `2.` 같은 텍스트가 가짜 후보로 보이고, 사용자가 고른
+ * 번호와 실제 참조가 어긋난다.
+ */
+function flatten(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 /** 여러 줄 markdown 을 한 줄로 눌러 `max` 자까지 자른다. 자르면 `…` 를 붙인다. */
 function condense(text: string, max: number): string | undefined {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  const flat = flatten(text);
   if (flat === '') {
     return undefined;
   }
@@ -297,12 +310,16 @@ export function toJsonCandidates(
  *
  * 맨숫자가 아니라 완전 참조(`rocky-12`)를 찍는다. 이 목록은 보드를 넘나들 수 있고(`--all`),
  * 사용자가 다음에 하는 일이 그 참조를 그대로 다른 명령에 붙여넣는 것이다.
+ *
+ * **한 후보는 반드시 한 줄이다.** 제목을 {@link flatten} 으로 눌러 개행이 든 제목이 후보 하나를
+ * 여러 줄로 쪼개지 못하게 한다 — 사용자가 번호로 고르는 프로토콜이라 줄과 후보가 1:1 이어야
+ * 한다.
  */
 export function formatNextCandidates(candidates: readonly NextCandidate[]): string {
   if (candidates.length === 0) {
     return '착수할 후보가 없다 — 열린 항목이 없거나, 남은 것이 전부 다른 세션에 잡혀 있다';
   }
   return candidates
-    .map((c, i) => `${i + 1}. ${c.todo.ref}  ${c.todo.title}  — ${c.reason}`)
+    .map((c, i) => `${i + 1}. ${c.todo.ref}  ${flatten(c.todo.title)}  — ${c.reason}`)
     .join('\n');
 }
