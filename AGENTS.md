@@ -2,9 +2,9 @@
 
 AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo 레포 가이드.
 
-> **Single sources of truth.** 사람은 [`FEATURES.md`](./FEATURES.md)(한국어 — 도구/설정/Quick start),
-> 에이전트는 이 파일(레이아웃/코딩 규칙/변경 체크리스트)을 읽는다. [`README.md`](./README.md) 는 두
-> 문서로 잇는 한 페이지 진입점. 사용자 대상 설치/운영 문서는 [`docs/rocky-todo.md`](./docs/rocky-todo.md).
+> **Single sources of truth.** 사람은 [`docs/rocky-todo.md`](./docs/rocky-todo.md)(설치·데몬·표면
+> ·CLI·설정 — 한국어), 에이전트는 이 파일(레이아웃/코딩 규칙/변경 체크리스트)을 읽는다.
+> [`README.md`](./README.md) 는 둘로 잇는 한 페이지 진입점 — 무엇인지와 링크만 둔다.
 
 ## Project in one line
 
@@ -247,10 +247,10 @@ bunx changeset      # user-facing 변경의 버전 의도 선언
 1. `bun run check` 통과
 2. `bun run typecheck` 통과
 3. `bun run test` 통과 (unit + dom 양쪽)
-4. 사용자 표면(도구/env/CLI)이 바뀌면 **두 single source** 동기화 — `FEATURES.md`(사람) +
-   이 `AGENTS.md`(에이전트) — 와 진입 페이지 `README.md`, 운영 문서 `docs/rocky-todo.md`.
-5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 + `FEATURES.md`
-   env 표 갱신.
+4. 사용자 표면(도구/env/CLI/커맨드)이 바뀌면 문서 셋을 동기화 — `docs/rocky-todo.md`(사람용
+   설치·운영·표면 단일 출처) + 이 `AGENTS.md`(에이전트) + 진입 페이지 `README.md`.
+5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 +
+   `docs/rocky-todo.md` 의 env 표 갱신.
 6. MCP 도구 계약이 바뀌면 `src/mcp.ts`(등록) + `src/server.ts`/`src/store.ts`(구현) 갱신.
 7. `rocky.json` 의 `todo` 모양이 바뀌면 `src/rocky-config.ts`(런타임) 갱신 (+ 스키마 문서화 시 함께).
 8. 사용자 표면 변경이면 `bunx changeset` 으로 버전 의도 선언.

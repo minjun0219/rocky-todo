@@ -66,6 +66,20 @@ rocky-todo daemon uninstall
 > `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
 > 재설치해야 launchd 데몬이 `claude` CLI(핸드오프 기능이 쓴다)를 PATH 에서 찾는다.
 
+## MCP 도구 5개 (에이전트)
+
+| 도구 | 하는 일 |
+| --- | --- |
+| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리+댓글, `{ boards: true }` 보드 목록). `includeArchived` 는 `{ id }` 단건 조회에서 댓글까지 함께 통제한다 |
+| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, createIssue, actor) |
+| `todo_status` | 상태 전환 — `start` / `stop` / `done` / `reopen` / `archive` / `unarchive` |
+| `note_list` | 스크래치패드 메모 조회 (보드 소속 or 글로벌) |
+| `note_write` | 메모 생성/수정/append/archive (`mode`) |
+
+각 도구의 `id` 인자는 아래 "CLI 표면" 의 REF 문법을 그대로 받는다 — 맨숫자(`12`)처럼 보드
+접두사가 없는 번호는 같이 넘기는 `board` 인자가 그 컨텍스트가 된다. `createIssue: true` 는
+그 todo 를 GitHub 이슈로 만들고 URL 을 `links` 에 붙인다 (아래 "GitHub 이슈로 만들기" 참고).
+
 ## 호스트별 MCP 등록
 
 Claude Code 에서는 플러그인 설치로 자동 등록되므로 수동 작업이 필요 없다. **opencode / Codex** 는
