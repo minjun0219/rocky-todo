@@ -62,6 +62,32 @@ describe('TodoItem doing 배지', () => {
     );
     expect(screen.getByTitle('처리중').textContent).toContain('claude-code');
   });
+
+  test('세션이 사라졌으면 배지가 그 사실을 말한다', () => {
+    mountItem(
+      todoFixture({
+        status: 'doing',
+        doingBy: 'claude-code',
+        doingSince: new Date().toISOString(),
+        doingState: 'gone',
+      }),
+    );
+    const badge = screen.getByTitle('이 항목을 들고 있던 세션이 사라졌다');
+    expect(badge.textContent).toContain('세션 없음');
+    expect(badge.className).toContain('warn-dead');
+  });
+
+  test('세션이 살아 있으면 오래된 항목도 조용하다 — 시간 규칙을 덮어쓴다', () => {
+    mountItem(
+      todoFixture({
+        status: 'doing',
+        doingBy: 'claude-code',
+        doingSince: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+        doingState: 'live',
+      }),
+    );
+    expect(screen.getByTitle('처리중').className).not.toContain('is-stale');
+  });
 });
 
 describe('TodoItem 참조 복사 버튼', () => {

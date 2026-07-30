@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { isAgentActor } from './actors';
 import type { ChangeFeedEntry } from './store';
 
 /**
@@ -11,11 +12,15 @@ import type { ChangeFeedEntry } from './store';
  * 최근 100 세션만 유지한다 (무한 성장 방지).
  */
 
-/** 에이전트로 간주하는 actor — 이들의 변경은 주입하지 않는다 (자기 반향 방지). */
-const AGENT_ACTORS = new Set(['claude-code', 'codex', 'opencode', 'agent', 'rocky']);
-
+/**
+ * 사람이 낸 변경만 남긴다 (에이전트 자신의 변경을 주입하는 자기 반향 방지).
+ *
+ * handoff 계열 액션은 여기까지 오지 않는다 — `TodoStore.listChangesSince` 가 쿼리에서
+ * 이미 뺀다. `handoff-delivered` 의 actor 는 **대상 세션 이름**(`eelpout-a3`)이라 이름만
+ * 보면 사람으로 분류될 값인데, 그 필터 덕에 여기서 한 번 더 막을 필요가 없다.
+ */
 export function filterHumanChanges(entries: ChangeFeedEntry[]): ChangeFeedEntry[] {
-  return entries.filter((e) => !AGENT_ACTORS.has(e.actor));
+  return entries.filter((e) => !isAgentActor(e.actor));
 }
 
 const ACTION_LABELS: Record<string, string> = {

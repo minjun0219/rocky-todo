@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { isAgentActor } from './actors';
 import { ID_LENGTH, newId } from './ids';
 import { runMigrations } from './migrations';
 import { GLOBAL_NOTE_PREFIX, refOf } from './refs';
@@ -66,6 +67,13 @@ export interface Todo {
   links: TodoLink[];
   doingBy?: string;
   doingSince?: string;
+  /**
+   * 이 doing 을 들고 있는 Claude Code 세션. 핸드오프로 시작된 작업에만 채워진다 —
+   * `/mcp` 는 stateless 라 도구 호출에 세션 식별자가 없고, 에이전트는 자기 session_id 를
+   * 모른다. 그래서 유일하게 세션을 아는 경로(claim 된 핸드오프)에서 물려받는다.
+   * 이 값이 있으면 `/api/sessions` 와 대조해 "죽은 doing" 을 정확히 판정할 수 있다.
+   */
+  doingSessionId?: string;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -118,6 +126,14 @@ export interface Handoff {
   createdAt: string;
   deliveredAt?: string;
   deliveredVia?: HandoffVia;
+  /**
+   * 대상 세션이 실제로 착수한 시각 — 그 todo 에 `start`(또는 start 를 건너뛴 `done`)가
+   * 온 순간 `setTodoStatus` 가 찍는다. `delivered` 인데 이게 비어 있으면 "집어갔는데
+   * 아무 일도 안 일어났다"는 뜻이다.
+   */
+  acceptedAt?: string;
+  /** 그 todo 가 `done` 된 시각. */
+  completedAt?: string;
 }
 
 export interface CreateHandoffInput {
@@ -280,6 +296,7 @@ interface TodoRow {
   links: string;
   doing_by: string | null;
   doing_since: string | null;
+  doing_session_id: string | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -339,6 +356,8 @@ interface HandoffRow {
   created_at: string;
   delivered_at: string | null;
   delivered_via: string | null;
+  accepted_at: string | null;
+  completed_at: string | null;
 }
 
 interface HistoryRow {
@@ -382,6 +401,7 @@ CREATE TABLE IF NOT EXISTS todos (
   links TEXT NOT NULL DEFAULT '[]',
   doing_by TEXT,
   doing_since TEXT,
+  doing_session_id TEXT,
   position INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -427,7 +447,9 @@ CREATE TABLE IF NOT EXISTS handoffs (
   status        TEXT NOT NULL CHECK (status IN ('pending','delivered','cancelled')),
   created_at    TEXT NOT NULL,
   delivered_at  TEXT,
-  delivered_via TEXT
+  delivered_via TEXT,
+  accepted_at   TEXT,
+  completed_at  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_todos_board ON todos(board_id);
 CREATE INDEX IF NOT EXISTS idx_notes_board ON notes(board_id);
@@ -923,27 +945,40 @@ export class TodoStore {
     const changes: Record<string, [unknown, unknown]> = {};
 
     switch (action) {
-      case 'start':
+      case 'start': {
         changes.status = [current.status, 'doing'];
+        // 착수를 핸드오프에 귀속시키고, 그 세션 id 를 doing 에 물려준다. 사람이 누른
+        // start 면 null 이 와서 예전과 같은 모양이 된다.
+        const sessionId = this.acceptHandoffFor(current.id, actor, now);
         this.db
           .query(
-            'UPDATE todos SET status = ?, doing_by = ?, doing_since = ?, updated_at = ? WHERE id = ?',
+            `UPDATE todos
+                SET status = ?, doing_by = ?, doing_since = ?, doing_session_id = ?, updated_at = ?
+              WHERE id = ?`,
           )
-          .run('doing', actor, now, now, current.id);
+          .run('doing', actor, now, sessionId, now, current.id);
         break;
+      }
       case 'stop':
         changes.status = [current.status, 'todo'];
         this.db
           .query(
-            'UPDATE todos SET status = ?, doing_by = NULL, doing_since = NULL, updated_at = ? WHERE id = ?',
+            `UPDATE todos
+                SET status = ?, doing_by = NULL, doing_since = NULL, doing_session_id = NULL,
+                    updated_at = ?
+              WHERE id = ?`,
           )
           .run('todo', now, current.id);
         break;
       case 'done':
         changes.status = [current.status, 'done'];
+        this.completeHandoffFor(current.id, actor, now);
         this.db
           .query(
-            'UPDATE todos SET status = ?, doing_by = NULL, doing_since = NULL, completed_at = ?, updated_at = ? WHERE id = ?',
+            `UPDATE todos
+                SET status = ?, doing_by = NULL, doing_since = NULL, doing_session_id = NULL,
+                    completed_at = ?, updated_at = ?
+              WHERE id = ?`,
           )
           .run('done', now, now, current.id);
         break;
@@ -1336,8 +1371,8 @@ export class TodoStore {
       .query(
         `INSERT INTO handoffs
            (id, todo_id, session_id, session_name, session_cwd, note, actor, status,
-            created_at, delivered_at, delivered_via)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, delivered_at, delivered_via, accepted_at, completed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         handoff.id,
@@ -1351,6 +1386,8 @@ export class TodoStore {
         handoff.createdAt,
         handoff.deliveredAt ?? null,
         handoff.deliveredVia ?? null,
+        handoff.acceptedAt ?? null,
+        handoff.completedAt ?? null,
       );
   }
 
@@ -1396,6 +1433,76 @@ export class TodoStore {
     return handoff;
   }
 
+  /**
+   * `start` 를 배달된 핸드오프에 귀속시킨다 — `setTodoStatus` 전용.
+   *
+   * 배달만으로는 "집어갔다"까지밖에 모른다. 그 세션이 실제로 착수했는지는 그 todo 에
+   * `start` 가 오는 것으로만 알 수 있고, 그 순간이 세션 id 를 doing 에 물려줄 유일한
+   * 기회이기도 하다 (`/mcp` 는 stateless 라 도구 호출에 세션 식별자가 없다).
+   *
+   * **사람이 누른 start 는 귀속하지 않는다.** 핸드오프를 보내놓고 사람이 직접 잡은
+   * 경우, 그 요청은 여전히 "세션이 안 집었다"가 사실이다.
+   *
+   * @returns 물려줄 세션 id. 귀속할 핸드오프가 없거나 사람의 start 면 null.
+   */
+  private acceptHandoffFor(todoId: string, actor: string, at: string): string | null {
+    if (!isAgentActor(actor)) {
+      return null;
+    }
+    const row = this.db
+      .query<HandoffRow, [string]>(
+        `SELECT * FROM handoffs
+          WHERE todo_id = ? AND status = 'delivered' AND accepted_at IS NULL
+          ORDER BY created_at ASC, rowid ASC LIMIT 1`,
+      )
+      .get(todoId);
+    if (!row) {
+      return null;
+    }
+    this.db.query('UPDATE handoffs SET accepted_at = ? WHERE id = ?').run(at, row.id);
+    return row.session_id;
+  }
+
+  /**
+   * `done` 을 배달된 핸드오프에 귀속시킨다 — `setTodoStatus` 전용.
+   *
+   * 진행 중이던 건(accepted, 미완료)을 먼저 찾는다. 없으면 **start 를 건너뛴 done** 이라
+   * 보고 미수락 건에 `accepted_at` 을 `completed_at` 과 같은 값으로 함께 찍는다 — 사소한
+   * 작업은 에이전트가 start 없이 바로 done 을 부르는데, 그걸 그냥 두면 "끝났는데 미착수"
+   * 라는 모순 상태가 남아 보드가 헛 경고를 띄운다.
+   *
+   * `reopen` 은 이 기록을 되돌리지 않는다 — 그 핸드오프는 그때 실제로 완료됐었다.
+   */
+  private completeHandoffFor(todoId: string, actor: string, at: string): void {
+    if (!isAgentActor(actor)) {
+      return;
+    }
+    const inFlight = this.db
+      .query<HandoffRow, [string]>(
+        `SELECT * FROM handoffs
+          WHERE todo_id = ? AND status = 'delivered'
+            AND accepted_at IS NOT NULL AND completed_at IS NULL
+          ORDER BY accepted_at ASC, rowid ASC LIMIT 1`,
+      )
+      .get(todoId);
+    if (inFlight) {
+      this.db.query('UPDATE handoffs SET completed_at = ? WHERE id = ?').run(at, inFlight.id);
+      return;
+    }
+    const skipped = this.db
+      .query<HandoffRow, [string]>(
+        `SELECT * FROM handoffs
+          WHERE todo_id = ? AND status = 'delivered' AND accepted_at IS NULL
+          ORDER BY created_at ASC, rowid ASC LIMIT 1`,
+      )
+      .get(todoId);
+    if (skipped) {
+      this.db
+        .query('UPDATE handoffs SET accepted_at = ?, completed_at = ? WHERE id = ?')
+        .run(at, at, skipped.id);
+    }
+  }
+
   /** 이 todo 앞으로 아직 배달되지 않은 요청. 없으면 undefined. */
   pendingHandoffOf(todoId: string): Handoff | undefined {
     const row = this.db
@@ -1406,12 +1513,22 @@ export class TodoStore {
     return row ? toHandoff(row) : undefined;
   }
 
-  /** 큐 조회 — 최신순. boardId 로 거르면 그 보드 todo 의 요청만 나온다. */
+  /**
+   * 큐 조회 — 최신순. boardId 로 거르면 그 보드 todo 의 요청만 나온다.
+   *
+   * `open` 은 **아직 결말이 안 난 건**이다: 대기 중이거나, 배달됐는데 완료되지 않은 것.
+   * 웹 UI 가 한 번에 필요로 하는 집합이 그것이라 필터로 둔다 — `status=pending` 만
+   * 보면 "집어가 놓고 안 한다"가 화면에 영영 나타나지 않고, 필터 없이 다 받으면 완료된
+   * 과거 이력까지 매 refetch 마다 딸려온다.
+   */
   listHandoffs(
-    filter: { boardId?: string; todoId?: string; status?: HandoffStatus } = {},
+    filter: { boardId?: string; todoId?: string; status?: HandoffStatus; open?: boolean } = {},
   ): Handoff[] {
     const clauses: string[] = [];
     const params: string[] = [];
+    if (filter.open) {
+      clauses.push("(h.status = 'pending' OR (h.status = 'delivered' AND h.completed_at IS NULL))");
+    }
     if (filter.boardId) {
       clauses.push('h.todo_id IN (SELECT id FROM todos WHERE board_id = ?)');
       params.push(filter.boardId);
@@ -1783,6 +1900,7 @@ function toTodo(row: TodoRow): Todo {
     links: JSON.parse(row.links) as TodoLink[],
     doingBy: row.doing_by ?? undefined,
     doingSince: row.doing_since ?? undefined,
+    doingSessionId: row.doing_session_id ?? undefined,
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1844,5 +1962,7 @@ function toHandoff(row: HandoffRow): Handoff {
     createdAt: row.created_at,
     deliveredAt: row.delivered_at ?? undefined,
     deliveredVia: (row.delivered_via as HandoffVia | null) ?? undefined,
+    acceptedAt: row.accepted_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
   };
 }

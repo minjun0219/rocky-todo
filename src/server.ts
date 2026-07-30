@@ -8,9 +8,10 @@ import {
   isRepoSlug,
   type RunCommand,
 } from './github';
+import { handoffPhase, type HandoffView, isUnstarted, resolveDoingState } from './doing';
 import { buildHandoffPromptFrom } from './handoff';
 import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE, NON_LOCAL_SPAWN_MESSAGE } from './local-request';
-import { refNeedsBoardContext, refOf, withRef } from './refs';
+import { refNeedsBoardContext, refOf, type TodoView, withRef } from './refs';
 import {
   createCachedListSessions,
   listSessions,
@@ -32,6 +33,7 @@ import {
   type HandoffStatus,
   type ListTodosFilter,
   type StatusAction,
+  type Todo,
   type TodoStore,
 } from './store';
 
@@ -238,6 +240,25 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
   // boardId 가 있는데 board 를 못 찾으면 refs.ts 의 refOf 가 던진다 — 아래 catch →
   // toHttpError 경유로 400 이 된다 (조용히 위조 글로벌 참조를 만들지 않기 위함).
 
+  /**
+   * 응답용 todo 에 `doingState` 를 얹는다 — doing 인 항목에만 붙는다.
+   *
+   * `sessions` 가 undefined 면(호출부가 조회를 건너뛴 경우) 아무것도 얹지 않는다.
+   * 필드 부재 = "판정하지 않았다" 이고, 웹 UI 는 그걸 `unknown` 과 같게 다룬다.
+   */
+  const withDoingState = (
+    store: TodoStore,
+    todo: Todo,
+    sessions: SessionsResult | undefined,
+  ): TodoView => {
+    const view = withRef(store, todo);
+    if (!sessions || todo.status !== 'doing') {
+      return view;
+    }
+    const boardKey = store.boardKeyOf(todo.boardId) ?? '';
+    return { ...view, doingState: resolveDoingState(todo, boardKey, sessions) };
+  };
+
   const fetch = async (req: Request, peerAddress?: string): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -363,7 +384,12 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           label: url.searchParams.get('label') ?? undefined,
           includeArchived: url.searchParams.get('includeArchived') === 'true',
         };
-        return json(store.listTodos(filter).map((todo) => withRef(store, todo)));
+        const todos = store.listTodos(filter);
+        // `listSessions` 는 실측 ~220ms 의 동기 블로킹이라(최악 timeout 5s) 부르는 동안
+        // 데몬 전체가 멎는다. doing 이 하나도 없으면 판정할 대상 자체가 없으므로 아예
+        // 건너뛴다 — `GET /api/handoffs` 가 pending 유무로 하는 것과 같은 최적화다.
+        const sessions = todos.some((todo) => todo.status === 'doing') ? sessionsOf() : undefined;
+        return json(todos.map((todo) => withDoingState(store, todo, sessions)));
       }
       if (method === 'POST' && path === '/api/todos') {
         const body = await readBody(req);
@@ -401,7 +427,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           }
           const includeArchived = url.searchParams.get('includeArchived') === 'true';
           return json({
-            todo: withRef(store, todo),
+            todo: withDoingState(store, todo, todo.status === 'doing' ? sessionsOf() : undefined),
             history: store.listHistory({
               entityId: todo.id,
               excludeActions: DETAIL_HISTORY_EXCLUDED,
@@ -856,6 +882,7 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         const handoffs = store.listHandoffs({
           boardId,
           status: status ?? undefined,
+          open: url.searchParams.get('open') === 'true',
         });
         // 대상 세션이 사라진 pending 은 stale 로 표시만 한다 — 자동 만료는 "보냈는데
         // 조용히 사라졌다"를 만들고, 그게 이 기능에서 가장 나쁜 실패다.
@@ -868,18 +895,27 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         // 환경(미설치, launchd PATH 누락 등)에서는 `available:false` + 빈 목록이 오는데,
         // 그걸 그대로 대조하면 멀쩡히 살아 있는 세션 앞의 요청까지 전부 "세션 없음" 으로
         // 보인다 — 모른다는 것과 없다는 것은 다르다. 판별할 수 없으면 stale 을 붙이지 않는다.
-        const hasPending = handoffs.some((handoff) => handoff.status === 'pending');
-        const sessions = hasPending ? sessionsOf() : undefined;
+        //
+        // 세션 조회가 필요한 건이 pending 하나에서 둘로 늘었다: 배달됐는데 아직 착수
+        // 기록이 없는 건도 대상 세션의 상태를 봐야 "집어가 놓고 안 한다"를 판정할 수 있다
+        // (`isUnstarted`). 둘 다 없으면 여전히 조회를 건너뛴다.
+        const needsSessions = handoffs.some(
+          (handoff) =>
+            handoff.status === 'pending' || (handoff.status === 'delivered' && !handoff.acceptedAt),
+        );
+        const sessions = needsSessions ? sessionsOf() : undefined;
         const live = sessions?.available
           ? new Set(sessions.sessions.map((s) => s.sessionId))
           : undefined;
-        return json(
-          handoffs.map((handoff) => ({
-            ...handoff,
-            stale:
-              handoff.status === 'pending' && live !== undefined && !live.has(handoff.sessionId),
-          })),
-        );
+        const views: HandoffView[] = handoffs.map((handoff) => ({
+          ...handoff,
+          phase: handoffPhase(handoff),
+          // 세션 조회를 건너뛴 호출에서는 판정하지 않는다 — false 는 "아니다"가 아니라
+          // "모른다"까지 포함한다 (웹 UI 는 경고를 안 띄우는 쪽으로 같게 다룬다).
+          unstarted: sessions ? isUnstarted(handoff, sessions) : false,
+          stale: handoff.status === 'pending' && live !== undefined && !live.has(handoff.sessionId),
+        }));
+        return json(views);
       }
 
       const handoffCancel = /^\/api\/handoffs\/([^/]+)\/cancel$/.exec(path);

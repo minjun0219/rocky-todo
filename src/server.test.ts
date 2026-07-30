@@ -1139,6 +1139,135 @@ describe('handoff routes', () => {
     expect(calls).toBe(1);
   });
 
+  test('GET /api/handoffs 는 미착수 후보가 있으면 세션을 조회한다', async () => {
+    let calls = 0;
+    const h = handleWith(() => {
+      calls += 1;
+      return SESSIONS;
+    });
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    store.claimHandoff('sess-1', 'stop');
+
+    // pending 은 없지만 배달됐는데 착수 기록이 없는 건이 있다 — 그 판정에 세션이 필요하다.
+    const res = await reqTo(h, '/api/handoffs');
+    expect(res.status).toBe(200);
+    expect(calls).toBe(1);
+    const [handoff] = (await res.json()) as Array<{ phase: string; unstarted: boolean }>;
+    // sess-1 은 idle 이다 — 집어가 놓고 아무것도 안 했다.
+    expect(handoff?.phase).toBe('delivered');
+    expect(handoff?.unstarted).toBe(true);
+  });
+
+  test('착수한 건은 phase:accepted 이고 미착수가 아니다', async () => {
+    const h = handleWith(() => SESSIONS);
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+    store.claimHandoff('sess-1', 'stop');
+    store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+    const res = await reqTo(h, '/api/handoffs');
+    const [handoff] = (await res.json()) as Array<{ phase: string; unstarted: boolean }>;
+    expect(handoff?.phase).toBe('accepted');
+    expect(handoff?.unstarted).toBe(false);
+  });
+
+  test('open=true 는 대기 중 + 미완료 배달을 함께 준다', async () => {
+    const h = handleWith(() => SESSIONS);
+    const waiting = store.createTodo({ board: 'rocky-todo', title: '대기' }, 'logan');
+    const finished = store.createTodo({ board: 'rocky-todo', title: '완료' }, 'logan');
+    store.createHandoff({ ref: waiting.id, sessionId: 'sess-1', actor: 'logan' });
+    store.createHandoff({ ref: finished.id, sessionId: 'sess-2', actor: 'logan' });
+    store.claimHandoff('sess-2', 'stop');
+    store.setTodoStatus(finished.id, 'done', 'claude-code');
+
+    const res = await reqTo(h, '/api/handoffs?open=true&board=rocky-todo');
+    const body = (await res.json()) as Array<{ todoId: string }>;
+    expect(body.map((x) => x.todoId)).toEqual([waiting.id]);
+  });
+
+  describe('doingState — GET /api/todos', () => {
+    /** 배달된 핸드오프로 시작된 doing 하나를 만든다. */
+    const startedBySession = (sessionId: string) => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: '작업' }, 'logan');
+      store.createHandoff({ ref: todo.id, sessionId, actor: 'logan' });
+      store.claimHandoff(sessionId, 'stop');
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+      return todo;
+    };
+
+    const doingStateOf = async (
+      sessions: () => SessionsResult,
+      todoId: string,
+    ): Promise<string | undefined> => {
+      const res = await reqTo(handleWith(sessions), '/api/todos?board=rocky-todo');
+      const body = (await res.json()) as Array<{ id: string; doingState?: string }>;
+      return body.find((t) => t.id === todoId)?.doingState;
+    };
+
+    test('세션이 busy 면 live', async () => {
+      const todo = startedBySession('sess-2'); // SESSIONS 의 sess-2 는 busy
+      expect(await doingStateOf(() => SESSIONS, todo.id)).toBe('live');
+    });
+
+    test('세션이 idle 이면 idle — 턴이 끝났는데 완료 처리가 없다', async () => {
+      const todo = startedBySession('sess-1'); // SESSIONS 의 sess-1 은 idle
+      expect(await doingStateOf(() => SESSIONS, todo.id)).toBe('idle');
+    });
+
+    test('세션이 사라졌으면 gone', async () => {
+      const todo = startedBySession('sess-gone');
+      expect(await doingStateOf(() => SESSIONS, todo.id)).toBe('gone');
+    });
+
+    test('귀속이 없어도 그 보드에 세션이 없으면 gone', async () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+      const onlyOtherBoard = () => ({
+        available: true as const,
+        sessions: SESSIONS.sessions.filter((s) => s.cwd === '/w/forses'),
+      });
+      expect(await doingStateOf(onlyOtherBoard, todo.id)).toBe('gone');
+    });
+
+    test('세션 목록을 못 얻으면 unknown — 없는 것과 모르는 것은 다르다', async () => {
+      const todo = startedBySession('sess-gone');
+      const blind = () => ({ available: false, sessions: [], reason: 'claude CLI 없음' });
+      expect(await doingStateOf(blind, todo.id)).toBe('unknown');
+    });
+
+    test('doing 이 하나도 없으면 세션 조회를 하지 않는다', async () => {
+      let calls = 0;
+      const counting = () => {
+        calls += 1;
+        return SESSIONS;
+      };
+      store.createTodo({ board: 'rocky-todo', title: '그냥 할 일' }, 'logan');
+
+      await reqTo(handleWith(counting), '/api/todos?board=rocky-todo');
+      expect(calls).toBe(0);
+
+      const doing = store.createTodo({ board: 'rocky-todo', title: '처리중' }, 'logan');
+      store.setTodoStatus(doing.id, 'start', 'claude-code');
+      await reqTo(handleWith(counting), '/api/todos?board=rocky-todo');
+      expect(calls).toBe(1);
+    });
+
+    test('doing 이 아닌 항목에는 doingState 를 붙이지 않는다', async () => {
+      const plain = store.createTodo({ board: 'rocky-todo', title: '그냥' }, 'logan');
+      const doing = store.createTodo({ board: 'rocky-todo', title: '처리중' }, 'logan');
+      store.setTodoStatus(doing.id, 'start', 'claude-code');
+
+      const res = await reqTo(
+        handleWith(() => SESSIONS),
+        '/api/todos?board=rocky-todo',
+      );
+      const body = (await res.json()) as Array<{ id: string; doingState?: string }>;
+      expect(body.find((t) => t.id === plain.id)).not.toHaveProperty('doingState');
+      expect(body.find((t) => t.id === doing.id)).toHaveProperty('doingState');
+    });
+  });
+
   test('알 수 없는 board 는 전체 큐가 아니라 빈 목록이다', async () => {
     const mine = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
     store.createHandoff({ ref: mine.id, sessionId: 'sess-1', actor: 'logan' });

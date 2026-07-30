@@ -984,6 +984,21 @@ describe('handoffs', () => {
     expect(() => store.cancelHandoff(handoff.id, 'logan')).toThrow(/pending/i);
   });
 
+  test('listHandoffs 의 open 은 대기 중 + 배달됐지만 미완료를 함께 준다', () => {
+    const waiting = store.createTodo({ board: 'rocky-todo', title: '대기' }, 'logan');
+    const inFlight = store.createTodo({ board: 'rocky-todo', title: '진행' }, 'logan');
+    const finished = store.createTodo({ board: 'rocky-todo', title: '완료' }, 'logan');
+    store.createHandoff({ ref: waiting.id, sessionId: 'sess-1', actor: 'logan' });
+    store.createHandoff({ ref: inFlight.id, sessionId: 'sess-2', actor: 'logan' });
+    store.createHandoff({ ref: finished.id, sessionId: 'sess-3', actor: 'logan' });
+    store.claimHandoff('sess-2', 'stop');
+    store.claimHandoff('sess-3', 'stop');
+    store.setTodoStatus(finished.id, 'done', 'claude-code');
+
+    const open = store.listHandoffs({ boardId: store.boardIdOf('rocky-todo'), open: true });
+    expect(open.map((h) => h.todoId).sort()).toEqual([inFlight.id, waiting.id].sort());
+  });
+
   test('listHandoffs 는 보드로 거를 수 있다', () => {
     const mine = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
     const other = store.createTodo({ board: 'forses', title: 'y' }, 'logan');
@@ -1079,6 +1094,117 @@ describe('handoffs', () => {
           actor: 'logan',
         }),
       ).toThrow(/archived/);
+    });
+  });
+
+  describe('라이프사이클 — start/done 이 배달된 요청에 귀속된다', () => {
+    /** 배달까지 마친 핸드오프 하나를 만든다 — 라이프사이클 테스트의 공통 출발점. */
+    function delivered(sessionId = 'sess-1') {
+      const todo = store.createTodo({ board: 'rocky-todo', title: '작업' }, 'logan');
+      const handoff = store.createHandoff({ ref: todo.id, sessionId, actor: 'logan' });
+      store.claimHandoff(sessionId, 'stop');
+      return { todo, handoffId: handoff.id };
+    }
+
+    function handoffById(id: string) {
+      return store.listHandoffs({}).find((h) => h.id === id);
+    }
+
+    test('start 가 acceptedAt 을 찍고 세션 id 를 doing 에 물려준다', () => {
+      const { todo, handoffId } = delivered();
+
+      const started = store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+      expect(started.doingSessionId).toBe('sess-1');
+      expect(handoffById(handoffId)?.acceptedAt).toBeString();
+      expect(handoffById(handoffId)?.completedAt).toBeUndefined();
+    });
+
+    test('done 이 completedAt 을 찍고 doing 귀속을 비운다', () => {
+      const { todo, handoffId } = delivered();
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+      const finished = store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+      expect(finished.doingSessionId).toBeUndefined();
+      expect(handoffById(handoffId)?.completedAt).toBeString();
+    });
+
+    test('start 를 건너뛴 done 도 acceptedAt 을 함께 찍는다 — "끝났는데 미착수"를 안 만든다', () => {
+      const { todo, handoffId } = delivered();
+
+      store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+      const after = handoffById(handoffId);
+      expect(after?.acceptedAt).toBeString();
+      expect(after?.acceptedAt).toBe(after?.completedAt as string);
+    });
+
+    test('사람이 누른 start 는 귀속하지 않는다 — 그 요청은 여전히 미착수다', () => {
+      const { todo, handoffId } = delivered();
+
+      const started = store.setTodoStatus(todo.id, 'start', 'logan');
+
+      expect(started.doingSessionId).toBeUndefined();
+      expect(handoffById(handoffId)?.acceptedAt).toBeUndefined();
+    });
+
+    test('stop 은 doing 귀속만 비우고 착수 기록은 남긴다', () => {
+      const { todo, handoffId } = delivered();
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+      const stopped = store.setTodoStatus(todo.id, 'stop', 'claude-code');
+
+      expect(stopped.doingSessionId).toBeUndefined();
+      expect(handoffById(handoffId)?.acceptedAt).toBeString();
+      expect(handoffById(handoffId)?.completedAt).toBeUndefined();
+    });
+
+    test('배달된 건이 여럿이면 가장 오래된 것에 귀속된다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      const first = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+      store.claimHandoff('sess-1', 'stop');
+      const second = store.createHandoff({ ref: todo.id, sessionId: 'sess-2', actor: 'logan' });
+      store.claimHandoff('sess-2', 'stop');
+
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+      expect(handoffById(first.id)?.acceptedAt).toBeString();
+      expect(handoffById(second.id)?.acceptedAt).toBeUndefined();
+    });
+
+    test('진행 중인 건이 있으면 done 은 그것을 닫는다 — 미수락 건은 미착수로 남는다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+      const first = store.createHandoff({ ref: todo.id, sessionId: 'sess-1', actor: 'logan' });
+      store.claimHandoff('sess-1', 'stop');
+      store.setTodoStatus(todo.id, 'start', 'claude-code');
+      const second = store.createHandoff({ ref: todo.id, sessionId: 'sess-2', actor: 'logan' });
+      store.claimHandoff('sess-2', 'stop');
+
+      store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+      expect(handoffById(first.id)?.completedAt).toBeString();
+      expect(handoffById(second.id)?.acceptedAt).toBeUndefined();
+      expect(handoffById(second.id)?.completedAt).toBeUndefined();
+    });
+
+    test('배달된 요청이 없으면 start 는 예전과 같이 동작한다', () => {
+      const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
+
+      const started = store.setTodoStatus(todo.id, 'start', 'claude-code');
+
+      expect(started.status).toBe('doing');
+      expect(started.doingBy).toBe('claude-code');
+      expect(started.doingSessionId).toBeUndefined();
+    });
+
+    test('reopen 은 완료 기록을 되돌리지 않는다 — 그때 실제로 끝났었다', () => {
+      const { todo, handoffId } = delivered();
+      store.setTodoStatus(todo.id, 'done', 'claude-code');
+
+      store.setTodoStatus(todo.id, 'reopen', 'logan');
+
+      expect(handoffById(handoffId)?.completedAt).toBeString();
     });
   });
 });

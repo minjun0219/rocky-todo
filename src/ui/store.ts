@@ -1,7 +1,8 @@
 import { create } from 'zustand';
+import type { HandoffView } from '../doing';
 import type { NoteView, TodoView } from '../server';
 import type { AgentSession } from '../sessions';
-import type { Board, Comment, Handoff, HistoryEntry, Section, StatusAction } from '../store';
+import type { Board, Comment, HistoryEntry, Section, StatusAction } from '../store';
 import { markSeen, readSeen } from './lib';
 import {
   type BoardSelection,
@@ -57,8 +58,8 @@ interface UiState {
   issueCreateAllowed: boolean;
   /** `/api/health` 가 알려주는 힌트 — 이 출처에서 세션을 띄울 수 있는가. */
   spawnAllowed: boolean;
-  /** 현재 보드의 대기 중 핸드오프 — refetch 가 함께 갱신한다. */
-  handoffs: Array<Handoff & { stale: boolean }>;
+  /** 현재 보드의 아직 안 끝난 핸드오프(대기 중 + 배달됐지만 미완료) — refetch 가 함께 갱신한다. */
+  handoffs: HandoffView[];
   /** 보내기 패널을 열 때만 채운다. */
   sessions: {
     available: boolean;
@@ -245,8 +246,10 @@ export const useUiStore = create<UiState>((set, get) => ({
       selected === 'all'
         ? Promise.resolve([] as Section[])
         : api<Section[]>(`/api/sections?board=${encodeURIComponent(selected)}`, actor),
-      api<Array<Handoff & { stale: boolean }>>(
-        `/api/handoffs?status=pending${
+      // `open=true` — 대기 중인 것에 더해 **배달됐는데 아직 안 끝난** 것까지 받는다.
+      // 후자가 없으면 "집어가 놓고 아무것도 안 한다"가 화면에 나타날 길이 없다.
+      api<HandoffView[]>(
+        `/api/handoffs?open=true${
           selected === 'all' ? '' : `&board=${encodeURIComponent(selected)}`
         }`,
         actor,

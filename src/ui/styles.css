@@ -416,6 +416,14 @@ textarea {
   color: var(--p1);
 }
 
+.handoff-unstarted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--p1);
+}
+
 .handoff-error {
   color: var(--p1);
   width: 100%;
@@ -515,6 +523,22 @@ textarea {
 
 .doing-badge.is-stale .doing-pulse {
   animation: none;
+}
+
+/*
+ * 경고의 세기는 "누가 아직 들고 있는가" 를 따라간다. `slow` 는 세션이 멀쩡한데 오래
+ * 걸리는 것뿐이라 흐릿하게 두고(위 .is-stale 이 하는 일), `idle` 은 말을 걸면 이어지는
+ * 상태라 색만 되살리고, `gone` 은 아무도 안 들고 있으므로 완전히 또렷하게 경고한다.
+ */
+.doing-badge.warn-idle {
+  opacity: 0.85;
+}
+
+.doing-badge.warn-dead {
+  opacity: 1;
+  color: var(--p1);
+  border-color: var(--p1);
+  background: color-mix(in srgb, var(--p1) 10%, transparent);
 }
 
 /* ── notes rail ─────────────────────────────────── */

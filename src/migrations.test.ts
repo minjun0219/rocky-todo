@@ -310,3 +310,41 @@ test('마이그레이션 4 — path 가 이미 있는 신규 DB 에서도 기동
   expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
   db.close();
 });
+
+test('마이그레이션 5 — 기존 DB 에 라이프사이클/세션 귀속 컬럼을 더한다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, created_at TEXT)');
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+
+  runMigrations(db, { migrations: MIGRATIONS });
+
+  const handoffColumns = db
+    .query<{ name: string }, []>('PRAGMA table_info(handoffs)')
+    .all()
+    .map((c) => c.name);
+  expect(handoffColumns).toContain('accepted_at');
+  expect(handoffColumns).toContain('completed_at');
+  const todoColumns = db
+    .query<{ name: string }, []>('PRAGMA table_info(todos)')
+    .all()
+    .map((c) => c.name);
+  expect(todoColumns).toContain('doing_session_id');
+  db.close();
+});
+
+test('마이그레이션 5 — 컬럼이 이미 있는 신규 DB(SCHEMA 경유)에서도 기동한다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, created_at TEXT)');
+  db.run(
+    'CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT, doing_session_id TEXT)',
+  );
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run(`CREATE TABLE handoffs (
+    id TEXT PRIMARY KEY, todo_id TEXT, session_id TEXT, status TEXT, created_at TEXT,
+    accepted_at TEXT, completed_at TEXT
+  )`);
+
+  expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
+  db.close();
+});

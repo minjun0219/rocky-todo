@@ -1,17 +1,16 @@
 /**
  * UI 순수 헬퍼 — actor 톤(두 대기 컨셉), 시간 표기, 초경량 markdown 렌더 토큰화.
  */
+import { isAgentActor } from '../actors';
+import type { TodoView } from '../refs';
 import type { Comment, HistoryEntry } from '../store';
-
-/** 에이전트로 취급하는 actor 이름 — 따뜻한 앰버 톤 (에리디언의 대기). */
-const AGENT_ACTORS = new Set(['claude-code', 'codex', 'opencode', 'agent', 'rocky']);
 
 /**
  * actor → 시각 톤. 에이전트는 warm(앰버), 사람은 cool(아이스 블루).
  * "누가 했나"를 온도로 인코딩하는 것이 이 UI 의 시그니처다.
  */
 export function actorTone(actor: string): 'warm' | 'cool' {
-  return AGENT_ACTORS.has(actor) ? 'warm' : 'cool';
+  return isAgentActor(actor) ? 'warm' : 'cool';
 }
 
 /** doing 경과가 이 시간(ms)을 넘으면 stale 로 표시한다. */
@@ -22,6 +21,45 @@ export function isStale(doingSince: string | undefined, now = Date.now()): boole
     return false;
   }
   return now - Date.parse(doingSince) > STALE_MS;
+}
+
+/** doing 뱃지에 붙일 수식어 — 없으면 null (평범한 "처리중"). */
+export interface DoingWarning {
+  /** 뱃지에 붙는 짧은 꼬리표. */
+  label: string;
+  /** 툴팁 — 왜 이렇게 보이는지. */
+  title: string;
+  /** 심각도. `dead` 는 아무도 안 들고 있다는 뜻이라 더 강하게 표시한다. */
+  tone: 'dead' | 'idle' | 'slow';
+}
+
+/**
+ * doing 하나를 어떻게 경고할지 정한다.
+ *
+ * 서버가 세션을 실제로 대조한 판정(`doingState`)이 있으면 그걸 우선한다 — 30분 경과
+ * 규칙보다 언제나 정확하기 때문이다. 판정이 없거나(`unknown`, 구버전 데몬) 세션은
+ * 멀쩡한데(`live`) 오래 걸리는 경우에만 기존 시간 규칙으로 물러난다.
+ *
+ * `idle` 을 따로 두는 이유: 세션은 살아 있는데 턴이 끝났고 `done` 이 안 온 상태다.
+ * 죽은 것(`gone`)과 사람이 취할 행동이 다르다 — 이건 그 세션에 말을 걸면 이어진다.
+ */
+export function doingWarning(todo: TodoView, now = Date.now()): DoingWarning | null {
+  if (todo.doingState === 'gone') {
+    return { label: '세션 없음', title: '이 항목을 들고 있던 세션이 사라졌다', tone: 'dead' };
+  }
+  if (todo.doingState === 'idle') {
+    return {
+      label: '멈춤',
+      title: '세션은 살아 있지만 턴이 끝났고 완료 처리가 없다',
+      tone: 'idle',
+    };
+  }
+  if (todo.doingState === 'live') {
+    return null;
+  }
+  return isStale(todo.doingSince, now)
+    ? { label: '오래됨', title: '30분 이상 갱신 없음', tone: 'slow' }
+    : null;
 }
 
 /** "방금" / "N분" / "N시간" / "N일" — doing 뱃지와 히스토리 타임스탬프용. */
