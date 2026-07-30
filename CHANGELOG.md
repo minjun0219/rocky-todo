@@ -1,5 +1,32 @@
 # @minjun0219/rocky-todo
 
+## 0.9.0
+
+### Minor Changes
+
+- [#28](https://github.com/minjun0219/rocky-todo/pull/28) [`eba74b5`](https://github.com/minjun0219/rocky-todo/commit/eba74b56d4b83ebafac0e62e30ebbf9516bef9f6) Thanks [@minjun0219](https://github.com/minjun0219)! - 핸드오프를 배달 이후까지 추적하고, "처리중" 이 실제로 살아 있는지 보여준다.
+
+  세션이 요청을 집어간 뒤 그 항목에 `start`(또는 start 를 건너뛴 `done`)를 부르면 착수로,
+  `done` 이면 완료로 기록된다. 집어가 놓고 아무것도 안 하면 드로어에 "받았지만 착수하지
+  않았다" 와 다시 보내기 버튼이 뜬다 — 대상 세션이 사라졌거나 일을 멈췄을 때만 뜨고, 아직
+  작업 중이면 조용하다. 자동 재배달은 하지 않는다.
+
+  "처리중" 뱃지는 이제 그 작업을 든 세션을 대조한다. 세션이 사라졌으면 "세션 없음", 살아
+  있는데 턴이 끝났고 완료 처리가 없으면 "멈춤" 으로 뜬다. 세션을 확인할 수 없을 때만
+  예전처럼 경과 30분 기준 "오래됨" 으로 물러난다.
+
+- [#30](https://github.com/minjun0219/rocky-todo/pull/30) [`7245b7b`](https://github.com/minjun0219/rocky-todo/commit/7245b7bb6e40af2c1faffdc04989bcea5a4e3012) Thanks [@minjun0219](https://github.com/minjun0219)! - 다음 작업을 세션에서 바로 고른다 — `/rocky-todo:next` 커맨드 + `rocky-todo next` CLI.
+
+  브라우저를 열어 번호를 클릭해 붙여넣는 우회 없이, 착수 후보를 랭킹해 보여주고 고른 항목을
+  `start` 표시한 뒤 그 자리에서 시작한다. 참조를 알고 있으면 `/rocky-todo:next rocky-12` 로
+  픽커를 건너뛴다.
+
+  랭킹 순서: **주인 없는 진행중**(세션이 사라졌거나 멈춘 doing) → 마감(지남 > 오늘 > 7일 내)
+  → 판정할 수 없는 진행중 → 우선순위 → 최근 댓글. 아래쪽 기준이 쌓여도 위쪽 기준을 뒤집지
+  못한다. 살아 있는 세션이 붙들고 있는 항목과 열린 자식을 가진 우산 항목은 후보에서 빠진다.
+  근거는 목록에 그대로 찍히고, 동점은 우선순위·position 으로 결정적으로 갈려 같은 보드를 두
+  번 물어도 순서가 흔들리지 않는다.
+
 ## 0.8.0
 
 ### Minor Changes
