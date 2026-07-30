@@ -129,6 +129,42 @@ export const addBoardPath: Migration = (db) => {
 };
 
 /**
+ * 마이그레이션 5: 핸드오프 라이프사이클(착수/완료)과 doing 의 세션 귀속.
+ *
+ * `delivered` 가 종착역이라 "집어갔는데 아무 일도 안 일어났다"가 큐에 남지 않았고,
+ * `todos.doing_by` 는 `'claude-code'` 같은 뭉뚱그린 actor 라 그 doing 이 어느 세션
+ * 것인지 알 수 없었다. 두 문제가 같은 빈칸을 공유하므로 컬럼 셋을 한 건으로 묶는다.
+ *
+ * `status` enum 은 늘리지 않는다 — accepted/completed 는 타임스탬프로만 남기고 해석은
+ * 읽는 쪽이 한다 (`delivered_at`/`delivered_via` 와 같은 결이며, `?status=pending` 을
+ * 쓰는 기존 코드가 깨지지 않는다).
+ *
+ * `SCHEMA` 도 이 컬럼들을 만들므로 `addBoardRepo` 와 같은 `PRAGMA table_info` 가드가
+ * 컬럼마다 붙는다 — 없으면 신규 DB 가 "duplicate column" 으로 기동조차 못 한다.
+ */
+export const addHandoffLifecycle: Migration = (db) => {
+  const columnsOf = (table: string): Set<string> =>
+    new Set(
+      db
+        .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+        .all()
+        .map((row) => row.name),
+    );
+
+  const handoffColumns = columnsOf('handoffs');
+  if (!handoffColumns.has('accepted_at')) {
+    db.run('ALTER TABLE handoffs ADD COLUMN accepted_at TEXT');
+  }
+  if (!handoffColumns.has('completed_at')) {
+    db.run('ALTER TABLE handoffs ADD COLUMN completed_at TEXT');
+  }
+
+  if (!columnsOf('todos').has('doing_session_id')) {
+    db.run('ALTER TABLE todos ADD COLUMN doing_session_id TEXT');
+  }
+};
+
+/**
  * 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다.
  *
  * **규칙(`todos.number` vs `boards.repo` divergence — finding G)**: `SCHEMA` 는 신규 DB 를
@@ -141,7 +177,13 @@ export const addBoardPath: Migration = (db) => {
  * `SCHEMA` 에 컬럼을 추가하면서 그 컬럼을 위한 마이그레이션도 함께 둘 때는 `addBoardRepo`
  * 를 그대로 본떠라.
  */
-export const MIGRATIONS: Migration[] = [addNumbers, addBoardRepo, addHandoffs, addBoardPath];
+export const MIGRATIONS: Migration[] = [
+  addNumbers,
+  addBoardRepo,
+  addHandoffs,
+  addBoardPath,
+  addHandoffLifecycle,
+];
 
 export interface RunMigrationsOptions {
   /** 테스트에서 목록을 주입한다. 기본은 MIGRATIONS. */

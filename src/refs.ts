@@ -1,3 +1,4 @@
+import type { DoingState } from './doing';
 import { ID_LENGTH } from './ids';
 // store 는 **타입만** 가져온다 — 런타임 import 를 만들면 store 가 이 모듈의 `refOf` 를
 // 쓰므로 순환이 된다. `import type` 은 컴파일 시 지워져 순환을 만들지 않는다.
@@ -19,6 +20,12 @@ export interface TodoView extends Todo {
   commentCount: number;
   /** 가장 최근 댓글 시각(ISO). 댓글이 없으면 undefined. */
   lastCommentAt?: string;
+  /**
+   * 이 doing 이 살아 있는가 — `doing` 인 항목에만, 그리고 서버가 세션 목록을 실제로
+   * 조회한 응답에만 붙는다. **부재 = 판정하지 않았다**이며 `unknown` 과 같게 다룬다
+   * (`src/doing.ts` 의 `resolveDoingState` 가 채운다).
+   */
+  doingState?: DoingState;
 }
 
 /** 응답 전용 note. 글로벌 메모는 보드 대신 예약 접두사가 붙어 `note-3` 이 된다. */

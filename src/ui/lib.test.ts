@@ -1,16 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { DETAIL_HISTORY_EXCLUDED as STORE_DETAIL_HISTORY_EXCLUDED } from '../store';
 import type { Comment, HistoryEntry } from '../store';
+import type { TodoView } from '../refs';
 import {
   boardCommand,
   COPY_FEEDBACK_MS,
   DETAIL_HISTORY_EXCLUDED,
+  doingWarning,
   formatStamp,
   hasUnreadComments,
   isEditableTarget,
   markSeen,
   mergeTimeline,
   readSeen,
+  STALE_MS,
   type CopyRefDocument,
   type CopyRefTextArea,
   type SeenStorage,
@@ -378,5 +381,62 @@ describe('boardCommand', () => {
   // 그대로 감싼다. 스킬은 raw id 도 참조 문법으로 받는다.
   test('raw id 폴백 ref 도 그대로 감싼다', () => {
     expect(boardCommand('921gvwnr')).toBe('/rocky-todo:board 921gvwnr');
+  });
+});
+
+describe('doingWarning', () => {
+  const NOW = Date.parse('2026-07-30T12:00:00.000Z');
+
+  /** doing 인 todo — 검증에 쓰는 필드만 넘긴다. */
+  function doing(over: Partial<TodoView> = {}): TodoView {
+    return {
+      id: 'todo1',
+      number: 1,
+      boardId: 'board1',
+      title: 'x',
+      description: '',
+      status: 'doing',
+      priority: 'p4',
+      labels: [],
+      links: [],
+      doingBy: 'claude-code',
+      doingSince: new Date(NOW - 60_000).toISOString(),
+      position: 0,
+      createdAt: '2026-07-30T00:00:00.000Z',
+      updatedAt: '2026-07-30T00:00:00.000Z',
+      ref: 'rocky-todo-1',
+      commentCount: 0,
+      ...over,
+    };
+  }
+
+  test('세션이 사라졌으면 가장 강한 경고다', () => {
+    expect(doingWarning(doing({ doingState: 'gone' }), NOW)).toEqual({
+      label: '세션 없음',
+      title: '이 항목을 들고 있던 세션이 사라졌다',
+      tone: 'dead',
+    });
+  });
+
+  test('세션이 idle 이면 "멈춤" — 말을 걸면 이어지는 상태다', () => {
+    expect(doingWarning(doing({ doingState: 'idle' }), NOW)?.tone).toBe('idle');
+  });
+
+  test('세션이 live 면 오래 걸려도 경고하지 않는다 — 시간 규칙보다 정확하다', () => {
+    const long = doing({
+      doingState: 'live',
+      doingSince: new Date(NOW - STALE_MS - 60_000).toISOString(),
+    });
+    expect(doingWarning(long, NOW)).toBeNull();
+  });
+
+  test('판정이 없으면(구버전 데몬/unknown) 30분 규칙으로 물러난다', () => {
+    const stale = doing({ doingSince: new Date(NOW - STALE_MS - 60_000).toISOString() });
+    expect(doingWarning(stale, NOW)?.tone).toBe('slow');
+    expect(doingWarning(doing({ doingState: 'unknown' }), NOW)).toBeNull();
+  });
+
+  test('막 시작한 항목은 조용하다', () => {
+    expect(doingWarning(doing(), NOW)).toBeNull();
   });
 });

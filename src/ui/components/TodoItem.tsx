@@ -4,11 +4,11 @@ import {
   actorTone,
   boardCommand,
   copyRefWithFeedback,
+  doingWarning,
   formatDue,
   formatElapsed,
   hasUnreadComments,
   isOverdue,
-  isStale,
   linkLabel,
 } from '../lib';
 import { useUiStore } from '../store';
@@ -30,7 +30,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
 
   const done = todo.status === 'done';
   const doing = todo.status === 'doing';
-  const stale = doing && isStale(todo.doingSince);
+  const warning = doing ? doingWarning(todo) : null;
   // 커서는 zustand 상태에서 읽는다 — localStorage 를 직접 읽으면 커서가 바뀌어도
   // 리렌더가 걸리지 않아 배지 강조가 다음 refetch 까지 안 풀린다.
   const unread = hasUnreadComments(todo, seenComments);
@@ -115,12 +115,14 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       ) : null}
       {doing && todo.doingBy && (
         <span
-          className={`doing-badge tone-${actorTone(todo.doingBy)} ${stale ? 'is-stale' : ''}`}
-          title={stale ? '30분 이상 갱신 없음' : '처리중'}
+          className={`doing-badge tone-${actorTone(todo.doingBy)} ${
+            warning ? `is-stale warn-${warning.tone}` : ''
+          }`}
+          title={warning ? warning.title : '처리중'}
         >
           <span className="doing-pulse" />
           {todo.doingBy} · {todo.doingSince ? formatElapsed(todo.doingSince) : ''}
-          {stale ? ' ⚠' : ''}
+          {warning ? ` ⚠ ${warning.label}` : ''}
         </span>
       )}
     </div>

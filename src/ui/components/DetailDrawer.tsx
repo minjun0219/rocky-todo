@@ -121,6 +121,9 @@ function TodoDetail() {
   const boardSections = sections.filter((s) => s.boardId === todo.boardId);
 
   const pending = handoffs.find((h) => h.todoId === todo.id && h.status === 'pending');
+  // 집어갔는데 아무것도 안 한 건. 대기 중인 새 요청이 이미 있으면 굳이 과거를 들추지
+  // 않는다 — 사용자는 이미 다시 보낸 상태다.
+  const unstarted = pending ? undefined : handoffs.find((h) => h.todoId === todo.id && h.unstarted);
 
   // `fetchSessions` 는 실패를 던지지 않고 `sessions.available:false + reason` 으로
   // 흡수한다 — 조회 실패는 그 상태 하나로만 표현한다. 여기서 또 잡아 `handoffError` 에
@@ -349,6 +352,18 @@ function TodoDetail() {
           에이전트에게 보내기
         </button>
       )}
+      {unstarted ? (
+        <div className="handoff-unstarted" role="status">
+          <span>
+            ⚠ {unstarted.sessionName ?? unstarted.sessionId} 이(가) 받았지만 착수하지 않았다
+          </span>
+          {/* 같은 세션으로 곧장 되쏘지 않는다 — 그 세션은 사라졌을 수 있고, 그렇다면
+              한 번 더 조용히 묻힐 뿐이다. 패널을 열어 지금 살아 있는 세션을 고르게 한다. */}
+          <button type="button" onClick={() => void openHandoff()}>
+            다시 보내기
+          </button>
+        </div>
+      ) : null}
       {handoffOpen && !pending ? (
         <div className="handoff-panel">
           {sessions.available ? (

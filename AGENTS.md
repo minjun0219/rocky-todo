@@ -46,6 +46,8 @@ rocky-todo/
 │   ├── cli.ts                      # CLI — 얇은 HTTP 클라이언트 + 컴팩트 출력 (runCli)
 │   ├── client.ts                   # REST 클라이언트 (buildContext/daemonHealth/health/ensureDaemon/stopDaemon/request)
 │   ├── actor.ts                    # actor 감지 + board key 유추(git remote > toplevel > cwd)
+│   ├── actors.ts                   # AGENT_ACTORS/isAgentActor — 사람/에이전트 판정 단일 출처
+│   ├── doing.ts                    # doingState/handoffPhase/isUnstarted 판정 (순수, 세션 대조)
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
@@ -138,6 +140,27 @@ rocky-todo/
   보내고 아니면 사용자가 고른다. 대기 중인 요청에 TTL 은 없다 — 대상 세션이 사라지면
   "세션 없음"(stale)으로 표시만 하고 큐에는 남는다. **MCP 도구는 늘리지 않았다(5개 유지)**
   — 사람이 에이전트에게 넘기는 기능이지 에이전트끼리 일을 미루는 경로가 아니다.
+- **핸드오프 라이프사이클 + doing 의 세션 귀속**(user_version 5): 배달(`delivered`)은
+  "집어갔다"까지만 말한다. 그 세션이 실제로 착수했는지·끝냈는지는 `setTodoStatus` 가
+  채운다 — `start` 가 오면 그 todo 의 *미수락 delivered* 중 가장 오래된 건에
+  `accepted_at` 을 찍고 그 `session_id` 를 `todos.doing_session_id` 로 물려주며, `done` 은
+  `completed_at` 을 찍고 귀속을 비운다(`stop` 도 비우지만 착수 기록은 남긴다).
+  `status` enum 은 늘리지 않았다 — accepted/completed 는 타임스탬프뿐이고 단계는
+  `handoffPhase` 가 파생한다(`?status=pending` 을 쓰는 기존 코드가 안 깨진다).
+  두 예외: **start 없이 바로 done** 이면 `accepted_at` 을 `completed_at` 과 같이 찍고
+  (안 그러면 "끝났는데 미착수"라는 모순이 남는다), **사람이 누른 start 는 귀속하지
+  않는다**(그 요청은 여전히 세션이 안 집은 것이다).
+  귀속이 필요한 이유는 `/mcp` 가 stateless 라 도구 호출에 세션 식별자가 없고 에이전트가
+  자기 `session_id` 를 모르기 때문 — 핸드오프가 그걸 아는 유일한 경로다.
+  판정은 `src/doing.ts`(순수): `doingState` 는 `live`(세션 busy) / `idle`(세션은 사는데
+  턴이 끝나고 완료가 없다 — **가장 흔한 실패**) / `gone` / `unknown`. 귀속이 없는 doing 은
+  보드 근사로 본다 — 에이전트 actor 이고 그 보드 경로에 활성 세션이 **0개**일 때만 `gone`,
+  하나라도 있으면 `unknown`(모르는 것과 없는 것은 다르다). 세션 조회는 `doing` 이 하나도
+  없으면 건너뛴다. 세션 식별자는 full UUID 와 spawn 의 짧은 8자 id 를 **둘 다** 대조한다.
+  "배달됐는데 미착수"(`isUnstarted`)에는 **시간 임계값이 없다** — 세션이 `gone`/`idle` 일
+  때만 경고이고 `busy` 면 조용하다. 자동 만료·자동 재배달은 없고 표시만 하며, 다시 보낼지는
+  사람이 정한다(새 핸드오프가 생기고 원본은 `delivered` 로 보존). 웹 UI 는
+  `/api/handoffs?open=true`(대기 중 + 미완료 배달)로 받는다.
 - **새 세션 띄우기(보드 → 새 워크트리)**: 실행 중인 세션이 없으면 보드가 `claude --bg
   --worktree todo-<번호>` 로 새 백그라운드 세션을 띄운다(`src/spawn.ts`). 워크트리 생성·
   재사용·정리는 전부 Claude Code 몫이고(`<repo>/.claude/worktrees/`, 정리는 `claude rm
