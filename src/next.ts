@@ -35,7 +35,28 @@ export interface RankNextOptions {
  */
 export const NEXT_DEFAULT_LIMIT = 8;
 
-const PRIORITY_SCORE: Record<TodoView['priority'], number> = { p1: 30, p2: 18, p3: 6, p4: 0 };
+/**
+ * 랭킹 밴드 — **앞 자리가 뒤 자리를 항상 이긴다.**
+ *
+ * 범주 점수를 그냥 더하면 문서화한 순서(주인 없는 진행중 → 마감 → 진행중 → 우선순위 →
+ * 최근 댓글)가 깨진다. 첫 구현이 그랬다: `gone` 인 p4(100점)가 마감 지난 p1 + 최근 댓글
+ * (70+30+12=112점)에게 밀려, 조용히 썩고 있는 작업이 선택지 밖으로 나갔다.
+ *
+ * 그래서 각 범주를 **자리값이 다른 칸**에 나눠 담는다. 칸마다 0..99 만 쓰므로 하위 범주를
+ * 전부 합쳐도 상위 범주의 한 칸을 넘지 못한다 — 합산의 편의를 유지하면서 사전식 순서가
+ * 산술로 보장된다.
+ */
+const BAND = {
+  /** 주인 없는 진행중 — 이어받을 것이 있으면 그게 최우선이다. */
+  orphan: 100_000_000,
+  due: 1_000_000,
+  /** 판정할 수 없는 진행중(사람이 잡았거나 세션 대조 불가) — 마감 아래, 우선순위 위. */
+  doing: 10_000,
+  priority: 100,
+  comment: 1,
+} as const;
+
+const PRIORITY_SCORE: Record<TodoView['priority'], number> = { p1: 4, p2: 3, p3: 2, p4: 1 };
 const PRIORITY_ORDER: Record<TodoView['priority'], number> = { p1: 0, p2: 1, p3: 2, p4: 3 };
 
 /** 마감이 코앞이라고 볼 기간(일). 이 안쪽만 점수를 받는다. */
@@ -50,13 +71,28 @@ function isOpen(todo: TodoView): boolean {
   return todo.status !== 'done' && !todo.archivedAt;
 }
 
-/** `YYYY-MM-DD` → 에포크 기준 일수. 자리 파싱이라 파싱 타임존에 흔들리지 않는다. */
+const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `YYYY-MM-DD` → 에포크 기준 일수. 자리 파싱이라 파싱 타임존에 흔들리지 않는다.
+ *
+ * **달력에 없는 날짜는 `NaN`.** `Date.UTC` 는 범위를 벗어난 값을 거부하지 않고 굴린다 —
+ * `2026-02-31` 은 3월 3일, `2026-13-01` 은 이듬해 1월 1일이 된다. `due` 는 어디서도
+ * 검증되지 않는 자유 문자열(`z.string()` / `typeof === 'string'`)이라 그런 값이 실제로
+ * 저장될 수 있고, 그러면 있지도 않은 마감으로 D-day 를 찍는다. 그래서 되돌려 대조한다.
+ */
 function dayNumber(date: string): number {
-  const [y, m, d] = date.slice(0, 10).split('-').map(Number);
-  if (!y || !m || !d) {
+  const text = date.slice(0, 10);
+  if (!DATE_SHAPE.test(text)) {
     return Number.NaN;
   }
-  return Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
+  const [y, m, d] = text.split('-').map(Number) as [number, number, number];
+  const utc = Date.UTC(y, m - 1, d);
+  const back = new Date(utc);
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== m - 1 || back.getUTCDate() !== d) {
+    return Number.NaN;
+  }
+  return Math.floor(utc / DAY_MS);
 }
 
 /** 기준 시각의 **로컬** 날짜를 같은 일수 축으로 옮긴다 — 마감은 사람이 사는 날짜다. */
@@ -85,13 +121,13 @@ function dueScore(todo: TodoView, now: number): Scored {
     return { score: 0, labels: [] };
   }
   if (days < 0) {
-    return { score: 70, labels: [`마감 D+${-days}`] };
+    return { score: 3 * BAND.due, labels: [`마감 D+${-days}`] };
   }
   if (days === 0) {
-    return { score: 60, labels: ['마감 D-day'] };
+    return { score: 2 * BAND.due, labels: ['마감 D-day'] };
   }
   return days <= DUE_SOON_DAYS
-    ? { score: 35, labels: [`마감 D-${days}`] }
+    ? { score: BAND.due, labels: [`마감 D-${days}`] }
     : { score: 0, labels: [] };
 }
 
@@ -101,25 +137,29 @@ function dueScore(todo: TodoView, now: number): Scored {
  * 이 순서가 랭킹의 핵심이다. 새 일을 하나 더 벌이는 것보다 "누군가 시작해 놓고 끊긴 것"
  * 을 잇는 편이 거의 항상 낫다. `live`(세션이 지금 그걸 붙들고 있음)는 후보에서 아예
  * 빠지므로 여기 오지 않는다 — 두 에이전트가 한 항목을 같이 잡는 사고를 막는 자리다.
+ *
+ * **두 밴드로 갈린다.** 이어받을 것이 확실한 `gone`/`idle` 은 최상위 밴드(`orphan`)로 가고,
+ * 판정할 수 없는 doing 은 훨씬 아래(`doing`)에 둔다 — 사람이 방금 잡았을 수도 있는 항목을
+ * 마감 지난 일보다 위에 올릴 근거는 없다.
  */
 function doingScore(todo: TodoView): Scored {
   if (todo.status !== 'doing') {
     return { score: 0, labels: [] };
   }
   if (todo.doingState === 'gone') {
-    return { score: 100, labels: ['이어받기(세션 없음)'] };
+    return { score: 2 * BAND.orphan, labels: ['이어받기(세션 없음)'] };
   }
   if (todo.doingState === 'idle') {
-    return { score: 90, labels: ['이어받기(멈춤)'] };
+    return { score: BAND.orphan, labels: ['이어받기(멈춤)'] };
   }
   // 판정 불가(`unknown`) 나 사람이 잡은 doing. 죽었다고 단정할 수 없으니 "이어받기" 라고
   // 부르지 않되, todo 보다는 위에 둔다 — 이미 손댄 일이다.
-  return { score: 45, labels: [todo.doingBy ? `진행중(${todo.doingBy})` : '진행중'] };
+  return { score: BAND.doing, labels: [todo.doingBy ? `진행중(${todo.doingBy})` : '진행중'] };
 }
 
 /** 우선순위 점수. 라벨은 p1/p2 만 — p3/p4 까지 찍으면 근거 줄이 소음이 된다. */
 function priorityScore(todo: TodoView): Scored {
-  const score = PRIORITY_SCORE[todo.priority];
+  const score = PRIORITY_SCORE[todo.priority] * BAND.priority;
   return { score, labels: todo.priority === 'p1' || todo.priority === 'p2' ? [todo.priority] : [] };
 }
 
@@ -132,9 +172,13 @@ function commentScore(todo: TodoView, now: number): Scored {
   if (Number.isNaN(at) || now - at > FRESH_COMMENT_DAYS * DAY_MS) {
     return { score: 0, labels: [] };
   }
-  return { score: 12, labels: ['최근 댓글'] };
+  return { score: BAND.comment, labels: ['최근 댓글'] };
 }
 
+/**
+ * 범주 점수를 합친다. 각 범주가 자기 밴드 칸만 쓰므로 **합산이 곧 사전식 비교**다
+ * ({@link BAND} 참고) — 하위 범주가 아무리 쌓여도 상위 범주를 뒤집지 못한다.
+ */
 function scoreOf(todo: TodoView, now: number): Scored {
   const parts = [
     doingScore(todo),

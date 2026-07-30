@@ -74,6 +74,34 @@ describe('rankNext — 순서', () => {
     expect(refs(rankNext([idle, gone], { now: NOW }))).toEqual([gone.ref, idle.ref]);
   });
 
+  test('주인 없는 doing 은 하위 범주가 다 쌓여도 밀리지 않는다', () => {
+    // 리뷰 반례: 합산 점수였을 때 `gone` p4(100) 가 마감 지난 p1 + 최근 댓글(112) 에 밀렸다.
+    const orphan = todo({ priority: 'p4', status: 'doing', doingState: 'gone' });
+    const loaded = todo({
+      priority: 'p1',
+      due: '2026-07-20',
+      lastCommentAt: '2026-07-30T08:00:00.000Z',
+    });
+    expect(refs(rankNext([loaded, orphan], { now: NOW }))).toEqual([orphan.ref, loaded.ref]);
+  });
+
+  test('마감은 우선순위·최근 댓글이 다 쌓여도 이긴다', () => {
+    const due = todo({ priority: 'p4', due: '2026-08-05' });
+    const loaded = todo({ priority: 'p1', lastCommentAt: '2026-07-30T08:00:00.000Z' });
+    expect(refs(rankNext([loaded, due], { now: NOW }))).toEqual([due.ref, loaded.ref]);
+  });
+
+  test('판정 불가한 진행중은 마감 아래, 우선순위 위다', () => {
+    const due = todo({ priority: 'p4', due: '2026-08-05' });
+    const inProgress = todo({ priority: 'p4', status: 'doing', doingBy: 'logan' });
+    const urgent = todo({ priority: 'p1' });
+    expect(refs(rankNext([urgent, inProgress, due], { now: NOW }))).toEqual([
+      due.ref,
+      inProgress.ref,
+      urgent.ref,
+    ]);
+  });
+
   test('마감이 지난 항목이 p1 보다 위다', () => {
     const urgent = todo({ priority: 'p1' });
     const overdue = todo({ priority: 'p4', due: '2026-07-28' });
@@ -154,6 +182,24 @@ describe('rankNext — 깨진 입력', () => {
     const ranked = rankNext([broken], { now: NOW });
     expect(ranked).toHaveLength(1);
     expect(ranked[0]?.reason).toBe('대기 중');
+  });
+
+  test('달력에 없는 날짜는 마감으로 세지 않는다 — Date.UTC 가 굴려 버리는 값들', () => {
+    // due 는 어디서도 검증되지 않는 자유 문자열이라 실제로 저장될 수 있다.
+    // 2026-02-31 → 3월 3일, 2026-13-01 → 2027년 1월 1일로 굴러가 엉뚱한 D-day 가 찍혔다.
+    const reasonOf = (due: string) => rankNext([todo({ due })], { now: NOW })[0]?.reason;
+    expect(reasonOf('2026-02-31')).toBe('대기 중');
+    expect(reasonOf('2026-13-01')).toBe('대기 중');
+    expect(reasonOf('2026-00-10')).toBe('대기 중');
+    // 경계: 실재하는 날짜(윤년 2월 29일 포함)는 그대로 마감으로 세어져야 한다.
+    expect(reasonOf('2026-02-28')).toContain('마감 D+');
+    expect(reasonOf('2024-02-29')).toContain('마감 D+');
+  });
+
+  test('마감 지남 판정은 실재하는 날짜에서만 나온다', () => {
+    expect(rankNext([todo({ due: '2026-07-31' })], { now: NOW })[0]?.reason).toBe('마감 D-1');
+    // 같은 자리수인데 달력에 없는 값 — 위와 달리 아무 라벨도 붙지 않아야 한다.
+    expect(rankNext([todo({ due: '2026-07-32' })], { now: NOW })[0]?.reason).toBe('대기 중');
   });
 
   test('빈 보드는 빈 배열', () => {
