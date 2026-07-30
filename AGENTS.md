@@ -2,9 +2,9 @@
 
 AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo 레포 가이드.
 
-> **Single sources of truth.** 사람은 [`FEATURES.md`](./FEATURES.md)(한국어 — 도구/설정/Quick start),
-> 에이전트는 이 파일(레이아웃/코딩 규칙/변경 체크리스트)을 읽는다. [`README.md`](./README.md) 는 두
-> 문서로 잇는 한 페이지 진입점. 사용자 대상 설치/운영 문서는 [`docs/rocky-todo.md`](./docs/rocky-todo.md).
+> **Single sources of truth.** 사람은 [`docs/rocky-todo.md`](./docs/rocky-todo.md)(설치·데몬·표면
+> ·CLI·설정 — 한국어), 에이전트는 이 파일(레이아웃/코딩 규칙/변경 체크리스트)을 읽는다.
+> [`README.md`](./README.md) 는 둘로 잇는 한 페이지 진입점 — 무엇인지와 링크만 둔다.
 
 ## Project in one line
 
@@ -48,6 +48,7 @@ rocky-todo/
 │   ├── actor.ts                    # actor 감지 + board key 유추(git remote > toplevel > cwd)
 │   ├── actors.ts                   # AGENT_ACTORS/isAgentActor — 사람/에이전트 판정 단일 출처
 │   ├── doing.ts                    # doingState/handoffPhase/isUnstarted 판정 (순수, 세션 대조)
+│   ├── next.ts                     # 착수 후보 랭킹 + 렌더 (순수) — `next` CLI / :next 커맨드가 소비
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
@@ -66,10 +67,16 @@ rocky-todo/
 │   ├── ensure-daemon.ts (+test)    # health→없으면 spawn / 구버전이면 stop 후 재기동 (fail-open, DI)
 │   ├── notify-todo.ts              # 사람 변경 주입 (fail-open, 데몬 미기동 시 no-op) — 핸드오프 claim 도 같이 본다
 │   └── handoff-stop.ts (+test)     # Stop 훅 — 대기 중인 보드 요청을 집어 자동 착수 (fail-open, DI)
+├── commands/next.md                # /rocky-todo:next — 후보 랭킹 → 선택 → 착수 (규칙은 board 스킬)
 ├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
 └── .github/workflows/ + .husky/    # CI/release + git hooks (rocky 미러)
 ```
+
+**커맨드/스킬 경계**: `commands/*.md` 는 **얇은 진입점**이다 — 절차만 두고 보드 에티켓
+(start/comment/done, actor, 가드레일)은 `skills/board/SKILL.md` 를 로드해 따르게 한다. 규칙을
+커맨드로 복사하면 두 곳이 갈린다. 판정(랭킹 등)은 커맨드 본문이 아니라 `src/*.ts` 의 순수
+함수에 두고 CLI 로 노출한다 — 그래야 테스트가 붙고 사람도 같은 결과를 본다.
 
 **Import 규칙**: 전부 상대경로. `src/*` 는 서로 `./` 로, `hooks/*` 는 `../src/*` 로 import 한다.
 `../core` 같은 rocky 본체 참조는 없다 (self-contained). `@modelcontextprotocol/sdk/...js` 처럼
@@ -240,10 +247,10 @@ bunx changeset      # user-facing 변경의 버전 의도 선언
 1. `bun run check` 통과
 2. `bun run typecheck` 통과
 3. `bun run test` 통과 (unit + dom 양쪽)
-4. 사용자 표면(도구/env/CLI)이 바뀌면 **두 single source** 동기화 — `FEATURES.md`(사람) +
-   이 `AGENTS.md`(에이전트) — 와 진입 페이지 `README.md`, 운영 문서 `docs/rocky-todo.md`.
-5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 + `FEATURES.md`
-   env 표 갱신.
+4. 사용자 표면(도구/env/CLI/커맨드)이 바뀌면 문서 셋을 동기화 — `docs/rocky-todo.md`(사람용
+   설치·운영·표면 단일 출처) + 이 `AGENTS.md`(에이전트) + 진입 페이지 `README.md`.
+5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 +
+   `docs/rocky-todo.md` 의 env 표 갱신.
 6. MCP 도구 계약이 바뀌면 `src/mcp.ts`(등록) + `src/server.ts`/`src/store.ts`(구현) 갱신.
 7. `rocky.json` 의 `todo` 모양이 바뀌면 `src/rocky-config.ts`(런타임) 갱신 (+ 스키마 문서화 시 함께).
 8. 사용자 표면 변경이면 `bunx changeset` 으로 버전 의도 선언.

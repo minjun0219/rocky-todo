@@ -66,6 +66,20 @@ rocky-todo daemon uninstall
 > `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
 > 재설치해야 launchd 데몬이 `claude` CLI(핸드오프 기능이 쓴다)를 PATH 에서 찾는다.
 
+## MCP 도구 5개 (에이전트)
+
+| 도구 | 하는 일 |
+| --- | --- |
+| `todo_list` | 보드/항목 조회 (`{ board }` 현황, `{ id }` 상세+히스토리+댓글, `{ boards: true }` 보드 목록). `includeArchived` 는 `{ id }` 단건 조회에서 댓글까지 함께 통제한다 |
+| `todo_write` | todo 생성/수정 (board, title, section, parentId, priority, due, labels, links, comment, createIssue, actor) |
+| `todo_status` | 상태 전환 — `start` / `stop` / `done` / `reopen` / `archive` / `unarchive` |
+| `note_list` | 스크래치패드 메모 조회 (보드 소속 or 글로벌) |
+| `note_write` | 메모 생성/수정/append/archive (`mode`) |
+
+각 도구의 `id` 인자는 아래 "CLI 표면" 의 REF 문법을 그대로 받는다 — 맨숫자(`12`)처럼 보드
+접두사가 없는 번호는 같이 넘기는 `board` 인자가 그 컨텍스트가 된다. `createIssue: true` 는
+그 todo 를 GitHub 이슈로 만들고 URL 을 `links` 에 붙인다 (아래 "GitHub 이슈로 만들기" 참고).
+
 ## 호스트별 MCP 등록
 
 Claude Code 에서는 플러그인 설치로 자동 등록되므로 수동 작업이 필요 없다. **opencode / Codex** 는
@@ -97,6 +111,28 @@ Codex 버전이 HTTP MCP 를 지원하지 않으면 CLI(`rocky-todo`)를 Bash �
 붙여넣으면 그 항목을 맡아 착수한다. `navigator.clipboard` 는
 보안 컨텍스트(HTTPS 또는 루프백)에서만 동작하므로, 평문 LAN HTTP(`todo.expose: "lan"`)로
 접속했을 때는 `execCommand` 폴백을, 그마저 안 되면 복사할 텍스트를 보여주는 프롬프트를 띄운다.
+
+## 다음 작업 고르기 (`/rocky-todo:next`)
+
+브라우저를 열지 않고 세션에서 바로 고르는 경로. `/rocky-todo:next` 를 치면 착수 후보를
+랭킹해 보여주고, 고른 항목을 `start` 표시한 뒤 그 자리에서 시작한다. 참조를 알고 있으면
+`/rocky-todo:next rocky-12` 로 픽커를 건너뛴다.
+
+랭킹은 CLI(`rocky-todo next`)와 같은 판정을 쓴다 — **주인 없는 진행중**(세션이 사라졌거나
+멈춘 doing) → 마감(지남 > 오늘 > 7일 내) → 판정할 수 없는 진행중(사람이 잡은 것 등) →
+우선순위 → 최근 댓글. 이 순서는 **뒤집히지 않는다**: 아래쪽 기준이 아무리 쌓여도 위쪽
+기준을 넘지 못하므로, 마감 지난 p1 이 이어받을 p4 를 밀어내는 일은 없다. 살아 있는 세션이
+붙들고 있는 항목과 **열린 자식을 가진 우산 항목**은 후보에서 빠진다. 근거는 목록에 그대로
+찍힌다:
+
+```
+$ rocky-todo next
+1. rocky-todo-22  데몬 라우트에 Origin 검사  — 이어받기(멈춤) · p2
+2. rocky-todo-21  웹 UI 라이트 모드 마이그레이션  — p2 · 최근 댓글
+```
+
+고른 항목의 보드가 지금 레포와 다르면 어디서 할지(여기서 / 새 세션 spawn / 다른 세션
+handoff)를 한 번 더 묻는다. 같은 레포면 묻지 않는다.
 
 ## 웹 UI — 퍼머링크
 
@@ -308,6 +344,7 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 
 ```
 rocky-todo ls [--board K|--all] [--archived] [--json]
+rocky-todo next [--board K|--all] [--limit N] [--json]   # 착수 후보 랭킹 (다음에 뭘 할까)
 rocky-todo add "제목" [--section S] [--parent REF] [--desc MD] [--due YYYY-MM-DD]
                      [--priority p1..p4] [--label a,b] [--link URL]
 rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF

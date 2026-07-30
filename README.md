@@ -16,6 +16,8 @@
   세션이 없으면 그 todo 전용 워크트리에 새로 띄울 수도 있다(로컬 전용)
 - 사람이 읽는 참조(`rocky-12`, 글로벌 메모는 `note-3`)로 부른다 — 웹 UI에서는 번호 버튼을
   클릭하면 `/rocky-todo:board rocky-12` 가 클립보드로 복사된다
+- 다음 작업 고르기: `/rocky-todo:next` — 착수 후보를 랭킹해 보여주고 고른 항목을 바로 시작한다
+  (CLI 는 `rocky-todo next`). 주인 없는 진행중 → 마감 → 우선순위 순, 우산 항목은 제외
 - 웹 UI 퍼머링크 — 주소가 화면을 담는다: `/`(전체) · `/{board}` · `/{board}/{number}`. 새로고침해도 유지되고 링크 공유 가능
 
 ## 표면
@@ -42,8 +44,7 @@ claude plugin install rocky-todo@rocky-marketplace     # rocky 자동 동반 (de
 
 ## 문서
 
-- **[docs/rocky-todo.md](./docs/rocky-todo.md)** — 설치·데몬·MCP 등록·노출 범위·CLI·설정 (사람용)
-- **[FEATURES.md](./FEATURES.md)** — 도구/설정/Quick start (한국어)
+- **[docs/rocky-todo.md](./docs/rocky-todo.md)** — 설치·데몬·MCP 도구·노출 범위·CLI·설정 (사람용 단일 출처)
 - **[AGENTS.md](./AGENTS.md)** — 레이아웃/코딩 규칙/게이트 (AI 에이전트용)
 - **[skills/board/SKILL.md](./skills/board/SKILL.md)** — 보드 활용 에티켓 (`rocky-todo:board` 스킬)
 
