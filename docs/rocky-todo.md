@@ -340,6 +340,12 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - env `ROCKY_TODO_EXPOSE`(콤마 구분)가 설정되면 config 를 통째로 덮어쓴다 — `off` 로 강제 차단.
 - `tailscale-serve` 채널이 없으면 rocky-todo 는 tailscale 을 일절 건드리지 않는다 (회사 등 금지 환경).
   수동 제어: `rocky-todo tailscale on|off|status`.
+- **기동 시 자동 보장은 남의 노출을 빼앗지 않는다.** `tailscale serve` 의 노출 지점은 443 의
+  `/` 하나뿐인 머신 공유 자원인데, 데몬의 단일 인스턴스 보장은 *같은 포트* 기준이라 다른
+  포트로 뜬 개발/데모 인스턴스가 설치본과 나란히 존재할 수 있다. 그래서 기동 시에는 현재
+  serve 대상 포트를 먼저 확인해서, 거기에 **살아 있는 다른 rocky-todo 데몬**이 있으면
+  양보하고(그 인스턴스는 테일넷에 노출되지 않는다) 아무도 안 듣는 죽은 포트면 되찾는다.
+  일부러 넘기고 싶을 땐 명시적으로 `rocky-todo tailscale on` — 수동 경로는 그대로 인수한다.
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
 - 노출되는 것은 **보드**다. GitHub 이슈 생성은 어느 채널로도 열리지 않는다 — 로컬 요청
   전용이다 ([GitHub 이슈로 만들기](#github-이슈로-만들기) 참고).
