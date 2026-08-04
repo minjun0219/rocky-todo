@@ -105,8 +105,9 @@ export async function startDaemon(): Promise<void> {
   }
 
   // 옵션: expose 에 tailscale 채널이 있을 때만 serve 보장 — 없으면 tailscale 을 일절 안 건드린다 (회사 환경 대비)
+  // 이미 다른 살아있는 데몬이 serve 를 쓰고 있으면 양보한다 (`decideServeAction`).
   if (runtime.expose.includes('tailscale-serve')) {
-    ensureTailscaleServe(runtime.port);
+    console.log(await ensureTailscaleServe(runtime.port));
   }
 }
 
