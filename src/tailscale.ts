@@ -67,6 +67,15 @@ interface ServeStatusJson {
 }
 
 /**
+ * 루프백 판정 — `URL.hostname` 은 IPv6 를 대괄호째(`[::1]`) 돌려주므로 벗겨서 비교한다.
+ * 여기서 놓친 형태는 "점유자 없음"으로 읽혀 남의 serve 를 덮어쓰게 되므로 넓게 잡는다.
+ */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+/**
  * `tailscale serve status --json` 출력에서 루트(`/`) 핸들러가 프록시하는 로컬 포트를 뽑는다.
  *
  * 텍스트 출력 대신 JSON 을 파싱하는 이유는 사람이 읽는 트리 모양이 버전마다 흔들려서다.
@@ -91,7 +100,7 @@ export function parseServeProxyPort(json: string): number | null {
     } catch {
       continue;
     }
-    if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+    if (!isLoopbackHost(url.hostname)) {
       continue;
     }
     const port = Number(url.port);

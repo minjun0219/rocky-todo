@@ -15,6 +15,10 @@ describe('parseServeProxyPort', () => {
     expect(parseServeProxyPort(statusJson('http://localhost:8995'))).toBe(8995);
   });
 
+  test('IPv6 루프백도 루프백이다 — 놓치면 남의 serve 를 덮어쓴다', () => {
+    expect(parseServeProxyPort(statusJson('http://[::1]:8636'))).toBe(8636);
+  });
+
   test('serve 미설정 / 파싱 불가 / 루트 아님은 null', () => {
     expect(parseServeProxyPort('{}')).toBeNull();
     expect(parseServeProxyPort('')).toBeNull();
