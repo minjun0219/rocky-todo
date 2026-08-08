@@ -1,5 +1,5 @@
 ---
-"rocky-todo": minor
+"@minjun0219/rocky-todo": minor
 ---
 
 statusline 세그먼트 추가 — 창을 하나 더 띄우지 않고 보드를 본다
