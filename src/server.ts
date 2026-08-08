@@ -29,6 +29,12 @@ import {
   worktreePathFor,
 } from './spawn';
 import {
+  boardKeyForCwd,
+  DEFAULT_STATUSLINE_TEMPLATE,
+  renderStatusline,
+  type StatuslineMine,
+} from './statusline';
+import {
   DETAIL_HISTORY_EXCLUDED,
   type HandoffStatus,
   type ListTodosFilter,
@@ -89,6 +95,24 @@ export interface TodoServerOptions {
    * 기본은 데몬 수명 동안만 사는 TTL 60초 창.
    */
   recentSpawns?: RecentSpawns;
+  /**
+   * `GET /api/statusline` 이 렌더할 템플릿. `daemon.ts` 가 설정에서 해석해 넘긴다.
+   * 생략하면 기본 템플릿.
+   */
+  statuslineTemplate?: string;
+  /**
+   * statusline 라우트 전용 세션 조회 — 기본은 **TTL 15초** 캐시다.
+   *
+   * 이 라우트만 캐시 수명이 다른 이유는 호출 빈도다. statusline 은 열어둔 세션마다
+   * 1초에 한 번 도는 유일한 경로라, 다른 라우트의 TTL 3초를 그대로 쓰면 `claude
+   * agents --json`(실측 ~220ms 동기 spawn)이 3초마다 영구히 돌아 배경 부하가 된다.
+   * 반대로 이 라우트가 세션 목록에서 얻는 것은 "방치된 doing" 경고 하나뿐이고, 그건
+   * 15초 늦게 떠도 아무 손해가 없다.
+   *
+   * 생략하면 `sessions` 주입값을 그대로 쓴다 — 테스트가 `sessions` 만 넣었을 때
+   * 이 라우트도 그 결정론적 목록을 보게 하려는 것이다.
+   */
+  statuslineSessions?: () => SessionsResult;
 }
 
 // TodoView/NoteView 는 REST·MCP 가 공유하는 './refs' 가 정의한다 — 여기서 재수출해
@@ -203,6 +227,10 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
   const pathExists = options.pathExists ?? existsSync;
   const realPath = options.realPath ?? realpathSync;
   const recentSpawns = options.recentSpawns ?? createRecentSpawns();
+  // statusline 은 초당 한 번 도는 유일한 라우트라 세션 캐시를 따로 길게 잡는다 (옵션 주석 참고).
+  const statuslineSessionsOf =
+    options.statuslineSessions ?? options.sessions ?? createCachedListSessions(15_000);
+  const statuslineTemplate = options.statuslineTemplate ?? DEFAULT_STATUSLINE_TEMPLATE;
 
   /**
    * `?board=` 쿼리스트링(보드 key)을 참조 해석에 쓰는 boardId 로 바꾼다. 쿼리 자체가
@@ -259,6 +287,95 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
     return { ...view, doingState: resolveDoingState(todo, boardKey, sessions) };
   };
 
+  /**
+   * 이 세션을 가리키는 식별자 전부 — full UUID 와 spawn 의 짧은 8자 id 는 서로 다른
+   * 문자열이라, 한쪽만 대조하면 spawn 으로 띄운 세션의 항목이 전부 남의 것으로 보인다.
+   * 세션 목록이 둘을 잇는 유일한 경로다(`AgentSession.sessionId` ↔ `.id`).
+   */
+  const sessionAliases = (session: string, sessions: SessionsResult): Set<string> => {
+    const aliases = new Set([session]);
+    const match = sessions.sessions.find((s) => s.sessionId === session || s.id === session);
+    if (match) {
+      aliases.add(match.sessionId);
+      // 짧은 id 는 background 세션에만 붙는다 — interactive 세션에는 없다.
+      if (match.id) {
+        aliases.add(match.id);
+      }
+    }
+    return aliases;
+  };
+
+  /**
+   * statusline 한 줄을 만든다 — `GET /api/statusline`.
+   *
+   * 보여줄 게 하나도 없으면 **세션 목록을 조회하기 전에** 빈 문자열로 빠진다. 이 라우트는
+   * 열어둔 세션마다 1초에 한 번 도는 자리라, doing 도 pending 도 없는 대다수 호출에서
+   * `claude agents --json` 비용을 아예 만들지 않는 게 중요하다.
+   *
+   * 실패는 조용하다. 여기서 던지면 바깥 catch 가 JSON 에러 본문을 내고, 그건 사용자
+   * 프롬프트에 JSON 덩어리가 박힌다는 뜻이다 — 힌트 한 줄이 감당할 실패 모드가 아니다.
+   * 같은 데이터의 진짜 에러는 웹 UI/CLI 가 그대로 드러낸다.
+   */
+  const statuslineOf = (url: URL): Response => {
+    const plain = (body: string): Response =>
+      new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    try {
+      const session = url.searchParams.get('session') ?? undefined;
+      const cwd = url.searchParams.get('cwd') ?? undefined;
+      const doing = store.listTodos({ status: 'doing' });
+      const pending = session ? store.listHandoffs({ status: 'pending' }) : [];
+      if (doing.length === 0 && pending.length === 0) {
+        return plain('');
+      }
+
+      const sessions = statuslineSessionsOf();
+      const aliases = session ? sessionAliases(session, sessions) : undefined;
+      const mineTodo = aliases
+        ? doing.find((todo) => todo.doingSessionId && aliases.has(todo.doingSessionId))
+        : undefined;
+      let mine: StatuslineMine | undefined;
+      if (mineTodo) {
+        const view = withRef(store, mineTodo);
+        mine = { ref: view.ref, title: view.title, comments: view.commentCount };
+      }
+
+      // 보드가 안 풀리면(설정 전이거나 낯선 경로) 전체 doing 으로 떨어진다 — 0 으로
+      // 만들면 "조용함" 과 "모름" 이 같아 보여, 방치 경고가 조용히 사라진다.
+      const boardKey = boardKeyForCwd(store.listBoards(), cwd);
+      const boardId = boardKey ? store.boardIdOf(boardKey) : undefined;
+      const boardDoing = boardId ? doing.filter((todo) => todo.boardId === boardId) : doing;
+      // `boardKeyOf` 는 보드마다 DB 쿼리다. 초당 도는 라우트라 doing 하나하나에 부르면
+      // 보드 수가 아니라 항목 수만큼 쿼리가 나간다 — 요청 안에서 boardId 당 한 번만 푼다.
+      const boardKeys = new Map<string, string>();
+      const keyOf = (id: string | undefined): string => {
+        if (!id) {
+          return '';
+        }
+        const cached = boardKeys.get(id);
+        if (cached !== undefined) {
+          return cached;
+        }
+        const resolved = store.boardKeyOf(id) ?? '';
+        boardKeys.set(id, resolved);
+        return resolved;
+      };
+      const stale = boardDoing.filter((todo) => {
+        const state = resolveDoingState(todo, keyOf(todo.boardId), sessions);
+        return state === 'idle' || state === 'gone';
+      }).length;
+
+      const inbox = aliases
+        ? pending.filter((handoff) => aliases.has(handoff.sessionId)).length
+        : 0;
+
+      return plain(
+        renderStatusline(statuslineTemplate, { mine, inbox, stale, doing: boardDoing.length }),
+      );
+    } catch {
+      return plain('');
+    }
+  };
+
   const fetch = async (req: Request, peerAddress?: string): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -283,6 +400,13 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           // 그리지 않도록 미리 보는 힌트일 뿐, 강제는 spawn 라우트 자신이 한다.
           spawnAllowed: local,
         });
+      }
+
+      // ── statusline ──
+      // 렌더까지 서버가 한다 — 소비자(Claude Code statusline 명령)를 `curl` 한 줄로
+      // 유지하려는 것이다. 그 자리에서 bun 을 띄우면 1초마다 × 세션 수만큼 기동 비용이 든다.
+      if (method === 'GET' && path === '/api/statusline') {
+        return statuslineOf(url);
       }
 
       // ── SSE ──

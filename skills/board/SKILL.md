@@ -135,6 +135,34 @@ Claude Code 에서는 `UserPromptSubmit` 훅이 "마지막 확인 이후 호출�
 사용자에게 확인 후 진행한다. 훅이 없는 호스트(Codex/opencode)에서는 작업 단위 시작
 전에 `todo_list` 로 직접 확인한다.
 
+## statusline 에 얹어 달라고 하면 (Claude Code 전용)
+
+창을 하나 더 띄우지 않고 보드를 보는 경로. 데몬의 `GET /api/statusline?cwd=&session=`
+이 **완성된 한 줄**을 `text/plain` 으로 주므로, statusline 스크립트는 이걸 붙이면 된다:
+
+```sh
+rt_session=$(echo "$input" | jq -r '.session_id // empty')
+rt_line=$(curl -sf --max-time 0.3 --get \
+  --data-urlencode "cwd=$raw_dir" --data-urlencode "session=$rt_session" \
+  'http://127.0.0.1:8636/api/statusline' 2>/dev/null)
+[ -n "$rt_line" ] && printf '%s\n' "$rt_line"
+```
+
+직접 스니펫을 지어내지 말고 이걸 쓴다 — 셋을 틀리기 쉽다:
+
+- **`-f` 는 필수다.** 이 라우트가 없는 구버전 데몬은 404 와 함께 JSON 에러 본문을 내고,
+  `-f` 가 없으면 그 JSON 이 그대로 사용자 프롬프트에 찍힌다.
+- **앞 줄이 개행으로 끝난다는 전제**라 `printf '%s\n'` 이다. 앞에 `\n` 을 또 붙이면 빈 줄이 생긴다.
+- **`todo.port` 를 바꿔 썼다면 URL 의 포트도 바꾼다.** 안 그러면 조용히 무출력이다.
+
+렌더는 데몬이 하므로 표시 내용을 바꾸는 건 스크립트가 아니라 `rocky.json` 의
+`todo.statusline.template` 이다 (`docs/rocky-todo.md` 의 placeholder 표 참고).
+보여줄 게 없으면 빈 본문이라 아무것도 찍히지 않는다.
+
+Claude Code 전용이다 — `statusLine` 자체가 Claude Code 기능이고, 기본 템플릿이 쓰는
+`{mine.*}`/`{inbox}`/`{stale}` 은 세션 판정(`claude agents --json`)에 의존해 다른
+호스트에서는 전부 빈다.
+
 ## 가드레일
 
 - 사용자가 명시하지 않은 항목의 `done`/`archive` 는 실제로 그 작업이 끝났음을 확인한

@@ -417,4 +417,74 @@ REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky-12`(�
 | `ROCKY_TODO_ACTOR` | CLI actor 이름 강제 |
 | `ROCKY_TODO_WATCH` | 보드 변경 주입 훅 on/off (기본 on) |
 | `ROCKY_TODO_EXPOSE` | 노출 채널 강제 (`lan,tailscale-serve` / `off`) — 설정 시 config 무시 |
+| `ROCKY_TODO_STATUSLINE` | statusline 템플릿 강제 (아래 "statusline 에 얹기") |
 | `ROCKY_CONFIG` | user rocky.json 경로 override (기본 `~/.config/rocky/rocky.json`) |
+
+## statusline 에 얹기
+
+보드를 보려고 브라우저 창이나 터미널 pane 을 따로 띄우는 대신, 이미 떠 있는 Claude Code
+statusline 에 세그먼트 하나로 붙인다. **보여줄 게 없으면 아무것도 출력하지 않는다.**
+
+`GET /api/statusline?cwd=<경로>&session=<세션 id>` 가 완성된 한 줄을 `text/plain` 으로
+돌려준다 — 렌더까지 데몬이 하므로 소비자 쪽은 `curl` 한 줄이면 된다. 이 자리는 1초마다 ×
+열어둔 세션 수만큼 도는 곳이라, 여기서 `bun` 을 띄우지 않는 것이 설계 목적이다.
+
+`~/.claude/statusline-command.sh` 끝에 (또는 `settings.json` 의 `statusLine.command` 에)
+이어 붙인다 — 입력 JSON 에서 두 값을 꺼내 쓴다:
+
+```sh
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // empty')
+sid=$(echo "$input" | jq -r '.session_id // empty')
+rt=$(curl -sf --max-time 0.3 "http://127.0.0.1:8636/api/statusline?cwd=$cwd&session=$sid")
+[ -n "$rt" ] && printf '%s\n' "$rt"
+```
+
+(앞선 줄이 개행으로 끝난다는 전제다 — 보통 `printf '...\n'` 로 끝나므로 여기서 `\n` 을
+앞에 또 붙이면 빈 줄이 하나 생긴다.)
+
+`-f` 를 빼지 마라. 데몬이 안 떠 있으면 `curl` 이 빈 값을 내지만, **이 라우트가 없는 구버전
+데몬**은 404 와 함께 JSON 에러 본문을 낸다 — `-f` 가 없으면 그 JSON 이 그대로 statusline 에
+찍힌다. `-f` 는 비 2xx 응답을 무출력으로 만들어 두 경우를 같게 만든다 (fail-open —
+statusline 이 보드 때문에 깨지지 않는다).
+
+**환경 전제 셋** — 새 머신에 붙일 때 걸리는 것들이다:
+
+- **Claude Code 전용.** `statusLine` 자체가 Claude Code 기능이고, 기본 템플릿이 쓰는
+  `{mine.*}`/`{inbox}`/`{stale}` 은 세션 판정(`claude agents --json`)에 의존한다 —
+  opencode/Codex 에서는 전부 비어 `{doing}` 만 남는다.
+- **포트를 바꿔 썼으면** (`todo.port`) URL 의 포트도 같이 바꾼다. 안 그러면 조용히 무출력이다.
+- **`jq` 가 필요하다.** statusline 입력은 stdin JSON 이라 파서 없이는 값을 못 꺼낸다.
+
+배선은 머신마다 수동이다 — 플러그인은 사용자의 statusline 스크립트를 건드리지 않는다.
+
+### 템플릿
+
+`rocky.json` 의 `todo.statusline.template` 로 바꾼다. 기본값:
+
+```
+[⏺ {mine.ref} {mine.title}][ 💬{mine.comments}][  ✉{inbox}][  ⚠{stale}]
+```
+
+문법은 둘뿐이다.
+
+- `{name}` — 값으로 치환. 모르는 이름은 그대로 남는다(오타가 눈에 보이라고).
+- `[...]` — 옵셔널 그룹. 안의 placeholder 가 **전부** 비면 그룹이 통째로 사라진다.
+  숫자 `0` 은 "빈 값"이다. placeholder 가 없는 그룹은 순수 장식이라 늘 남는다.
+
+| placeholder | 뜻 |
+| --- | --- |
+| `{mine.ref}` / `{mine.title}` | **이 세션이** `doing` 으로 잡은 항목 (제목은 30자에서 절단) |
+| `{mine.comments}` | 그 항목의 댓글 수 — 사람이 댓글을 달면 다음 갱신에 숫자가 올라간다 |
+| `{inbox}` | 이 세션 앞으로 대기 중인 핸드오프 수 |
+| `{stale}` | 이 보드에서 방치된 `doing` 수 (세션이 사라졌거나 턴이 끝났는데 완료가 없다) |
+| `{doing}` | 이 보드의 전체 `doing` 수 |
+
+`{mine.*}` 은 핸드오프로 시작된 작업에만 붙는다 — 세션 귀속(`doing_session_id`)이 생기는
+유일한 경로라서다. 보드 판정은 `cwd` 로 하며 워크트리도 원본 보드로 모인다.
+
+색을 넣으려면 템플릿에 ANSI 이스케이프를 직접 쓴다(JSON 문자열이라 `\u001b` 가 그대로
+들어간다). 이스케이프 안의 `[` 는 그룹 문법으로 읽지 않는다:
+
+```json
+{ "todo": { "statusline": { "template": "[\u001b[33m⏺ {mine.ref}\u001b[0m {mine.title}][  ⚠{stale}]" } } }
+```

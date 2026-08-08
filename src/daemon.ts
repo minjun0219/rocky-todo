@@ -55,7 +55,7 @@ export async function startDaemon(): Promise<void> {
   mkdirSync(runtime.dir, { recursive: true });
   const store = new TodoStore({ dbPath: join(runtime.dir, 'todo.db') });
   let server: ReturnType<typeof Bun.serve> | undefined;
-  const api = buildTodoServer({ store });
+  const api = buildTodoServer({ store, statuslineTemplate: runtime.statuslineTemplate });
   const mcp = createMcpFetchHandler({ store });
 
   // Bun 의 HTML 번들은 asset public path 를 process.cwd() 기준으로 계산한다.

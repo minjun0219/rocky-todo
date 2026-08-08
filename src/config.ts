@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type TodoConfig, expandTilde } from './rocky-config';
+import { DEFAULT_STATUSLINE_TEMPLATE } from './statusline';
 
 /**
  * rocky-todo 데몬/CLI 런타임 설정 해석.
@@ -30,6 +31,8 @@ export interface TodoRuntimeConfig {
   /** 바인딩 호스트 — expose 에서 유도 (lan 포함 → 0.0.0.0, 아니면 127.0.0.1). */
   host: string;
   expose: TodoExposeChannel[];
+  /** `GET /api/statusline` 이 렌더할 템플릿 — 항상 채워진다(기본값 폴백). */
+  statuslineTemplate: string;
 }
 
 function parsePort(raw: string | undefined): number | undefined {
@@ -67,6 +70,12 @@ export function resolveTodoRuntimeConfig(
           ? configExpose
           : [configExpose];
   const host = expose.includes('lan') ? '0.0.0.0' : '127.0.0.1';
+  // 빈 문자열은 "출력 안 함" 이 아니라 오설정으로 본다 — 끄고 싶으면 statusline 명령에서
+  // curl 을 빼면 되고, 여기서 빈 값을 통과시키면 왜 아무것도 안 뜨는지 알 길이 없다.
+  const statuslineTemplate =
+    env.ROCKY_TODO_STATUSLINE?.trim() ||
+    todoConfig?.statusline?.template?.trim() ||
+    DEFAULT_STATUSLINE_TEMPLATE;
 
-  return { port, dir: expandTilde(rawDir), host, expose };
+  return { port, dir: expandTilde(rawDir), host, expose, statuslineTemplate };
 }

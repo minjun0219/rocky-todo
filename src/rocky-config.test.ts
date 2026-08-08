@@ -61,3 +61,20 @@ describe('loadTodoConfig', () => {
     expect(loadTodoConfig(path)).toEqual({ todo: {} });
   });
 });
+
+describe('loadTodoConfig — statusline', () => {
+  test('todo.statusline.template 을 읽는다', () => {
+    const path = writeConfig(JSON.stringify({ todo: { statusline: { template: '[⏺{doing}]' } } }));
+    expect(loadTodoConfig(path).todo?.statusline).toEqual({ template: '[⏺{doing}]' });
+  });
+
+  test('모양이 어긋나면 통째로 무시한다 — 다른 필드와 같은 fail-open 규칙', () => {
+    expect(loadTodoConfig(writeConfig('{ "todo": { "statusline": "on" } }')).todo?.statusline).toBe(
+      undefined,
+    );
+    expect(
+      loadTodoConfig(writeConfig('{ "todo": { "statusline": { "template": 3 } } }')).todo
+        ?.statusline,
+    ).toBe(undefined);
+  });
+});

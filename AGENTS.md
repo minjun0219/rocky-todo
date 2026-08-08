@@ -49,6 +49,7 @@ rocky-todo/
 │   ├── actors.ts                   # AGENT_ACTORS/isAgentActor — 사람/에이전트 판정 단일 출처
 │   ├── doing.ts                    # doingState/handoffPhase/isUnstarted 판정 (순수, 세션 대조)
 │   ├── next.ts                     # 착수 후보 랭킹 + 렌더 (순수) — `next` CLI / :next 커맨드가 소비
+│   ├── statusline.ts               # statusline 한 줄 템플릿 렌더 + cwd→보드 판정 (순수)
 │   ├── config.ts                   # 런타임 설정 해석 (env > user rocky.json todo > 기본)
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
@@ -177,6 +178,21 @@ rocky-todo/
   때만 경고이고 `busy` 면 조용하다. 자동 만료·자동 재배달은 없고 표시만 하며, 다시 보낼지는
   사람이 정한다(새 핸드오프가 생기고 원본은 `delivered` 로 보존). 웹 UI 는
   `/api/handoffs?open=true`(대기 중 + 미완료 배달)로 받는다.
+- **statusline 세그먼트(`GET /api/statusline`)**: 보드를 보려고 창을 하나 더 띄우지 않으려는
+  표면. `?cwd=&session=` 을 받아 **완성된 한 줄**을 `text/plain` 으로 낸다 — 렌더를 데몬이
+  하는 이유는 소비자(Claude Code statusline 명령)를 `curl` 한 줄로 유지하려는 것이다.
+  그 자리는 1초마다 × 열어둔 세션 수만큼 도는 유일한 경로라 bun 기동(~30–50ms)을 없애는
+  값이 크다. 같은 이유로 이 라우트만 **세션 캐시 TTL 이 15초**다(`statuslineSessions`) —
+  다른 라우트의 3초를 쓰면 `claude agents --json`(~220ms)이 3초마다 영구히 도는 배경
+  부하가 된다. 세션 목록에서 얻는 건 방치 경고 하나뿐이라 15초 지연은 손해가 없다.
+  템플릿 문법은 `{name}` 치환과 `[...]` 옵셔널 그룹 둘뿐이고, **ESC 바로 뒤의 `[`/`]` 는
+  리터럴**이다 — 색을 별도 DSL 로 만들지 않고 템플릿에 ANSI 이스케이프를 직접 적게 한
+  선택의 대가를 한 줄로 치른 것. 판정은 전부 `src/statusline.ts`(순수)에 있고 라우트는
+  재료만 모은다. **실패는 조용하다**(빈 문자열) — 여기서 에러 본문을 내면 사용자
+  프롬프트에 JSON 덩어리가 박힌다. 보드 판정은 `boardKeyForCwd` 로 `boards.path` 하위 →
+  key 가 경로 세그먼트 순인데, `basename(cwd)` 를 쓰면 워크트리에서 원본 보드를 놓치기
+  때문이고 이는 `matchBoard` 와 같은 규약이다. `{mine.*}` 이 핸드오프로 시작된 작업에만
+  붙는 것도 같은 이유다 — `doing_session_id` 귀속이 생기는 유일한 경로다.
 - **새 세션 띄우기(보드 → 새 워크트리)**: 실행 중인 세션이 없으면 보드가 `claude --bg
   --worktree todo-<번호>` 로 새 백그라운드 세션을 띄운다(`src/spawn.ts`). 워크트리 생성·
   재사용·정리는 전부 Claude Code 몫이고(`<repo>/.claude/worktrees/`, 정리는 `claude rm

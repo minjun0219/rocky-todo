@@ -29,6 +29,14 @@ export interface TodoConfig {
   expose?: ('lan' | 'tailscale-serve')[] | 'lan' | 'tailscale-serve' | 'off' | null;
   /** UserPromptSubmit 훅의 보드 변경 주입 on/off. 기본 true. env `ROCKY_TODO_WATCH` 우선. */
   watch?: boolean;
+  /** `GET /api/statusline` 이 렌더할 한 줄. 객체로 둔 건 나중에 항목이 늘어도 키가 안 늘게 하려는 것. */
+  statusline?: TodoStatuslineConfig;
+}
+
+/** statusline 세그먼트 설정 — 렌더는 데몬이 한다(`src/statusline.ts`). */
+export interface TodoStatuslineConfig {
+  /** 템플릿 한 줄. 생략하면 `DEFAULT_STATUSLINE_TEMPLATE`. env `ROCKY_TODO_STATUSLINE` 우선. */
+  template?: string;
 }
 
 /**
@@ -84,6 +92,17 @@ export function loadTodoConfig(configPath: string = process.env.ROCKY_CONFIG ?? 
   }
   if (typeof raw.watch === 'boolean') {
     out.watch = raw.watch;
+  }
+  // 모양이 어긋나면(문자열/배열 등) 통째로 무시한다 — 다른 필드와 같은 fail-open 규칙이다.
+  if (
+    typeof raw.statusline === 'object' &&
+    raw.statusline !== null &&
+    !Array.isArray(raw.statusline)
+  ) {
+    const template = (raw.statusline as Record<string, unknown>).template;
+    if (typeof template === 'string') {
+      out.statusline = { template };
+    }
   }
   return { todo: out };
 }
