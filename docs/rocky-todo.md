@@ -447,6 +447,16 @@ rt=$(curl -sf --max-time 0.3 "http://127.0.0.1:8636/api/statusline?cwd=$cwd&sess
 찍힌다. `-f` 는 비 2xx 응답을 무출력으로 만들어 두 경우를 같게 만든다 (fail-open —
 statusline 이 보드 때문에 깨지지 않는다).
 
+**환경 전제 셋** — 새 머신에 붙일 때 걸리는 것들이다:
+
+- **Claude Code 전용.** `statusLine` 자체가 Claude Code 기능이고, 기본 템플릿이 쓰는
+  `{mine.*}`/`{inbox}`/`{stale}` 은 세션 판정(`claude agents --json`)에 의존한다 —
+  opencode/Codex 에서는 전부 비어 `{doing}` 만 남는다.
+- **포트를 바꿔 썼으면** (`todo.port`) URL 의 포트도 같이 바꾼다. 안 그러면 조용히 무출력이다.
+- **`jq` 가 필요하다.** statusline 입력은 stdin JSON 이라 파서 없이는 값을 못 꺼낸다.
+
+배선은 머신마다 수동이다 — 플러그인은 사용자의 statusline 스크립트를 건드리지 않는다.
+
 ### 템플릿
 
 `rocky.json` 의 `todo.statusline.template` 로 바꾼다. 기본값:
