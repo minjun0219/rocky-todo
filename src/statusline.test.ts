@@ -122,6 +122,22 @@ describe('boardKeyForCwd', () => {
     );
   });
 
+  test('boards.path 의 trailing slash 를 정규화한다', () => {
+    // `setBoardPath` 는 trim 만 한다 — 슬래시를 떼는 건 spawn 라우트뿐이라
+    // `PUT /api/boards/:key/path` 로는 `/repo/` 가 그대로 저장된다.
+    const slashed = [{ key: 'proj', path: '/Users/x/dev/proj/' }];
+    expect(boardKeyForCwd(slashed, '/Users/x/dev/proj')).toBe('proj');
+    expect(boardKeyForCwd(slashed, '/Users/x/dev/proj/sub')).toBe('proj');
+  });
+
+  test('trailing slash 가 길이 비교를 흔들지 않는다', () => {
+    const both = [
+      { key: 'outer', path: '/Users/x/dev/' },
+      { key: 'inner', path: '/Users/x/dev/proj' },
+    ];
+    expect(boardKeyForCwd(both, '/Users/x/dev/proj/sub')).toBe('inner');
+  });
+
   test('path 가 없어도 보드 key 가 경로 세그먼트면 잡는다', () => {
     expect(boardKeyForCwd(boards, '/Users/x/orca/rocky/eelpout')).toBe('rocky');
   });

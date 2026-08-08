@@ -2143,6 +2143,23 @@ describe('statusline route', () => {
     expect(await lineFrom('?session=sess-live&cwd=/w/ogpeek')).toBe('');
   });
 
+  test('doing 이 많아도 보드 key 조회는 보드당 한 번이다', async () => {
+    // 초당 도는 라우트라 항목 수만큼 DB 쿼리가 나가면 안 된다.
+    startedBySession('sess-gone', '버려진 작업 1');
+    startedBySession('sess-gone', '버려진 작업 2');
+    startedBySession('sess-gone', '버려진 작업 3');
+    let calls = 0;
+    const original = store.boardKeyOf.bind(store);
+    store.boardKeyOf = ((id: string) => {
+      calls += 1;
+      return original(id);
+    }) as typeof store.boardKeyOf;
+
+    // 앵커가 잡히면 withRef 가 자기 몫의 조회를 하므로, 앵커 없는 세션으로 stale 만 센다.
+    expect(await lineFrom('?session=nobody&cwd=/w/rocky-todo')).toBe('⚠3');
+    expect(calls).toBe(1);
+  });
+
   test('템플릿은 설정으로 갈아끼운다', async () => {
     startedBySession('sess-gone', '버려진 작업');
     const line = await lineFrom('?session=sess-live&cwd=/w/rocky-todo', {

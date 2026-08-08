@@ -344,8 +344,23 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const boardKey = boardKeyForCwd(store.listBoards(), cwd);
       const boardId = boardKey ? store.boardIdOf(boardKey) : undefined;
       const boardDoing = boardId ? doing.filter((todo) => todo.boardId === boardId) : doing;
+      // `boardKeyOf` 는 보드마다 DB 쿼리다. 초당 도는 라우트라 doing 하나하나에 부르면
+      // 보드 수가 아니라 항목 수만큼 쿼리가 나간다 — 요청 안에서 boardId 당 한 번만 푼다.
+      const boardKeys = new Map<string, string>();
+      const keyOf = (id: string | undefined): string => {
+        if (!id) {
+          return '';
+        }
+        const cached = boardKeys.get(id);
+        if (cached !== undefined) {
+          return cached;
+        }
+        const resolved = store.boardKeyOf(id) ?? '';
+        boardKeys.set(id, resolved);
+        return resolved;
+      };
       const stale = boardDoing.filter((todo) => {
-        const state = resolveDoingState(todo, store.boardKeyOf(todo.boardId ?? '') ?? '', sessions);
+        const state = resolveDoingState(todo, keyOf(todo.boardId), sessions);
         return state === 'idle' || state === 'gone';
       }).length;
 

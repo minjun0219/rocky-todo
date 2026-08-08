@@ -174,9 +174,24 @@ export interface BoardLocation {
   path?: string;
 }
 
+/**
+ * 끝의 `/` 를 떼어 비교 가능한 꼴로 만든다. 루트는 `/` 로 남긴다(빈 문자열이 되면
+ * 모든 비교가 무너진다).
+ *
+ * `boards.path` 는 정규화된 값이 **아니다** — `setBoardPath` 는 `.trim()` 만 하고,
+ * 슬래시를 떼는 건 spawn 라우트뿐이라 `PUT /api/boards/:key/path` 로는 `/repo/` 가
+ * 그대로 저장된다.
+ */
+function normalizePath(path: string): string {
+  const stripped = path.replace(/\/+$/, '');
+  return stripped === '' ? '/' : stripped;
+}
+
 /** `/a/b` 가 `/a/bc` 에 걸리지 않도록 경로 경계까지 본다. */
 function isUnder(cwd: string, path: string): boolean {
-  return cwd === path || cwd.startsWith(`${path}/`);
+  const base = normalizePath(path);
+  const here = normalizePath(cwd);
+  return here === base || here.startsWith(base === '/' ? '/' : `${base}/`);
 }
 
 /**
@@ -198,9 +213,12 @@ export function boardKeyForCwd(
   if (!cwd) {
     return undefined;
   }
+  // 길이 비교도 정규화한 값으로 한다 — 안 그러면 `/repo/` 가 슬래시 한 칸 때문에
+  // `/repo` 보다 "더 구체적" 으로 잡힌다.
   const byPath = boards
-    .filter((board) => board.path && isUnder(cwd, board.path))
-    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0));
+    .flatMap((board) => (board.path ? [{ key: board.key, path: normalizePath(board.path) }] : []))
+    .filter((board) => isUnder(cwd, board.path))
+    .sort((a, b) => b.path.length - a.path.length);
   if (byPath[0]) {
     return byPath[0].key;
   }
