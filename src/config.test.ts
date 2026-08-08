@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_TODO_DIR, DEFAULT_TODO_PORT, resolveTodoRuntimeConfig } from './config';
+import { DEFAULT_STATUSLINE_TEMPLATE } from './statusline';
 
 describe('resolveTodoRuntimeConfig', () => {
   test('defaults when nothing is set', () => {
@@ -70,5 +71,31 @@ describe('resolveTodoRuntimeConfig', () => {
     expect(
       resolveTodoRuntimeConfig({ ROCKY_TODO_EXPOSE: 'banana' }, { expose: ['lan'] }).expose,
     ).toEqual([]);
+  });
+});
+
+describe('resolveTodoRuntimeConfig — statuslineTemplate', () => {
+  test('설정이 없으면 기본 템플릿', () => {
+    expect(resolveTodoRuntimeConfig({}, {}).statuslineTemplate).toBe(DEFAULT_STATUSLINE_TEMPLATE);
+  });
+
+  test('config > 기본', () => {
+    const config = { statusline: { template: '[{doing}]' } };
+    expect(resolveTodoRuntimeConfig({}, config).statuslineTemplate).toBe('[{doing}]');
+  });
+
+  test('env > config', () => {
+    const config = { statusline: { template: '[{doing}]' } };
+    const env = { ROCKY_TODO_STATUSLINE: '[{stale}]' };
+    expect(resolveTodoRuntimeConfig(env, config).statuslineTemplate).toBe('[{stale}]');
+  });
+
+  test('빈 문자열은 오설정으로 보고 기본값으로 떨어진다', () => {
+    // 끄고 싶으면 statusline 명령에서 curl 을 빼면 된다 — 여기서 빈 값을 통과시키면
+    // 왜 아무것도 안 뜨는지 알아낼 방법이 없다.
+    const env = { ROCKY_TODO_STATUSLINE: '   ' };
+    expect(resolveTodoRuntimeConfig(env, { statusline: { template: '' } }).statuslineTemplate).toBe(
+      DEFAULT_STATUSLINE_TEMPLATE,
+    );
   });
 });

@@ -2024,3 +2024,130 @@ describe('spawn 게이트 힌트와 보드 경로', () => {
     }
   });
 });
+
+describe('statusline route', () => {
+  const SESSIONS = {
+    available: true as const,
+    sessions: [
+      {
+        pid: 1,
+        cwd: '/w/rocky-todo',
+        kind: 'interactive',
+        sessionId: 'sess-live',
+        name: 'rocky-todo-1e',
+        status: 'busy',
+        startedAt: 1,
+      },
+      {
+        pid: 2,
+        cwd: '/w/rocky-todo',
+        kind: 'background',
+        id: 'shortid8',
+        sessionId: 'shortid8-full-uuid',
+        name: 'rocky-todo-bg',
+        status: 'idle',
+        startedAt: 2,
+      },
+    ],
+  };
+
+  const lineFrom = async (
+    query: string,
+    options: { sessions?: () => SessionsResult; template?: string } = {},
+  ): Promise<string> => {
+    const h = buildTodoServer({
+      store,
+      sessions: options.sessions ?? (() => SESSIONS),
+      statuslineTemplate: options.template,
+    }).fetch;
+    const res = await h(new Request(`${BASE}/api/statusline${query}`), '127.0.0.1');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    return res.text();
+  };
+
+  /** 배달된 핸드오프로 시작된 doing — 세션 귀속(`doingSessionId`)이 붙는 유일한 경로다. */
+  const startedBySession = (sessionId: string, title: string) => {
+    const todo = store.createTodo({ board: 'rocky-todo', title }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId, actor: 'logan' });
+    store.claimHandoff(sessionId, 'stop');
+    store.setTodoStatus(todo.id, 'start', 'claude-code');
+    return todo;
+  };
+
+  test('아무것도 없으면 빈 본문이다 — 세션 조회조차 하지 않는다', async () => {
+    let calls = 0;
+    const counting = () => {
+      calls += 1;
+      return SESSIONS;
+    };
+    store.createTodo({ board: 'rocky-todo', title: '아직 안 시작' }, 'logan');
+
+    expect(await lineFrom('?session=sess-live', { sessions: counting })).toBe('');
+    expect(calls).toBe(0);
+  });
+
+  test('이 세션이 잡은 항목을 ref+제목으로 싣는다', async () => {
+    startedBySession('sess-live', 'statusline API 추가');
+    const line = await lineFrom('?session=sess-live&cwd=/w/rocky-todo');
+    expect(line).toBe('⏺ rocky-todo-1 statusline API 추가');
+  });
+
+  test('남의 세션이 잡은 항목은 내 앵커가 아니다', async () => {
+    startedBySession('sess-live', '남의 작업');
+    const line = await lineFrom('?session=other-session&cwd=/w/rocky-todo');
+    expect(line).not.toContain('남의 작업');
+  });
+
+  test('댓글이 달리면 개수가 붙는다', async () => {
+    const todo = startedBySession('sess-live', '작업');
+    store.addComment(todo.id, '이거 먼저 봐줘', 'logan');
+    store.addComment(todo.id, '그리고 이것도', 'logan');
+    expect(await lineFrom('?session=sess-live&cwd=/w/rocky-todo')).toContain('💬2');
+  });
+
+  test('짧은 8자 id 로 귀속된 항목도 full UUID 요청에 잡힌다', async () => {
+    // spawn 으로 띄운 세션은 짧은 id 로 핸드오프를 만든다. statusline 이 받는 값은
+    // Claude Code 가 주는 full UUID 라, 세션 목록으로 둘을 잇지 못하면 영영 안 보인다.
+    startedBySession('shortid8', '백그라운드 작업');
+    const line = await lineFrom('?session=shortid8-full-uuid&cwd=/w/rocky-todo');
+    expect(line).toContain('백그라운드 작업');
+  });
+
+  test('나에게 온 대기 핸드오프를 inbox 로 센다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '넘길 일' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'sess-live', actor: 'logan' });
+    expect(await lineFrom('?session=sess-live&cwd=/w/rocky-todo')).toBe('✉1');
+  });
+
+  test('남의 세션 앞으로 온 대기 건은 내 inbox 가 아니다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '넘길 일' }, 'logan');
+    store.createHandoff({ ref: todo.id, sessionId: 'someone-else', actor: 'logan' });
+    expect(await lineFrom('?session=sess-live&cwd=/w/rocky-todo')).toBe('');
+  });
+
+  test('세션이 사라진 doing 은 방치 경고가 된다', async () => {
+    startedBySession('sess-gone', '버려진 작업');
+    expect(await lineFrom('?session=sess-live&cwd=/w/rocky-todo')).toBe('⚠1');
+  });
+
+  test('세션 목록을 못 얻으면 경고하지 않는다 — 모르는 것과 없는 것은 다르다', async () => {
+    startedBySession('sess-gone', '버려진 작업');
+    const blind = () => ({ available: false, sessions: [], reason: 'claude CLI 없음' });
+    expect(await lineFrom('?session=sess-live&cwd=/w/rocky-todo', { sessions: blind })).toBe('');
+  });
+
+  test('cwd 로 보드를 좁힌다 — 다른 보드의 방치는 세지 않는다', async () => {
+    startedBySession('sess-gone', '버려진 작업');
+    store.ensureBoard('ogpeek', { actor: 'logan' });
+    expect(await lineFrom('?session=sess-live&cwd=/w/ogpeek')).toBe('');
+  });
+
+  test('템플릿은 설정으로 갈아끼운다', async () => {
+    startedBySession('sess-gone', '버려진 작업');
+    const line = await lineFrom('?session=sess-live&cwd=/w/rocky-todo', {
+      template: '[doing={doing}][ stale={stale}]',
+    });
+    expect(line).toBe('doing=1 stale=1');
+  });
+});
