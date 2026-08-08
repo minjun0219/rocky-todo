@@ -1,5 +1,26 @@
 # @minjun0219/rocky-todo
 
+## 0.11.0
+
+### Minor Changes
+
+- [#35](https://github.com/minjun0219/rocky-todo/pull/35) [`7855777`](https://github.com/minjun0219/rocky-todo/commit/7855777b032cfe80a0009b4cf497ba0f02ad42d2) Thanks [@minjun0219](https://github.com/minjun0219)! - statusline 세그먼트 추가 — 창을 하나 더 띄우지 않고 보드를 본다
+
+  `GET /api/statusline?cwd=&session=` 이 완성된 한 줄을 `text/plain` 으로 돌려준다.
+  기본 템플릿은 이 세션이 잡은 항목(ref + 제목)과 댓글 수, 나에게 온 대기 요청,
+  보드의 방치된 doing 을 싣고, 보여줄 게 없으면 아무것도 출력하지 않는다.
+  템플릿은 `rocky.json` 의 `todo.statusline.template`(env `ROCKY_TODO_STATUSLINE`)로 바꾼다.
+
+### Patch Changes
+
+- [#33](https://github.com/minjun0219/rocky-todo/pull/33) [`0abc8f1`](https://github.com/minjun0219/rocky-todo/commit/0abc8f198f567645cebc6cd520662f9a0c0f4d82) Thanks [@minjun0219](https://github.com/minjun0219)! - 기동 시 tailscale serve 를 다른 데몬에게서 빼앗지 않는다
+
+  `serve` 의 노출 지점은 443 의 `/` 하나뿐인 머신 공유 자원이라, 다른 포트로 뜬 개발/데모
+  인스턴스가 기동하며 설치본의 테일넷 노출을 조용히 가져가는 일이 있었다. 이제 기동 시
+  현재 serve 대상 포트를 먼저 확인해, 살아 있는 다른 rocky-todo 데몬이 쓰고 있으면 양보하고
+  (그 인스턴스는 노출 없이 뜬다) 아무도 안 듣는 죽은 포트면 되찾는다. 수동 경로
+  (`rocky-todo tailscale on`)는 그대로 인수한다.
+
 ## 0.10.0
 
 ### Minor Changes
