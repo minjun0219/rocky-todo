@@ -107,6 +107,30 @@ export function buildPath(route: Route): string {
   return route.todoNumber === undefined ? board : `${board}/${route.todoNumber}`;
 }
 
+/**
+ * 주소의 보드 세그먼트를 **현재** board key 로 푼다 — 옛 key(별칭)로 들어온 링크까지.
+ *
+ * 보드 이름은 바뀔 수 있고(`updateBoard`), 그 전에 복사해 둔 퍼머링크(`/gotgan/12`)는
+ * 계속 살아 있어야 한다. 서버는 REST·MCP·CLI 에서 별칭을 풀어주지만 이 판정만은
+ * 클라이언트에 있으므로(주소 → 화면) 여기서 따로 본다. 돌려주는 값은 언제나 **새 key** 다
+ * — 별칭은 입력 전용이라, 호출부는 이 값으로 주소를 정규화한다.
+ *
+ * @returns 못 찾으면 undefined — 호출부가 전체 보기로 떨어뜨린다(낡은 링크에 에러 화면을
+ *   띄우지 않는다).
+ */
+export function resolveBoardKey(
+  boards: readonly { key: string; previousKeys?: string[] }[],
+  key: string,
+): string | undefined {
+  // 현재 이름이 먼저다 — 어떤 보드의 옛 이름이 다른 보드의 현재 이름과 같아질 수는
+  // 없지만(`updateBoard` 가 막는다), 순서를 명시해 두면 그 불변식이 코드에도 남는다.
+  const live = boards.find((board) => board.key === key);
+  if (live) {
+    return live.key;
+  }
+  return boards.find((board) => board.previousKeys?.includes(key))?.key;
+}
+
 /** todo 하나를 가리키는 라우트. 보드를 못 찾으면(FK 가 깨진 상태) 전체 보기로 떨어진다. */
 export function routeForTodo(
   todo: { boardId: string; number: number },

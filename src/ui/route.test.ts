@@ -5,6 +5,7 @@ import {
   isAddressableBoardKey,
   parseRoute,
   RESERVED_BOARD_KEYS,
+  resolveBoardKey,
   routeForTodo,
 } from './route';
 
@@ -168,5 +169,27 @@ describe('findTodoIdByNumber', () => {
 
   test('the all view has no board scope, so a bare number is not resolvable', () => {
     expect(findTodoIdByNumber(TODOS, BOARDS, 'all', 12)).toBeUndefined();
+  });
+});
+
+describe('resolveBoardKey', () => {
+  const RENAMED = [{ key: 'tally', previousKeys: ['gotgan'] }, { key: 'rocky' }];
+
+  test('현재 이름은 그대로 돌려준다', () => {
+    expect(resolveBoardKey(RENAMED, 'rocky')).toBe('rocky');
+  });
+
+  // 이름을 바꾸기 전에 복사해 둔 퍼머링크가 죽으면 안 된다 — 새 key 로 정규화해 준다.
+  test('옛 이름은 현재 이름으로 푼다', () => {
+    expect(resolveBoardKey(RENAMED, 'gotgan')).toBe('tally');
+  });
+
+  test('모르는 이름은 undefined — 호출부가 전체 보기로 떨어뜨린다', () => {
+    expect(resolveBoardKey(RENAMED, 'nope')).toBeUndefined();
+  });
+
+  test('현재 이름이 별칭보다 먼저다', () => {
+    const shadowed = [{ key: 'a', previousKeys: ['b'] }, { key: 'b' }];
+    expect(resolveBoardKey(shadowed, 'b')).toBe('b');
   });
 });

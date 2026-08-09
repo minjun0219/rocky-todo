@@ -10,7 +10,13 @@ import {
 } from './github';
 import { handoffPhase, type HandoffView, isUnstarted, resolveDoingState } from './doing';
 import { buildHandoffPromptFrom } from './handoff';
-import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE, NON_LOCAL_SPAWN_MESSAGE } from './local-request';
+import {
+  CROSS_SITE_MESSAGE,
+  isCrossSiteRequest,
+  isLocalRequest,
+  NON_LOCAL_ISSUE_MESSAGE,
+  NON_LOCAL_SPAWN_MESSAGE,
+} from './local-request';
 import { refNeedsBoardContext, refOf, type TodoView, withRef } from './refs';
 import {
   createCachedListSessions,
@@ -35,6 +41,7 @@ import {
   type StatuslineMine,
 } from './statusline';
 import {
+  type BoardPatch,
   DETAIL_HISTORY_EXCLUDED,
   type HandoffStatus,
   type ListTodosFilter,
@@ -127,6 +134,9 @@ export interface TodoServer {
    */
   fetch: (req: Request, peerAddress?: string) => Promise<Response>;
 }
+
+/** 상태를 바꾸는 메서드 — cross-site 가드가 적용되는 범위. */
+const MUTATING_METHODS: ReadonlySet<string> = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 const STATUS_ACTIONS: ReadonlySet<string> = new Set([
   'start',
@@ -383,6 +393,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
     const actor = req.headers.get('x-rocky-actor') ?? 'unknown';
     const local = isLocalRequest(req, peerAddress);
 
+    // 다른 사이트가 시킨 변경은 라우트를 보기도 전에 끊는다. 데몬은 무인증이라 사용자가
+    // 방문한 아무 페이지나 루프백으로 폼 POST 를 날릴 수 있고, peer 주소 기반 로컬 게이트는
+    // 그걸 걸러내지 못한다(`isCrossSiteRequest` 주석 참고). 읽기는 통과시킨다 — 응답을
+    // 가져가지 못하는 cross-origin 읽기는 여기서 막을 값이 없다.
+    if (MUTATING_METHODS.has(method) && isCrossSiteRequest(req)) {
+      return errorResponse(CROSS_SITE_MESSAGE, 403);
+    }
+
     try {
       // ── health ──
       if (method === 'GET' && path === '/api/health') {
@@ -436,31 +454,43 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       if (boardDetail?.[1] && method === 'PATCH') {
         const body = await readBody(req);
         const key = decodeURIComponent(boardDetail[1]);
-        // 두 필드는 서로 독립이다 — 하나만 보내는 것이 정상이고, 둘 다 없으면 400.
-        // 어느 쪽을 고치려던 요청인지는 **키 존재 여부**로 가른다. 값 타입으로 가르면
-        // `{path: 123}` 이 repo 분기로 흘러 원인과 다른 에러("repo must look like ...")를
-        // 돌려주고, 아무것도 안 보낸 요청도 같은 말을 한다.
-        const hasPath = 'path' in body;
-        const hasRepo = 'repo' in body;
-        if (!hasPath && !hasRepo) {
-          return errorResponse('path or repo is required', 400);
-        }
-        // 둘 다 오면 거절한다. path 를 먼저 처리하면 repo 가 조용히 사라지고, 둘 다
-        // 쓰자니 store 호출이 둘로 갈려 한쪽만 적용된 채 실패할 수 있다 — 부분 적용은
-        // 이 보드에서 가장 나쁜 실패다. 보내는 쪽(UI·CLI)은 언제나 한 필드만 보낸다.
-        if (hasPath && hasRepo) {
-          return errorResponse('send path or repo, not both', 400);
-        }
-        if (hasPath) {
-          if (typeof body.path !== 'string' || body.path.trim() === '') {
-            return errorResponse('path must be a non-empty string', 400);
+        // 필드는 서로 독립이고 **함께 보낼 수 있다** — 편집 폼은 한 번에 여러 개를
+        // 바꾼다. 예전에는 `repo`+`path` 동시 전송을 400 으로 막았는데(store 호출이 둘로
+        // 갈려 한쪽만 적용된 채 실패할 수 있었다), 지금은 `updateBoard` 가 한 트랜잭션에
+        // 적용해 부분 적용이 구조적으로 불가능하다.
+        //
+        // 어느 필드를 고치려던 요청인지는 값 타입이 아니라 **키 존재 여부**로 가른다.
+        // 타입으로 가르면 `{path: 123}` 이 다른 분기로 흘러 원인과 다른 에러를 돌려준다.
+        const patch: BoardPatch = {};
+        for (const name of ['key', 'title', 'description', 'repo', 'path'] as const) {
+          if (!(name in body)) {
+            continue;
           }
-          return json(store.setBoardPath(key, body.path.trim(), actor));
+          const value = body[name];
+          // 지우기는 `null` 로만 받는다 — 빈 문자열은 폼이 실수로 비워 보내는 흔한 값이라,
+          // 그걸 "지운다"로 읽으면 편집 창을 열었다 닫기만 해도 repo 가 날아갈 수 있다.
+          // key/title 은 애초에 비울 수 없으니 `null` 도 거절한다.
+          if (value === null && (name === 'description' || name === 'repo' || name === 'path')) {
+            patch[name] = null;
+            continue;
+          }
+          if (typeof value !== 'string' || value.trim() === '') {
+            return errorResponse(
+              name === 'key' || name === 'title'
+                ? `${name} must be a non-empty string`
+                : `${name} must be a non-empty string or null`,
+              400,
+            );
+          }
+          if (name === 'repo' && !isRepoSlug(value.trim())) {
+            return errorResponse('repo must look like OWNER/NAME', 400);
+          }
+          patch[name] = value.trim();
         }
-        if (typeof body.repo !== 'string' || !isRepoSlug(body.repo)) {
-          return errorResponse('repo must look like OWNER/NAME', 400);
+        if (Object.keys(patch).length === 0) {
+          return errorResponse('key, title, description, repo or path is required', 400);
         }
-        return json(store.setBoardRepo(key, body.repo.trim(), actor));
+        return json(store.updateBoard(key, patch, actor));
       }
 
       // ── sections ──

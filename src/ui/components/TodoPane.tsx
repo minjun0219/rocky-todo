@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TodoView } from '../../server';
 import { useUiStore } from '../store';
+import { BoardHeader } from './BoardHeader';
 import { TodoItem } from './TodoItem';
 
 /**
@@ -61,8 +62,18 @@ export function TodoPane() {
     }
   }
 
+  // 보드 정체(이름·slug·설명·GitHub)는 그 보드를 보고 있을 때만 의미가 있다. 전체 뷰는
+  // 여러 보드를 한 화면에 모으므로 헤더를 그리지 않는다.
+  const currentBoard = selected === 'all' ? undefined : boards.find((b) => b.key === selected);
+
   return (
     <main className="todo-pane">
+      {/*
+        `key` 로 보드가 바뀌면 헤더를 새로 만든다. 없으면 React 가 같은 인스턴스를 재사용해
+        열려 있던 편집 폼과 그 입력값(직전 보드의 것)이 그대로 남고, 그 상태로 저장하면
+        **지금 보고 있는 보드**가 직전 보드의 값으로 덮어써진다(rename 포함).
+      */}
+      {currentBoard && <BoardHeader key={currentBoard.key} board={currentBoard} />}
       {selected !== 'all' && (
         <form
           className="quick-add"

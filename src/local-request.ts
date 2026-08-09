@@ -65,6 +65,63 @@ export function isLocalRequest(req: Request, peerAddress: string | undefined): b
   return !FORWARDED_HEADERS.some((name) => req.headers.has(name));
 }
 
+/**
+ * 브라우저가 붙이는 "이 요청을 누가 시작했나" 표식 — 값은 브라우저가 계산하며
+ * 페이지 스크립트가 건드릴 수 없다.
+ */
+const FETCH_SITE_HEADER = 'sec-fetch-site';
+
+/**
+ * 다른 사이트의 페이지가 시킨 요청인가 — 브라우저發 CSRF 판별.
+ *
+ * 데몬은 무인증이고 루프백에 떠 있다. 사용자가 방문한 악성 페이지가
+ * `<form enctype="text/plain" action="http://127.0.0.1:8636/api/...">` 로 POST 하면
+ * preflight 없이 나가고, peer 주소는 `127.0.0.1` 이라 {@link isLocalRequest} 를 그대로
+ * 통과한다 — 보드 편집·spawn·이슈 생성이 전부 그 통로에 놓인다.
+ *
+ * **`Sec-Fetch-Site` 를 1순위로 본다.** 브라우저가 요청 URL 과 개시자를 비교해 계산한
+ * 값이라 프록시가 `Host` 를 바꿔도 흔들리지 않는다 — `tailscale serve` 를 거친 웹 UI 는
+ * 데몬이 보는 URL(`127.0.0.1:8636`)과 브라우저가 보는 URL(`https://<host>.ts.net`)이
+ * 달라, origin 문자열 비교만으로는 정상 화면을 막을 위험이 있다. `cross-site` 만
+ * 거부한다: `same-site` 는 이 보드가 이미 신뢰하는 범위이고(테일넷의 다른 기기 페이지,
+ * 그리고 **같은 호스트의 다른 포트** — `http://127.0.0.1:3000` 의 로컬 개발 서버도 여기
+ * 들어온다), `none`(주소창 입력·북마크)은 본문을 실은 요청이 될 수 없다. 막으려는 것은
+ * "사용자가 방문한 인터넷의 악성 페이지" 다.
+ *
+ * `Sec-Fetch-Site` 가 없으면(구형 브라우저, 그리고 헤더를 아예 안 보내는 CLI·훅·MCP
+ * 클라이언트) `Origin` 으로 떨어진다 — 있는데 이 요청의 호스트와 다르면 거부다. 둘 다
+ * 없으면 브라우저가 아니라고 보고 통과시킨다: 브라우저는 cross-origin 쓰기에 `Origin` 을
+ * **반드시** 붙이므로, 없음은 위조가 아니라 비브라우저 클라이언트라는 뜻이다.
+ *
+ * @param req 검사할 요청. 변경 메서드(POST/PATCH/PUT/DELETE)에만 의미가 있다.
+ */
+export function isCrossSiteRequest(req: Request): boolean {
+  const site = req.headers.get(FETCH_SITE_HEADER);
+  if (site !== null) {
+    return site.trim().toLowerCase() === 'cross-site';
+  }
+  const origin = req.headers.get('origin');
+  if (origin === null || origin === 'null') {
+    return false;
+  }
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    // 파싱조차 안 되는 Origin 은 정상 브라우저가 만들지 않는다 — 거부한다.
+    return true;
+  }
+  // 프록시 뒤에서는 데몬이 보는 호스트가 브라우저가 본 호스트와 다르다 — 중계가 보존해
+  // 준 원래 호스트도 같이 허용 대상으로 본다.
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const allowed = new Set([new URL(req.url).host, ...(forwardedHost ? [forwardedHost] : [])]);
+  return !allowed.has(originHost);
+}
+
+/** cross-site 쓰기 거부 문구. */
+export const CROSS_SITE_MESSAGE =
+  '다른 사이트에서 시작된 변경 요청은 처리하지 않는다 (CSRF 방지) — 보드 화면이나 CLI 에서 다시 시도한다';
+
 /** 거부 문구 — REST(403)와 MCP(도구 에러)가 같은 말을 하도록 한 곳에 둔다. */
 export const NON_LOCAL_ISSUE_MESSAGE =
   'GitHub 이슈 생성은 로컬(루프백) 요청만 할 수 있다 — 데몬 사용자의 gh 인증을 쓰기 때문에 노출된 표면으로는 허용하지 않는다';

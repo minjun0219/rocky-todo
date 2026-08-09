@@ -190,6 +190,42 @@ handoff)를 한 번 더 묻는다. 같은 레포면 묻지 않는다.
   읽음 커서는 `localStorage` 에만 있다 — 단일 사용자 로컬 데몬이라 서버측 읽음 상태는 두지
   않았다(다른 기기/브라우저에서는 다시 안 읽은 것으로 보인다).
 
+## 보드 메타 — 이름·key·설명·GitHub
+
+보드는 자기 정체를 들고 있다. 보드를 열면 목록 위에 헤더가 뜨고(이름 · key · 한 줄 설명 ·
+GitHub 링크 · 레포 경로), 오른쪽 `편집` 으로 그 자리에서 고친다 — 웹 폼은 네 필드를 다루고
+`path` 는 표시만 한다(그건 spawn 이 자기 입력창에서 받는다). CLI 는 다섯 다 고친다:
+
+| 항목 | 무엇 | CLI |
+| --- | --- | --- |
+| `title` | 사람이 읽는 이름 (사이드바에 뜨는 값) | `board title "Tally"` |
+| `key` | 참조 접두사(`tally-12`)이자 레포 이름으로 유추되는 식별자 | `board rename tally` |
+| `description` | "이 보드가 무엇인가" 한 줄 | `board desc "가계부 앱"` (인자 없으면 지움) |
+| `repo` | GitHub `owner/name` — 이슈 생성 대상 | `board repo OWNER/NAME` |
+| `path` | 메인 레포 절대경로 — spawn 이 워크트리를 만드는 자리 | `board path [절대경로]` |
+
+`rocky-todo board show [KEY]` 로 한 보드의 전부를 본다. `board ls` 는 설명까지 한 줄로 붙인다.
+
+**key 를 바꿔도 옛 참조는 죽지 않는다.** 옛 key 는 별칭으로 남아 입력으로 계속 받는다 —
+히스토리·댓글·GitHub 이슈 본문에 박힌 `gotgan-12` 도, 훅/CLI 가 cwd 에서 유추해 보내는 옛
+`board` 인자도 그대로 그 보드로 풀린다. 반대로 **내보내는 문자열은 언제나 새 key** 다
+(`refOf`). 그 대가로 한 번 쓴 key 는 은퇴한다 — 다른 보드가 그 이름을 다시 가질 수 없고,
+시도하면 `board key already in use` 로 거절된다.
+
+- key 는 만들 때와 같은 검증을 받는다 — 공백과 `#` 는 참조로 되읽을 수 없어 거절된다.
+- 이름을 바꾸는 목적은 보통 `key` 를 레포 디렉터리 이름에 **맞추는** 것이다. 반대로
+  어긋나게 두면 잃는 게 하나 있다: 세션 ↔ 보드 자동 매칭은 세션 cwd 의 경로 세그먼트에
+  key 가 나타나는지로 판정하므로(핸드오프 대상 고르기, 방치된 doing 판정) 디렉터리 이름과
+  다른 key 는 후보를 못 찾는다 — 기능이 죽지는 않고 사람이 대상을 직접 고르게 된다.
+  statusline 의 보드 판정은 다르다 — `boards.path` 를 먼저 보므로 경로만 설정돼 있으면
+  이름이 어긋나도 정확하다.
+- 웹 UI 헤더는 옛 이름이 있으면 `옛 이름 gotgan` 칩으로 보여준다 — 그 참조가 아직
+  살아 있다는 걸 아는 유일한 자리다.
+
+REST 로는 `PATCH /api/boards/:key` 하나가 다섯 필드를 **함께** 받는다(한 트랜잭션이라
+부분 적용이 없다). `null` 은 "지운다"이고 빈 문자열은 400 — 폼이 실수로 비워 보낸 값이
+설정을 날리지 않게 하려는 구분이다.
+
 ## GitHub 이슈로 만들기
 
 todo 하나를 GitHub 이슈로 올릴 수 있다 — 웹 UI 상세 드로어의 `GitHub 이슈 만들기` 버튼,
@@ -349,6 +385,13 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - `tailscale funnel`(공인 인터넷 공개)은 지원하지 않는다 — 무인증 보드라 위험하다.
 - 노출되는 것은 **보드**다. GitHub 이슈 생성은 어느 채널로도 열리지 않는다 — 로컬 요청
   전용이다 ([GitHub 이슈로 만들기](#github-이슈로-만들기) 참고).
+- **다른 사이트가 시킨 변경은 거부한다(403).** 데몬은 무인증이라, 사용자가 방문한 아무
+  페이지나 루프백으로 폼을 POST 하면 소스 주소 기반 로컬 게이트를 그대로 통과한다. 그래서
+  변경 메서드(POST/PATCH/PUT/DELETE)는 브라우저가 붙이는 `Sec-Fetch-Site` 를 먼저 보고
+  `cross-site` 면 라우트에 닿기 전에 끊는다(그 헤더가 없는 구형 브라우저는 `Origin` 으로
+  판정). CLI·훅·MCP 클라이언트는 두 헤더를 아예 안 보내므로 영향이 없고, 웹 UI 는 자기
+  화면이라 `same-origin` 이다. `tailscale serve` 를 거친 화면도 정상 동작한다 —
+  `Sec-Fetch-Site` 는 브라우저가 계산한 값이라 프록시가 `Host` 를 바꿔도 흔들리지 않는다.
 - 데몬 설정 변경 후에는 재시작해야 반영된다: `rocky-todo daemon stop && rocky-todo daemon start`.
 - 플러그인 업데이트는 다음 세션 시작 때 자동 반영된다 — SessionStart 훅이 실행 중인 데몬의
   버전을 확인해 구버전이면 내리고 새 버전으로 재기동한다 (보드 데이터는 `~/.config/rocky/todo`
@@ -365,7 +408,9 @@ rocky-todo show|start|stop|done|reopen|archive|unarchive|update REF
 rocky-todo comment REF "본문"
 rocky-todo issue REF [--repo OWNER/NAME]           # GitHub 이슈로 (gh CLI 필요)
 rocky-todo note add|ls|show|edit|append|archive
-rocky-todo history REF [--global|--note] · board ls|add|repo|path · section ls · open
+rocky-todo history REF [--global|--note] · section ls · open
+rocky-todo board ls|show [KEY]|add KEY [제목]      # 보드 메타 — 아래 "보드 메타" 참고
+rocky-todo board rename NEWKEY|title "제목"|desc ["설명"]|repo [OWNER/NAME]|path [절대경로]
 rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --cancel
 rocky-todo spawn REF [--message "본문"]            # todo 전용 워크트리에 새 세션 띄우기 (로컬 전용)
 rocky-todo sessions

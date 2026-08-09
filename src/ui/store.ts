@@ -10,6 +10,7 @@ import {
   findTodoIdByNumber,
   isAddressableBoardKey,
   parseRoute,
+  resolveBoardKey,
   type Route,
   routeForTodo,
 } from './route';
@@ -140,6 +141,19 @@ interface UiState {
   ) => Promise<{ reused: boolean; worktreePath: string; sessionShortId?: string }>;
   /** 보드의 메인 레포 경로를 설정한다. @throws 서버 거절 사유 그대로. */
   setBoardPath: (boardKey: string, path: string) => Promise<void>;
+  /**
+   * 보드 메타(key·title·description·repo·path)를 한 번에 고친다 — 서버가 한
+   * 트랜잭션으로 적용하므로 일부만 반영되는 상태가 없다.
+   *
+   * key 가 바뀌면 선택도 새 key 로 옮긴다 — 지금 보고 있는 주소(`/gotgan`)가 가리키는
+   * 이름이 사라지기 때문이다. 옛 key 는 서버가 별칭으로 계속 받으므로 이미 복사해 둔
+   * 링크가 죽지는 않는다.
+   * @throws 서버가 거절한 이유를 그대로 던진다 — 호출자가 화면에 보여줘야 한다.
+   */
+  updateBoard: (
+    boardKey: string,
+    patch: { key?: string; title?: string; description?: string | null; repo?: string | null },
+  ) => Promise<void>;
 }
 
 async function api<T>(path: string, actor: string, init?: RequestInit): Promise<T> {
@@ -357,8 +371,13 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
 
   applyRoute: async (route) => {
-    const known = route.board === 'all' || get().boards.some((b) => b.key === route.board);
-    const board: BoardSelection = known ? route.board : 'all';
+    // 옛 key 도 그 보드로 읽는다 — 이름을 바꾸기 전에 복사해 둔 링크(`/gotgan/12`)가 죽으면
+    // "옛 참조는 계속 풀린다"는 약속을 웹 UI 만 안 지키는 셈이 된다. REST·MCP·CLI 는
+    // 서버가 별칭을 풀어주지만 이 판정은 클라이언트에 있어 여기서 따로 봐야 한다.
+    // 푼 뒤에는 **새 key** 로 정규화한다(별칭은 입력 전용).
+    const matched = route.board === 'all' ? undefined : resolveBoardKey(get().boards, route.board);
+    const known = route.board === 'all' || matched !== undefined;
+    const board: BoardSelection = matched ?? 'all';
     if (!known) {
       // 낡은 링크에 에러 화면을 띄우지 않는다. 히스토리에 죽은 항목을 남기지 않으려
       // push 가 아니라 replace 를 쓴다. 아래 정규화가 어차피 같은 일을 하지만, 그 전의
@@ -552,6 +571,24 @@ export const useUiStore = create<UiState>((set, get) => ({
       method: 'PATCH',
       body: JSON.stringify({ path }),
     });
+    await get().refetch();
+  },
+
+  updateBoard: async (boardKey, patch) => {
+    const { actor } = get();
+    const board = await api<Board>(`/api/boards/${encodeURIComponent(boardKey)}`, actor, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    // 선택을 먼저 옮기고 조회한다 — 순서가 반대면 refetch 가 옛 key 로 돌아, 화면은 새
+    // 이름인데 목록은 (별칭으로 풀리긴 해도) 옛 주소 기준으로 남는다. `createBoard` 와 같은 순서.
+    if (get().selected === boardKey && board.key !== boardKey) {
+      set({ selected: board.key });
+      // 열린 상세가 있으면 그 번호를 유지한다 — 보드 이름만 바뀌었을 뿐 보고 있는 항목은
+      // 그대로다. 히스토리 항목을 새로 만들지 않으려 replace 이고, 상세 마커(state)도 보존한다.
+      const { todoNumber } = parseRoute(window.location.pathname);
+      replacePath(buildPath({ board: board.key, todoNumber }), window.history.state);
+    }
     await get().refetch();
   },
 }));

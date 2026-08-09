@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withRef } from './refs';
+import { refOf, withRef } from './refs';
 import { TodoStore } from './store';
 import { buildPath } from './ui/route';
 
@@ -206,6 +206,126 @@ describe('boards', () => {
 
   test('setBoardPath throws if board does not exist', () => {
     expect(() => store.setBoardPath('nope', '/tmp/x', 'logan')).toThrow(/board not found/);
+  });
+});
+
+describe('보드 메타 수정 (updateBoard)', () => {
+  test('여러 필드를 한 번에 고치고 히스토리는 한 건만 남긴다', () => {
+    const board = store.ensureBoard('gotgan', { actor: 'logan' });
+    const before = store.listHistory({ entity: 'board', entityId: board.id }).length;
+
+    const updated = store.updateBoard(
+      'gotgan',
+      { title: 'Tally', description: '가계부', repo: 'minjun0219/tally', path: '/dev/tally' },
+      'logan',
+    );
+
+    expect(updated.title).toBe('Tally');
+    expect(updated.description).toBe('가계부');
+    expect(updated.repo).toBe('minjun0219/tally');
+    expect(updated.path).toBe('/dev/tally');
+    const history = store.listHistory({ entity: 'board', entityId: board.id });
+    expect(history).toHaveLength(before + 1);
+    expect(Object.keys(history[0]?.changes ?? {}).sort()).toEqual([
+      'description',
+      'path',
+      'repo',
+      'title',
+    ]);
+  });
+
+  test('바뀐 게 없으면 write 도 히스토리도 없다', () => {
+    const board = store.ensureBoard('rocky', { actor: 'logan' });
+    const before = store.listHistory({ entity: 'board', entityId: board.id }).length;
+    store.updateBoard('rocky', { title: 'rocky', description: null }, 'logan');
+    expect(store.listHistory({ entity: 'board', entityId: board.id })).toHaveLength(before);
+  });
+
+  test('null 과 빈 문자열은 지운다 — 설정 전 상태와 같아진다', () => {
+    store.ensureBoard('rocky', { actor: 'logan' });
+    store.updateBoard('rocky', { description: '설명', repo: 'o/n' }, 'logan');
+    const cleared = store.updateBoard('rocky', { description: null, repo: '  ' }, 'logan');
+    expect(cleared.description).toBeUndefined();
+    expect(cleared.repo).toBeUndefined();
+  });
+
+  test('빈 title 은 거절한다', () => {
+    store.ensureBoard('rocky', { actor: 'logan' });
+    expect(() => store.updateBoard('rocky', { title: '   ' }, 'logan')).toThrow(/title/);
+  });
+
+  test('없는 보드는 만들지 않는다', () => {
+    expect(() => store.updateBoard('nope', { title: 'X' }, 'logan')).toThrow(/board not found/);
+    expect(store.listBoards()).toHaveLength(0);
+  });
+
+  describe('key 변경 — 옛 이름은 별칭으로 살아남는다', () => {
+    test('옛 참조·옛 board 인자가 계속 같은 보드로 풀린다', () => {
+      const board = store.ensureBoard('gotgan', { actor: 'logan' });
+      const todo = store.createTodo({ board: 'gotgan', title: '이월 정산' }, 'logan');
+
+      const renamed = store.updateBoard('gotgan', { key: 'tally' }, 'logan');
+      expect(renamed.key).toBe('tally');
+      expect(renamed.previousKeys).toEqual(['gotgan']);
+
+      // 참조 해석: 옛 ref 도 새 ref 도 같은 항목
+      expect(store.getTodo('gotgan-1')?.id).toBe(todo.id);
+      expect(store.getTodo('tally-1')?.id).toBe(todo.id);
+      // 레거시 `#` 표기도 같은 경로를 탄다
+      expect(store.getTodo('gotgan#1')?.id).toBe(todo.id);
+      // board 인자 해석
+      expect(store.boardIdOf('gotgan')).toBe(board.id);
+      // 그리고 옛 key 로 항목을 더해도 새 보드가 생기지 않는다 — 읽기와 쓰기가
+      // 갈리면 옛 이름을 쓰는 훅/CLI 가 조용히 빈 보드를 만든다.
+      store.createTodo({ board: 'gotgan', title: '두번째' }, 'logan');
+      expect(store.listBoards()).toHaveLength(1);
+    });
+
+    test('내보내는 ref 는 언제나 새 key 다 — 별칭은 입력 전용', () => {
+      store.ensureBoard('gotgan', { actor: 'logan' });
+      const todo = store.createTodo({ board: 'gotgan', title: '이월 정산' }, 'logan');
+      store.updateBoard('gotgan', { key: 'tally' }, 'logan');
+      expect(refOf(store, todo.boardId, todo.number, todo.id)).toBe('tally-1');
+    });
+
+    test('다른 보드의 이름(또는 그 별칭)은 뺏지 못한다', () => {
+      store.ensureBoard('gotgan', { actor: 'logan' });
+      store.ensureBoard('tally', { actor: 'logan' });
+      expect(() => store.updateBoard('gotgan', { key: 'tally' }, 'logan')).toThrow(
+        /already in use/,
+      );
+
+      store.ensureBoard('other', { actor: 'logan' });
+      store.updateBoard('other', { key: 'renamed' }, 'logan');
+      expect(() => store.updateBoard('gotgan', { key: 'other' }, 'logan')).toThrow(
+        /already in use/,
+      );
+      expect(store.getBoard('gotgan')?.key).toBe('gotgan');
+    });
+
+    test('되돌리면 별칭이 정리된다 — key 와 같은 이름의 별칭은 남지 않는다', () => {
+      store.ensureBoard('gotgan', { actor: 'logan' });
+      store.updateBoard('gotgan', { key: 'tally' }, 'logan');
+      const back = store.updateBoard('tally', { key: 'gotgan' }, 'logan');
+      expect(back.key).toBe('gotgan');
+      expect(back.previousKeys).toEqual(['tally']);
+    });
+
+    test('생성 때와 같은 key 검증을 쓴다', () => {
+      store.ensureBoard('rocky', { actor: 'logan' });
+      expect(() => store.updateBoard('rocky', { key: 'my repo' }, 'logan')).toThrow(/whitespace/);
+      expect(() => store.updateBoard('rocky', { key: 'a#b' }, 'logan')).toThrow(/'#'/);
+      expect(() => store.updateBoard('rocky', { key: '   ' }, 'logan')).toThrow(/empty/);
+      expect(store.getBoard('rocky')?.key).toBe('rocky');
+    });
+
+    test('별칭으로도 그 보드를 수정할 수 있다', () => {
+      store.ensureBoard('gotgan', { actor: 'logan' });
+      store.updateBoard('gotgan', { key: 'tally' }, 'logan');
+      const updated = store.updateBoard('gotgan', { description: '가계부' }, 'logan');
+      expect(updated.key).toBe('tally');
+      expect(updated.description).toBe('가계부');
+    });
   });
 });
 

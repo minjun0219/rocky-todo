@@ -41,7 +41,7 @@ rocky-todo/
 │   ├── daemon.ts                   # Bun fullstack 진입 — 단일 인스턴스 가드 + / + /api/* + /mcp + '/*' fallback(퍼머링크)
 │   ├── server.ts                   # buildTodoServer — REST 라우트 + SSE 허브 (DI)
 │   ├── mcp.ts                      # MCP 5도구 + WebStandard streamable HTTP handler (stateless)
-│   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 댓글 + 아카이브 + history + change 이벤트
+│   ├── store.ts                    # SQLite 스토어 — CRUD + 계층/섹션 + 댓글 + 아카이브 + 보드 메타/별칭 + history + change 이벤트
 │   ├── migrations.ts               # PRAGMA user_version 마이그레이션 러너 (적용 전 DB 백업)
 │   ├── cli.ts                      # CLI — 얇은 HTTP 클라이언트 + 컴팩트 출력 (runCli)
 │   ├── client.ts                   # REST 클라이언트 (buildContext/daemonHealth/health/ensureDaemon/stopDaemon/request)
@@ -58,7 +58,7 @@ rocky-todo/
 │   ├── spawn.ts                    # 백그라운드 세션 기동 (워크트리 이름 규약 + claude --bg)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
 │   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
-│   ├── local-request.ts            # 요청 출처 판별(루프백 + 프록시 헤더 없음) — 이슈 생성 게이트
+│   ├── local-request.ts            # 요청 출처 판별 — 로컬 게이트(이슈/spawn) + cross-site 변경 가드
 │   ├── ui/                         # React 웹 UI — index.html + main.tsx + zustand store + route.ts(URL↔화면 순수 변환) + components/
 │   │   ├── happydom.ts             # 렌더 테스트 preload (GlobalRegistrator) — test:dom 에서만 로드
 │   │   └── test-support.tsx        # 렌더 테스트 픽스처/헬퍼 (todoFixture / boardFixture / renderWithStore)
@@ -127,6 +127,39 @@ rocky-todo/
   `server.requestIP(req)` 로 넘기고, 안 넘어오면 거부다(fail-closed). 웹 UI 는
   `/api/health` 의 `issueCreateAllowed` 를 부팅에 한 번 보고 버튼 대신 이유를 보여준다 —
   힌트일 뿐 강제는 서버가 한다.
+- **cross-site 변경은 라우트 전에 끊는다**(`isCrossSiteRequest` in `src/local-request.ts`):
+  데몬은 무인증이라 사용자가 방문한 악성 페이지가 `enctype="text/plain"` 폼으로 preflight
+  없이 루프백에 POST 하면 `isLocalRequest` 를 그대로 통과한다(peer 는 `127.0.0.1`, 프록시
+  헤더 없음). 그래서 `server.ts` 의 `fetch` 맨 앞에서 변경 메서드(POST/PATCH/PUT/DELETE)만
+  걸러 403 을 낸다 — `/mcp`(`createMcpFetchHandler`)도 같은 가드를 자기 앞단에 둔다.
+  그쪽은 `daemon.ts` 가 별도 라우트로 붙여 `api.fetch` 를 안 타기 때문이다(전송 규약이
+  이미 폼 POST 를 걸러내지만 규칙에 예외를 남기지 않는다). 판정 1순위는 **`Sec-Fetch-Site`** 이고 `cross-site` 만 막는다 —
+  브라우저가 요청 URL 과 개시자를 비교해 계산한 값이라 프록시가 `Host` 를 바꿔도 흔들리지
+  않는다. `Origin` 문자열 비교를 1순위로 삼으면 `tailscale serve` 를 거친 정상 화면
+  (브라우저는 `https://<host>.ts.net`, 데몬은 `127.0.0.1:8636`)을 막을 위험이 있어
+  `Sec-Fetch-Site` 가 없을 때만 폴백으로 쓴다. 헤더가 **둘 다 없으면 통과** — 브라우저는
+  cross-origin 쓰기에 `Origin` 을 반드시 붙이므로 부재는 비브라우저 클라이언트(CLI·훅·
+  MCP)라는 뜻이다. 읽기는 막지 않는다(응답을 못 가져가는 cross-origin 읽기를 막을 값이 없다).
+- **보드 메타(`updateBoard` in `src/store.ts`)**: key(slug)·title·description·repo·path 를
+  **한 트랜잭션에** 고친다. `PATCH /api/boards/:key` 가 다섯 필드를 함께 받고(예전의
+  "repo 와 path 를 같이 보내면 400" 제약은 부분 적용 위험 때문이었는데 트랜잭션이 그걸
+  없앴다), `null` 은 "지운다"·빈 문자열은 400 이다(폼이 실수로 비워 보낸 값이 설정을
+  날리지 않게 하는 구분). `setBoardRepo`/`setBoardPath` 는 이제 이 함수의 얇은 입구다.
+  **key 변경은 옛 key 를 `board_aliases` 에 남긴다**(user_version 6) — key 는 참조
+  접두사이자 cwd 유추 대상이라, 그냥 바꾸면 히스토리·댓글·GitHub 이슈에 박힌 `gotgan-12`
+  와 훅/CLI 가 보내는 옛 `board` 인자가 통째로 죽는다. 별칭은 **입력 전용**이다:
+  `boardIdOf`/`resolveRef`/`ensureBoard` 가 전부 별칭을 보고, `refOf` 가 내보내는 문자열은
+  언제나 새 key 다. `ensureBoard` 까지 별칭을 보는 이유는 읽기/쓰기 갈라짐을 막기 위해서다
+  — 안 그러면 `todo_list { board: "gotgan" }` 은 이름 바뀐 보드를 읽는데
+  `todo_write { board: "gotgan" }` 은 같은 이름의 빈 보드를 새로 만든다. 그 대가로 한 번
+  쓴 key 는 은퇴한다(다른 보드가 재사용 불가 — 시도하면 `board key already in use`).
+  웹 UI 는 보드 목록 위 `BoardHeader` 가 이 전부를 보여주고 편집한다.
+  **별칭이 닿지 않는 곳이 하나 있다**: `matchBoard`(`src/sessions.ts`)는 세션 cwd 의
+  경로 세그먼트에 **현재 key** 가 있는지만 본다 — 핸드오프 대상 고르기와 `doing` 의
+  `gone` 판정이 그걸 쓴다. 즉 key 를 디렉터리 이름과 **어긋나게** 바꾸면 그 두 자리에서
+  후보를 못 찾는다(기능은 죽지 않고 사람이 고르게 된다). 이름 변경의 통상 방향은 반대
+  (디렉터리에 맞추는 것)라 별칭 매칭까지는 넣지 않았다 — `boardKeyForCwd`(statusline)만
+  `boards.path` 를 먼저 보므로 경로가 설정된 보드는 이 어긋남에 영향받지 않는다.
 - **번호 참조(ref)**: todo/note 는 랜덤 id(`921gvwnr`, PK 로 유지) 외에 보드별 순번을 갖는다.
   id 를 받는 자리는 어디서든 `rocky-12`(보드 접두사) → `12`(현재 보드 컨텍스트 안의
   번호) → id 정확 일치 → id 유일 prefix 순으로 시도해 해석한다(`resolveRef` in

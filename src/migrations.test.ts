@@ -348,3 +348,41 @@ test('마이그레이션 5 — 컬럼이 이미 있는 신규 DB(SCHEMA 경유)�
   expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
   db.close();
 });
+
+test('마이그레이션 6 — 기존 DB 에 description 컬럼과 별칭 테이블을 더한다', () => {
+  const db = new Database(':memory:');
+  db.run('CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, created_at TEXT)');
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run(
+    "INSERT INTO boards (id, key, title, created_at) VALUES ('b1', 'rocky', 'rocky', '2026-07-01T00:00:00.000Z')",
+  );
+
+  runMigrations(db, { migrations: MIGRATIONS });
+
+  const row = db
+    .query<{ key: string; description: string | null }, []>('SELECT key, description FROM boards')
+    .get();
+  expect(row?.key).toBe('rocky');
+  expect(row?.description).toBeNull();
+  const table = db
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='board_aliases'",
+    )
+    .get();
+  expect(table?.name).toBe('board_aliases');
+  db.close();
+});
+
+test('마이그레이션 6 — 컬럼·테이블이 이미 있는 신규 DB(SCHEMA 경유)에서도 기동한다', () => {
+  const db = new Database(':memory:');
+  db.run(
+    'CREATE TABLE boards (id TEXT PRIMARY KEY, key TEXT, title TEXT, description TEXT, created_at TEXT)',
+  );
+  db.run('CREATE TABLE todos (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+  db.run('CREATE TABLE board_aliases (key TEXT PRIMARY KEY, board_id TEXT, created_at TEXT)');
+
+  expect(() => runMigrations(db, { migrations: MIGRATIONS })).not.toThrow();
+  db.close();
+});
