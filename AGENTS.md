@@ -297,7 +297,7 @@ bun run fix         # Biome safe fix + format
 bun run typecheck   # tsc --noEmit
 bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 쓰지 않는다
 bun run demo        # 데모 데몬 (전역 설정 미상속 — :8993 / /tmp/rt-demo / expose off)
-bunx changeset      # user-facing 변경의 버전 의도 선언
+bunx changeset      # user-facing 변경의 버전 의도 선언 (패키지 이름은 스코프까지 — 아래 참고)
 ```
 
 ## Change checklist
@@ -311,7 +311,10 @@ bunx changeset      # user-facing 변경의 버전 의도 선언
    `docs/rocky-todo.md` 의 env 표 갱신.
 6. MCP 도구 계약이 바뀌면 `src/mcp.ts`(등록) + `src/server.ts`/`src/store.ts`(구현) 갱신.
 7. `rocky.json` 의 `todo` 모양이 바뀌면 `src/rocky-config.ts`(런타임) 갱신 (+ 스키마 문서화 시 함께).
-8. 사용자 표면 변경이면 `bunx changeset` 으로 버전 의도 선언.
+8. 사용자 표면 변경이면 `bunx changeset` 으로 버전 의도 선언. **frontmatter 의 패키지 이름은
+   `package.json` 의 `name` 그대로 — 스코프까지 적는다**(`"@minjun0219/rocky-todo": minor`).
+   어긋나면 PR CI 가 아니라 main 머지 뒤 Release 워크플로가 죽어 릴리스만 조용히 멎는다.
+   `scripts/check-changesets.ts`(= `bun run check:changesets`, CI 스텝)가 이걸 PR 에서 잡는다.
 
 ## Output / communication
 

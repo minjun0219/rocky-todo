@@ -31,6 +31,11 @@ jobs:
       - name: Test
         run: bun run test
 
+      # changeset 의 패키지 이름이 workspace 와 어긋나면 여기서 죽는다.
+      # 이 검증이 없으면 main 에 머지된 뒤 Release 워크플로의 version 스텝에서야 터진다.
+      - name: Changeset package name
+        run: bun run check:changesets
+
   gitleaks:
     name: secret scan
     runs-on: ubuntu-latest

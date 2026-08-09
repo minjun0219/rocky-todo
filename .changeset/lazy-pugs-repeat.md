@@ -1,5 +1,5 @@
 ---
-"rocky-todo": minor
+"@minjun0219/rocky-todo": minor
 ---
 
 보드 메타 관리 — 이름·key·설명·GitHub 을 보고 고친다

@@ -40,6 +40,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
+    "check:changesets": "bun scripts/check-changesets.ts",
     "test": "bun run test:unit && bun run test:dom",
     "test:unit": "bun test --path-ignore-patterns='**/*.test.tsx' ./src ./hooks ./scripts",
     "test:dom": "bun test --preload ./src/ui/happydom.ts --path-ignore-patterns='**/*.test.ts' ./src ./hooks ./scripts",
