@@ -106,16 +106,32 @@ describe('isCrossSiteRequest', () => {
   test('Sec-Fetch-Site 가 없으면 Origin 으로 떨어진다', () => {
     expect(isCrossSiteRequest(post({ origin: 'http://localhost' }))).toBe(false);
     expect(isCrossSiteRequest(post({ origin: 'https://evil.example' }))).toBe(true);
-    // 중계가 원래 호스트를 보존해 줬으면 그것도 허용 대상이다
+    // 중계가 원래 호스트를 보존해 줬으면 그것도 허용 대상이다 (포트가 붙어 와도 마찬가지)
     expect(
       isCrossSiteRequest(
         post({ origin: 'https://mac.tailnet.ts.net', 'x-forwarded-host': 'mac.tailnet.ts.net' }),
       ),
     ).toBe(false);
+    expect(
+      isCrossSiteRequest(
+        post({
+          origin: 'https://mac.tailnet.ts.net',
+          'x-forwarded-host': 'mac.tailnet.ts.net:443',
+        }),
+      ),
+    ).toBe(false);
   });
 
-  test('불투명 Origin(null)은 통과, 파싱 불가 Origin 은 거부', () => {
-    expect(isCrossSiteRequest(post({ origin: 'null' }))).toBe(false);
+  // 포트를 보면 두 분기가 어긋난다 — `Sec-Fetch-Site` 쪽은 `same-site`(같은 호스트의 다른
+  // 포트 포함)를 이미 허용한다. 폴백만 로컬 개발 UI 를 막아선 안 된다.
+  test('Origin 폴백은 포트를 무시한다', () => {
+    expect(isCrossSiteRequest(post({ origin: 'http://localhost:3000' }))).toBe(false);
+  });
+
+  // 부재와 다르다: 불투명 Origin 은 **브라우저가 보낸** 값이고, Fetch Metadata 를 지원하지
+  // 않는 브라우저에서 sandboxed iframe / `data:` 문서의 폼 제출이 정확히 이 값을 만든다.
+  test('불투명 Origin(null)과 파싱 불가 Origin 은 거부한다', () => {
+    expect(isCrossSiteRequest(post({ origin: 'null' }))).toBe(true);
     expect(isCrossSiteRequest(post({ origin: 'not a url' }))).toBe(true);
   });
 });
