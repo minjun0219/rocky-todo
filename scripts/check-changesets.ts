@@ -15,26 +15,59 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
+ * changeset frontmatter 를 잘라내는 정규식. `@changesets/parse` 의 `mdRegex` 와 같은 모양이다
+ * — 앞의 공백을 허용하고 첫 `---` 쌍만 본다. 손으로 줄을 훑는 대신 이걸 쓰는 이유는,
+ * 추출 범위가 changesets 와 어긋나면 여기서 통과한 파일이 릴리스에서 죽기 때문이다.
+ */
+const FRONTMATTER_RE = /\s*---([\s\S]*?)\n\s*---(?:\s*(?:\n|$))/;
+
+/**
  * changeset frontmatter 에서 패키지 이름들을 뽑는다.
- * `"pkg": minor` 형태의 줄만 보며, 따옴표는 있어도 없어도 받는다 (changesets 자신이 그렇다).
+ *
+ * 파싱은 **YAML 로** 한다 — changesets 자신이 `js-yaml` 로 읽으므로 인라인 주석
+ * (`"pkg": minor # 이유`)이나 따옴표 없는 표기가 전부 정상 문법이다. 이걸 정규식으로
+ * 흉내내면 못 읽은 줄이 조용히 빠져 **검사가 fail-open** 한다 (이름이 어긋나도 통과).
+ * `Bun.YAML` 은 내장이라 dep 이 늘지 않는다.
+ *
+ * @throws frontmatter 가 없거나 YAML 이 깨졌거나 객체가 아닐 때 — 못 읽었으면 통과가 아니라
+ * 실패다(fail-closed). changesets 도 같은 입력에서 죽으므로 여기서 먼저 죽는 게 낫다.
  */
 export function packageNamesOf(text: string): string[] {
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  const frontmatter = FRONTMATTER_RE.exec(text)?.[1];
   if (frontmatter === undefined) {
+    throw new Error('frontmatter 를 찾지 못했다 (--- 로 감싼 블록이 필요하다)');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = Bun.YAML.parse(frontmatter);
+  } catch (error) {
+    throw new Error(`frontmatter 가 올바른 YAML 이 아니다: ${(error as Error).message}`);
+  }
+
+  // 빈 frontmatter 는 `changeset add --empty` 의 정상 형태다 — 이름이 없을 뿐 오류가 아니다.
+  if (parsed === null || parsed === undefined) {
     return [];
   }
-  return [...frontmatter.matchAll(/^\s*(?:"(.+?)"|'(.+?)'|(\S+?))\s*:\s*\S+\s*$/gm)].map(
-    (m) => m[1] ?? m[2] ?? m[3] ?? '',
-  );
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('frontmatter 는 "패키지 이름: bump" 매핑이어야 한다');
+  }
+  return Object.keys(parsed);
 }
 
 /** 기대 이름과 다른 항목을 사람이 읽을 수 있는 한 줄씩으로 돌려준다. 비어 있으면 통과. */
 export function mismatches(files: { name: string; text: string }[], expected: string): string[] {
-  return files.flatMap(({ name, text }) =>
-    packageNamesOf(text)
-      .filter((found) => found !== expected)
-      .map((found) => `.changeset/${name}: "${found}" → "${expected}" 이어야 한다`),
-  );
+  return files.flatMap(({ name, text }) => {
+    let found: string[];
+    try {
+      found = packageNamesOf(text);
+    } catch (error) {
+      return [`.changeset/${name}: ${(error as Error).message}`];
+    }
+    return found
+      .filter((actual) => actual !== expected)
+      .map((actual) => `.changeset/${name}: "${actual}" → "${expected}" 이어야 한다`);
+  });
 }
 
 if (import.meta.main) {
@@ -47,8 +80,10 @@ if (import.meta.main) {
     throw new Error('package.json 에 name 이 없다');
   }
 
+  // readdirSync 순서는 파일시스템에 달렸다 — 실패 목록이 실행마다 뒤바뀌지 않게 정렬한다.
   const files = readdirSync(changesetDir)
     .filter((name) => name.endsWith('.md') && name !== 'README.md')
+    .sort()
     .map((name) => ({ name, text: readFileSync(join(changesetDir, name), 'utf8') }));
 
   const problems = mismatches(files, pkgName);
