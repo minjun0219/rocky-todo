@@ -332,7 +332,8 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo note ls [--board K|--global]
   rocky-todo note show REF [--global] | edit REF --content MD [--global] |
                        append REF "텍스트" [--global] | archive REF [--global]
-  rocky-todo history REF [--limit N] [--global|--note] · board ls|add|repo|path · section ls
+  rocky-todo history REF [--limit N] [--global|--note] · section ls
+  rocky-todo board ls|show|add|rename|title|desc|repo|path   보드 메타 (이름·slug·설명·GitHub)
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
@@ -393,9 +394,28 @@ export function noteRefPath(id: string, suffix: string, board: string, global: b
   return global ? path : withBoard(path, board);
 }
 
-/** 보드 단건 엔드포인트 — repo 설정에 쓴다. board key 는 `.` 등을 담을 수 있어 인코딩한다. */
-export function boardRepoPath(key: string): string {
+/** 보드 단건 엔드포인트 — 메타 수정에 쓴다. board key 는 `.` 등을 담을 수 있어 인코딩한다. */
+export function boardDetailPath(key: string): string {
   return `/api/boards/${encodeURIComponent(key)}`;
+}
+
+/** 보드 메타 한 건을 사람이 읽는 여러 줄로 — `board show` 가 쓴다. */
+export function renderBoard(board: Board): string {
+  const lines = [`${board.key}  ${board.title}`];
+  if (board.description) {
+    lines.push(`  ${board.description}`);
+  }
+  if (board.repo) {
+    lines.push(`  repo  ${board.repo}  (https://github.com/${board.repo})`);
+  }
+  if (board.path) {
+    lines.push(`  path  ${board.path}`);
+  }
+  if (board.previousKeys && board.previousKeys.length > 0) {
+    // 옛 참조가 아직 살아 있다는 사실을 여기서만 알 수 있다 — 다른 표면은 새 key 만 낸다.
+    lines.push(`  옛 이름  ${board.previousKeys.join(', ')} (참조는 계속 풀린다)`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -825,7 +845,13 @@ export async function runCli(): Promise<void> {
       const sub = rest[0];
       if (sub === 'ls' || sub === undefined) {
         const boards = await request<Board[]>(ctx, 'GET', '/api/boards');
-        print(boards, () => boards.map((b) => `${b.key}  ${b.title}`).join('\n') || '(보드 없음)');
+        print(
+          boards,
+          () =>
+            boards
+              .map((b) => `${b.key}  ${b.title}${b.description ? ` — ${b.description}` : ''}`)
+              .join('\n') || '(보드 없음)',
+        );
         return;
       }
       if (sub === 'add' && rest[1]) {
@@ -834,6 +860,43 @@ export async function runCli(): Promise<void> {
           title: rest[2],
         });
         print(created, () => `✓ 보드 ${created.key}`);
+        return;
+      }
+      if (sub === 'show') {
+        // 인자를 주면 그 보드, 없으면 cwd 로 유추한 보드.
+        const wanted = rest[1] ?? board;
+        const boards = await request<Board[]>(ctx, 'GET', '/api/boards');
+        const found = boards.find((b) => b.key === wanted || b.previousKeys?.includes(wanted));
+        if (!found) {
+          throw new Error(`보드 없음: ${wanted}`);
+        }
+        print(found, () => renderBoard(found));
+        return;
+      }
+      if (sub === 'rename' && rest[1]) {
+        // key 는 참조 접두사(`rocky-12`)이자 cwd 유추 대상이다 — 옛 key 는 서버가 별칭으로
+        // 남겨 계속 받는다(`updateBoard`). 그래서 여기서 경고하지 않는다.
+        const updated = await request<Board>(ctx, 'PATCH', boardDetailPath(board), {
+          key: rest[1],
+        });
+        print(updated, () => `✓ ${board} → ${updated.key} (옛 참조 ${board}-N 은 계속 풀린다)`);
+        return;
+      }
+      if (sub === 'title' && rest[1]) {
+        const updated = await request<Board>(ctx, 'PATCH', boardDetailPath(board), {
+          title: rest[1],
+        });
+        print(updated, () => `✓ ${updated.key} → ${updated.title}`);
+        return;
+      }
+      if (sub === 'desc') {
+        // 인자 없이(또는 빈 문자열로) 부르면 설명을 지운다. 사람 입장에서 둘은 같은
+        // 의도인데 REST 는 `null` 만 "지운다"로 받고 빈 문자열은 400 이라, 여기서 접는다.
+        const next = rest[1]?.trim() || null;
+        const updated = await request<Board>(ctx, 'PATCH', boardDetailPath(board), {
+          description: next,
+        });
+        print(updated, () => `✓ ${updated.key} → ${updated.description ?? '(설명 없음)'}`);
         return;
       }
       if (sub === 'repo') {
@@ -845,19 +908,22 @@ export async function runCli(): Promise<void> {
             'GitHub 레포를 알 수 없다 — OWNER/NAME 을 직접 준다: rocky-todo board repo OWNER/NAME',
           );
         }
-        const updated = await request<Board>(ctx, 'PATCH', boardRepoPath(board), { repo });
+        const updated = await request<Board>(ctx, 'PATCH', boardDetailPath(board), { repo });
         print(updated, () => `✓ ${updated.key} → ${updated.repo}`);
         return;
       }
       if (sub === 'path') {
         // 인자를 주면 그 값, 없으면 지금 있는 자리를 쓴다 — 보통 레포 안에서 부른다.
         const target = rest[1] ?? process.cwd();
-        const updated = await request<Board>(ctx, 'PATCH', boardRepoPath(board), { path: target });
+        const updated = await request<Board>(ctx, 'PATCH', boardDetailPath(board), {
+          path: target,
+        });
         print(updated, () => `✓ ${updated.key} → ${updated.path}`);
         return;
       }
       throw new Error(
-        'usage: rocky-todo board ls | board add KEY [제목] | board repo [OWNER/NAME] | board path [절대경로]',
+        'usage: rocky-todo board ls | board show [KEY] | board add KEY [제목] | board rename NEWKEY | board title "제목" | board desc ["설명"] | board repo [OWNER/NAME] | board path [절대경로]\n' +
+          '  show 를 뺀 수정 명령은 모두 cwd 로 유추한 보드를 고친다 — 다른 보드는 --board KEY 로 지정한다',
       );
     }
 

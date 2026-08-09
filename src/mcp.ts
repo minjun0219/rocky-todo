@@ -3,7 +3,12 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod';
 import pkg from '../package.json' with { type: 'json' };
 import { assertBoardHasRepo, createIssueForTodo, findIssueLink, type RunCommand } from './github';
-import { isLocalRequest, NON_LOCAL_ISSUE_MESSAGE } from './local-request';
+import {
+  CROSS_SITE_MESSAGE,
+  isCrossSiteRequest,
+  isLocalRequest,
+  NON_LOCAL_ISSUE_MESSAGE,
+} from './local-request';
 import { refNeedsBoardContext, withRef } from './refs';
 import { DETAIL_HISTORY_EXCLUDED, type StatusAction, type TodoStore } from './store';
 
@@ -374,6 +379,15 @@ export function createMcpFetchHandler(
   options: TodoMcpOptions,
 ): (req: Request, peerAddress?: string) => Promise<Response> {
   return async (req: Request, peerAddress?: string): Promise<Response> => {
+    // REST 와 같은 cross-site 가드 — 이 표면도 도구 호출로 보드를 고친다. 지금은 전송
+    // 규약(JSON content-type + SSE Accept)이 폼 POST 를 이미 걸러내지만, "변경은 라우트
+    // 전에 끊는다" 는 규칙의 예외를 남겨두지 않는다.
+    if (req.method.toUpperCase() !== 'GET' && isCrossSiteRequest(req)) {
+      return new Response(JSON.stringify({ error: CROSS_SITE_MESSAGE }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const server = buildTodoMcpServer({
       ...options,
       allowIssueCreate: isLocalRequest(req, peerAddress),

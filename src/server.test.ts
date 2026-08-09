@@ -1987,41 +1987,158 @@ describe('spawn 게이트 힌트와 보드 경로', () => {
 
   // finding: 분기를 값 타입으로 가르면 path 를 고치려던 요청이 repo 에러를 돌려받았다.
   // 키 존재 여부로 갈라 에러가 실제 원인을 가리키게 한다.
-  test('PATCH /api/boards/:key 는 path 와 repo 가 둘 다 없으면 그렇게 말한다', async () => {
+  test('PATCH /api/boards/:key 는 고칠 필드가 하나도 없으면 그렇게 말한다', async () => {
     store.ensureBoard('rocky-todo', { actor: 'logan' });
     const res = await req('/api/boards/rocky-todo', { method: 'PATCH', body: JSON.stringify({}) });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toBe('path or repo is required');
+    expect(((await res.json()) as { error: string }).error).toBe(
+      'key, title, description, repo or path is required',
+    );
   });
 
-  // finding: path 가 먼저 처리되면서 같이 온 repo 가 조용히 사라졌다. 부분 적용 대신
-  // 거절한다 — 보내는 쪽은 언제나 한 필드만 보낸다.
-  test('PATCH /api/boards/:key 는 path 와 repo 를 같이 보내면 거절한다', async () => {
-    const before = store.ensureBoard('rocky-todo', { actor: 'logan' });
+  // 예전에는 "둘 다 보내면 400" 이었다 — store 호출이 둘로 갈려 부분 적용 위험이 있었기
+  // 때문이다. `updateBoard` 가 한 트랜잭션에 적용하므로 이제 함께 받는다(편집 폼이 그렇게
+  // 보낸다). 실측으로 확인된 실패 모드였다: repo 만 보내면 200, path 와 함께면 400.
+  test('PATCH /api/boards/:key 는 path 와 repo 를 함께 받아 둘 다 적용한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
     const res = await req('/api/boards/rocky-todo', {
       method: 'PATCH',
       body: JSON.stringify({ path: '/repo', repo: 'minjun0219/rocky-todo' }),
     });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toBe('send path or repo, not both');
-    // 거절했으면 한쪽만 적용되고 끝나는 일도 없어야 한다.
+    expect(res.status).toBe(200);
     const after = store.listBoards().find((b) => b.key === 'rocky-todo');
-    expect(after?.path).toBe(before.path);
-    expect(after?.repo).toBe(before.repo);
+    expect(after?.path).toBe('/repo');
+    expect(after?.repo).toBe('minjun0219/rocky-todo');
   });
 
   test('PATCH /api/boards/:key 는 잘못된 path 를 repo 에러로 바꿔 말하지 않는다', async () => {
     store.ensureBoard('rocky-todo', { actor: 'logan' });
-    for (const path of [123, '', '   ', null]) {
+    for (const path of [123, '', '   ']) {
       const res = await req('/api/boards/rocky-todo', {
         method: 'PATCH',
         body: JSON.stringify({ path }),
       });
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe(
-        'path must be a non-empty string',
+        'path must be a non-empty string or null',
       );
     }
+  });
+
+  // `null` 은 "지운다" 다 — 빈 문자열과 구분한다(폼이 실수로 비워 보낸 값이 설정을
+  // 날리면 안 된다).
+  test('PATCH /api/boards/:key 는 null 로 path 를 지운다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    store.setBoardPath('rocky-todo', '/repo', 'logan');
+    const res = await req('/api/boards/rocky-todo', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: null }),
+    });
+    expect(res.status).toBe(200);
+    expect(store.getBoard('rocky-todo')?.path).toBeUndefined();
+  });
+});
+
+describe('보드 메타 관리', () => {
+  test('PATCH /api/boards/:key 가 title·description·key 를 한 번에 고친다', async () => {
+    store.ensureBoard('gotgan', { actor: 'logan' });
+    const res = await req('/api/boards/gotgan', {
+      method: 'PATCH',
+      body: JSON.stringify({ key: 'tally', title: 'Tally', description: '가계부 앱' }),
+    });
+    expect(res.status).toBe(200);
+    const board = (await res.json()) as {
+      key: string;
+      title: string;
+      description: string;
+      previousKeys: string[];
+    };
+    expect(board.key).toBe('tally');
+    expect(board.title).toBe('Tally');
+    expect(board.description).toBe('가계부 앱');
+    expect(board.previousKeys).toEqual(['gotgan']);
+  });
+
+  test('이름을 바꿔도 옛 key 로 그 보드를 계속 읽는다', async () => {
+    store.ensureBoard('gotgan', { actor: 'logan' });
+    const todo = store.createTodo({ board: 'gotgan', title: '이월 정산' }, 'logan');
+    await req('/api/boards/gotgan', { method: 'PATCH', body: JSON.stringify({ key: 'tally' }) });
+
+    const listed = (await (await req('/api/todos?board=gotgan')).json()) as { id: string }[];
+    expect(listed.map((t) => t.id)).toEqual([todo.id]);
+    // 새 ref 로 나가지만 옛 ref 로도 들어온다.
+    const detail = (await (await req('/api/todos/gotgan-1')).json()) as { todo: { ref: string } };
+    expect(detail.todo.ref).toBe('tally-1');
+  });
+
+  test('다른 보드가 쓰는 key 로는 못 바꾼다', async () => {
+    store.ensureBoard('gotgan', { actor: 'logan' });
+    store.ensureBoard('tally', { actor: 'logan' });
+    const res = await req('/api/boards/gotgan', {
+      method: 'PATCH',
+      body: JSON.stringify({ key: 'tally' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('already in use');
+    expect(store.getBoard('gotgan')?.key).toBe('gotgan');
+  });
+
+  // 별칭은 참조 해석만이 아니라 라우트의 `:key` 자리에서도 통해야 한다 — 옛 이름으로
+  // 북마크해 둔 편집 경로가 죽지 않는다.
+  test('옛 key 를 URL 로 써도 그 보드를 수정한다', async () => {
+    store.ensureBoard('gotgan', { actor: 'logan' });
+    store.updateBoard('gotgan', { key: 'tally' }, 'logan');
+    const res = await req('/api/boards/gotgan', {
+      method: 'PATCH',
+      body: JSON.stringify({ description: '가계부' }),
+    });
+    expect(res.status).toBe(200);
+    const board = (await res.json()) as { key: string; description: string };
+    expect(board.key).toBe('tally');
+    expect(board.description).toBe('가계부');
+  });
+
+  test('빈 title 은 거절한다', async () => {
+    store.ensureBoard('rocky-todo', { actor: 'logan' });
+    const res = await req('/api/boards/rocky-todo', {
+      method: 'PATCH',
+      body: JSON.stringify({ title: '   ' }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      'title must be a non-empty string',
+    );
+  });
+});
+
+describe('cross-site 변경 가드', () => {
+  test('Sec-Fetch-Site: cross-site 인 변경 요청을 403 으로 끊는다', async () => {
+    const res = await req('/api/boards', {
+      method: 'POST',
+      body: JSON.stringify({ key: 'evil' }),
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    expect(res.status).toBe(403);
+    expect(store.listBoards().some((b) => b.key === 'evil')).toBe(false);
+  });
+
+  test('같은 화면(same-origin)과 헤더 없는 CLI 는 그대로 통과한다', async () => {
+    const sameOrigin = await req('/api/boards', {
+      method: 'POST',
+      body: JSON.stringify({ key: 'from-ui' }),
+      headers: { 'sec-fetch-site': 'same-origin' },
+    });
+    expect(sameOrigin.status).toBe(201);
+    const cli = await req('/api/boards', {
+      method: 'POST',
+      body: JSON.stringify({ key: 'from-cli' }),
+    });
+    expect(cli.status).toBe(201);
+  });
+
+  test('읽기는 cross-site 여도 막지 않는다', async () => {
+    const res = await req('/api/boards', { headers: { 'sec-fetch-site': 'cross-site' } });
+    expect(res.status).toBe(200);
   });
 });
 

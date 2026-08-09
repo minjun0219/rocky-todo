@@ -165,6 +165,35 @@ export const addHandoffLifecycle: Migration = (db) => {
 };
 
 /**
+ * 마이그레이션 6: 보드 메타 관리 — `description` 컬럼과 옛 key 별칭 테이블.
+ *
+ * `key` 는 참조 접두사(`rocky-12`)이자 cwd 로 유추되는 식별자라, 바꾸면 히스토리·댓글·
+ * GitHub 이슈에 박힌 옛 참조와 훅/CLI 가 보내는 옛 `board` 인자가 통째로 죽는다.
+ * `board_aliases` 가 그 옛 이름을 보관해 입력으로 계속 받는다(`src/store.ts` 의
+ * `updateBoard`/`boardIdOf` 참고). 출력은 언제나 새 key 다.
+ *
+ * `SCHEMA` 도 이 컬럼·테이블을 만드므로 `addBoardRepo` 와 같은 `PRAGMA table_info` 가드가
+ * 붙는다 — 테이블은 `CREATE TABLE IF NOT EXISTS`, 인덱스는 컬럼이 갖춰진 뒤에만.
+ */
+export const addBoardMeta: Migration = (db) => {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(boards)').all();
+  if (!columns.some((c) => c.name === 'description')) {
+    db.run('ALTER TABLE boards ADD COLUMN description TEXT');
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS board_aliases (
+      key        TEXT PRIMARY KEY,
+      board_id   TEXT NOT NULL REFERENCES boards(id),
+      created_at TEXT NOT NULL
+    )
+  `);
+  const aliasColumns = db.query<{ name: string }, []>('PRAGMA table_info(board_aliases)').all();
+  if (aliasColumns.some((c) => c.name === 'board_id')) {
+    db.run('CREATE INDEX IF NOT EXISTS idx_board_aliases_board ON board_aliases(board_id)');
+  }
+};
+
+/**
  * 적용 순서 = 배열 순서. 인덱스+1 이 곧 user_version. 기존 항목은 절대 수정하지 않는다.
  *
  * **규칙(`todos.number` vs `boards.repo` divergence — finding G)**: `SCHEMA` 는 신규 DB 를
@@ -183,6 +212,7 @@ export const MIGRATIONS: Migration[] = [
   addHandoffs,
   addBoardPath,
   addHandoffLifecycle,
+  addBoardMeta,
 ];
 
 export interface RunMigrationsOptions {

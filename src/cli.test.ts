@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   boardKeyFromMissingRepoError,
-  boardRepoPath,
+  boardDetailPath,
   formatSessions,
   formatSpawnResult,
   formatTodoLine,
@@ -12,6 +12,7 @@ import {
   isMissingRepoError,
   noteRefPath,
   parseFlags,
+  renderBoard,
   resolveHistoryEntity,
   todoRefPath,
   withBoard,
@@ -262,6 +263,33 @@ describe('# ref 인코딩 — 실제 fetch 왕복 (finding 1 회귀)', () => {
   });
 });
 
+describe('renderBoard', () => {
+  const base: Board = {
+    id: 'b1',
+    key: 'tally',
+    title: 'Tally',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  };
+
+  test('설정되지 않은 필드는 줄을 만들지 않는다', () => {
+    expect(renderBoard(base)).toBe('tally  Tally');
+  });
+
+  test('설명·repo·path·옛 이름을 붙인다', () => {
+    const out = renderBoard({
+      ...base,
+      description: '가계부 앱',
+      repo: 'minjun0219/tally',
+      path: '/dev/tally',
+      previousKeys: ['gotgan'],
+    });
+    expect(out).toContain('가계부 앱');
+    expect(out).toContain('https://github.com/minjun0219/tally');
+    expect(out).toContain('/dev/tally');
+    expect(out).toContain('gotgan');
+  });
+});
+
 describe('CLI 경로 왕복 — spawn / board path', () => {
   let dir: string;
   let store: TodoStore;
@@ -297,10 +325,22 @@ describe('CLI 경로 왕복 — spawn / board path', () => {
 
   test('board path 가 보드에 경로를 저장한다', async () => {
     store.ensureBoard('rocky-todo', { actor: 'tester' });
-    const updated = await request<Board>(ctx, 'PATCH', boardRepoPath('rocky-todo'), {
+    const updated = await request<Board>(ctx, 'PATCH', boardDetailPath('rocky-todo'), {
       path: '/Users/x/dev/rocky-todo',
     });
     expect(updated.path).toBe('/Users/x/dev/rocky-todo');
+  });
+
+  test('board rename 이 key 를 바꾸고 옛 참조는 계속 풀린다', async () => {
+    store.ensureBoard('gotgan', { actor: 'tester' });
+    store.createTodo({ board: 'gotgan', title: '이월 정산' }, 'tester');
+
+    const renamed = await request<Board>(ctx, 'PATCH', boardDetailPath('gotgan'), { key: 'tally' });
+    expect(renamed.key).toBe('tally');
+    expect(renamed.previousKeys).toEqual(['gotgan']);
+
+    const detail = await request<{ todo: TodoView }>(ctx, 'GET', todoRefPath('gotgan-1', '', ''));
+    expect(detail.todo.ref).toBe('tally-1');
   });
 
   test('spawn 경로가 201 과 짧은 id 를 돌려준다', async () => {
@@ -723,13 +763,13 @@ describe('issue command paths', () => {
     );
   });
 
-  test('boardRepoPath encodes the board key', () => {
-    expect(boardRepoPath('my.board')).toBe('/api/boards/my.board');
+  test('boardDetailPath encodes the board key', () => {
+    expect(boardDetailPath('my.board')).toBe('/api/boards/my.board');
   });
 
   test('setting a board repo through the CLI path round-trips', async () => {
     store.ensureBoard('rocky', { actor: 'tester' });
-    const board = await request<{ repo: string }>(ctx, 'PATCH', boardRepoPath('rocky'), {
+    const board = await request<{ repo: string }>(ctx, 'PATCH', boardDetailPath('rocky'), {
       repo: 'o/n',
     });
     expect(board.repo).toBe('o/n');

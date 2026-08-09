@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { RunCommand } from './github';
-import { buildTodoMcpServer } from './mcp';
+import { buildTodoMcpServer, createMcpFetchHandler } from './mcp';
 import { TodoStore } from './store';
 
 const TODO_MCP_TOOLS = [
@@ -855,5 +855,34 @@ describe('createIssue through MCP', () => {
   test('the tool surface is still exactly five tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TODO_MCP_TOOLS].sort());
+  });
+});
+
+// `/mcp` 도 도구 호출로 보드를 고치는 표면이다 — REST 와 같은 가드를 받는다.
+// (지금은 전송 규약이 폼 POST 를 이미 걸러내지만, 규칙에 예외를 남기지 않는다.)
+describe('cross-site 가드 — /mcp', () => {
+  test('cross-site POST 는 403 이고 정상 클라이언트는 통과한다', async () => {
+    const handler = createMcpFetchHandler({ store });
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    const headers = {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    };
+
+    const blocked = await handler(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: { ...headers, 'sec-fetch-site': 'cross-site' },
+        body,
+      }),
+      '127.0.0.1',
+    );
+    expect(blocked.status).toBe(403);
+
+    const allowed = await handler(
+      new Request('http://localhost/mcp', { method: 'POST', headers, body }),
+      '127.0.0.1',
+    );
+    expect(allowed.status).toBe(200);
   });
 });

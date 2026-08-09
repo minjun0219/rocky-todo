@@ -35,12 +35,33 @@ export interface Board {
   id: string;
   key: string;
   title: string;
+  /** 이 보드가 무엇인가 — 한 줄 설명. 설정 전에는 undefined. */
+  description?: string;
   /** `owner/name` — GitHub 이슈 생성 대상. 설정 전에는 undefined. */
   repo?: string;
   /** 메인 레포의 절대경로 — 백그라운드 세션을 띄우는 자리. 설정 전에는 undefined. */
   path?: string;
+  /**
+   * 이 보드가 예전에 쓰던 key 들 — {@link TodoStore.updateBoard} 의 key 변경이 남긴다.
+   * 옛 참조(`gotgan-12`)와 옛 `board` 인자가 계속 이 보드로 풀린다. 없으면 생략된다.
+   */
+  previousKeys?: string[];
   createdAt: string;
   archivedAt?: string;
+}
+
+/**
+ * 보드 메타 부분 수정 — {@link TodoStore.updateBoard} 의 입력.
+ *
+ * 필드가 **없으면** 건드리지 않는다. `null`/빈 문자열은 "지운다"(key·title 은 제외 —
+ * 그 둘은 비울 수 없다). 이 구분이 있어야 한 번의 PATCH 로 일부만 고칠 수 있다.
+ */
+export interface BoardPatch {
+  key?: string;
+  title?: string;
+  description?: string | null;
+  repo?: string | null;
+  path?: string | null;
 }
 
 export interface Section {
@@ -320,6 +341,7 @@ interface BoardRow {
   id: string;
   key: string;
   title: string;
+  description: string | null;
   repo: string | null;
   path: string | null;
   created_at: string;
@@ -375,10 +397,16 @@ CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
   key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  description TEXT,
   repo TEXT,
   path TEXT,
   created_at TEXT NOT NULL,
   archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS board_aliases (
+  key TEXT PRIMARY KEY,
+  board_id TEXT NOT NULL REFERENCES boards(id),
+  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sections (
   id TEXT PRIMARY KEY,
@@ -451,6 +479,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
   accepted_at   TEXT,
   completed_at  TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_board_aliases_board ON board_aliases(board_id);
 CREATE INDEX IF NOT EXISTS idx_todos_board ON todos(board_id);
 CREATE INDEX IF NOT EXISTS idx_notes_board ON notes(board_id);
 CREATE INDEX IF NOT EXISTS idx_history_entity ON history(entity_id);
@@ -554,25 +583,21 @@ export class TodoStore {
    * key 로 보드를 이미 만들어놨을 수 있고(직접 `POST /api/boards` 또는 MCP `board` 인자로
    * 도달 가능), 업그레이드 후 그 보드에 todo/note 를 하나 추가하기만 해도 여기서 하드
    * 실패하면 안 된다 — 보드와 기존 항목은 멀쩡한데. 새 malformed 보드가 생기는 것만 막는다.
+   *
+   * **옛 key(별칭)도 이 보드로 푼다.** `updateBoard` 로 key 를 바꾸면 옛 key 가
+   * `board_aliases` 에 남고, 여기서 그 별칭을 만나면 새 보드를 만들지 않고 원래 보드를
+   * 돌려준다 — 안 그러면 `todo_list { board: "gotgan" }` 은 이름이 바뀐 보드를 읽는데
+   * `todo_write { board: "gotgan" }` 은 같은 이름의 빈 보드를 새로 만드는 갈라짐이 생긴다.
+   * 그 대가로 한 번 쓰인 key 는 은퇴한다(다른 보드가 그 이름을 다시 가질 수 없다).
    * @throws key 가 비어 있거나 공백/`#` 를 포함하는 **새** 보드를 만들려 하면 — 어느
-   * 문자가 문제인지 명시한다. 이미 존재하는 보드는 이 검증을 건너뛴다.
+   * 문자가 문제인지 명시한다. 이미 존재하는 보드(별칭 포함)는 이 검증을 건너뛴다.
    */
   ensureBoard(key: string, options: { title?: string; actor: string }): Board {
-    const existing = this.db
-      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
-      .get(key);
+    const existing = this.boardRowByAnyKey(key);
     if (existing) {
-      return toBoard(existing);
+      return this.hydrateBoard(existing);
     }
-    if (key === '') {
-      throw new Error('board key must not be empty');
-    }
-    if (/\s/.test(key)) {
-      throw new Error(`board key must not contain whitespace: ${JSON.stringify(key)}`);
-    }
-    if (key.includes('#')) {
-      throw new Error(`board key must not contain '#': ${JSON.stringify(key)}`);
-    }
+    assertUsableBoardKey(key);
     const board: Board = {
       id: newId(),
       key,
@@ -592,21 +617,69 @@ export class TodoStore {
       : this.db
           .query<BoardRow, []>('SELECT * FROM boards WHERE archived_at IS NULL ORDER BY key')
           .all();
-    return rows.map(toBoard);
+    // 별칭은 보드마다 조회하지 않는다 — statusline 라우트가 초당 이 함수를 부르므로
+    // 보드 수만큼 쿼리가 나가면 안 된다. 한 번에 읽어 boardId 로 묶는다.
+    const aliases = this.aliasesByBoard();
+    return rows.map((row) => toBoard(row, aliases.get(row.id)));
+  }
+
+  private boardRowByAnyKey(key: string): BoardRow | undefined {
+    const direct = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?').get(key);
+    if (direct) {
+      return direct;
+    }
+    return (
+      this.db
+        .query<BoardRow, [string]>(
+          'SELECT b.* FROM boards b JOIN board_aliases a ON a.board_id = b.id WHERE a.key = ?',
+        )
+        .get(key) ?? undefined
+    );
   }
 
   private boardByKey(key: string): Board | undefined {
-    const row = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?').get(key);
-    return row ? toBoard(row) : undefined;
+    const row = this.boardRowByAnyKey(key);
+    return row ? this.hydrateBoard(row) : undefined;
+  }
+
+  /** boardId → 옛 key 목록. 없는 보드는 아예 키가 없다(빈 배열도 만들지 않는다). */
+  private aliasesByBoard(): Map<string, string[]> {
+    const rows = this.db
+      .query<{ key: string; board_id: string }, []>(
+        'SELECT key, board_id FROM board_aliases ORDER BY created_at, key',
+      )
+      .all();
+    const grouped = new Map<string, string[]>();
+    for (const row of rows) {
+      const keys = grouped.get(row.board_id);
+      if (keys) {
+        keys.push(row.key);
+      } else {
+        grouped.set(row.board_id, [row.key]);
+      }
+    }
+    return grouped;
+  }
+
+  /** 보드 하나에 별칭을 붙여 뷰 모델로 만든다. */
+  private hydrateBoard(row: BoardRow): Board {
+    const aliases = this.db
+      .query<{ key: string }, [string]>(
+        'SELECT key FROM board_aliases WHERE board_id = ? ORDER BY created_at, key',
+      )
+      .all(row.id)
+      .map((alias) => alias.key);
+    return toBoard(row, aliases);
   }
 
   /**
-   * 보드 key → boardId. 아카이브된 보드도 포함해서 찾는다(참조 해석/조회 목적이라
-   * 아카이브 여부로 실패시키지 않는다). 없는 key 면 undefined — 존재하지 않는 보드를
-   * 지어내지 않고, 호출자가 "보드 컨텍스트 없음"으로 취급하게 한다.
+   * 보드 key → boardId. 아카이브된 보드도 포함해서 찾고, **옛 key(별칭)도 푼다** —
+   * 이름을 바꾼 보드의 옛 참조(`gotgan-12`)와 옛 `?board=` 쿼리가 계속 살아 있게 하는
+   * 자리다. 없는 key 면 undefined — 존재하지 않는 보드를 지어내지 않고, 호출자가
+   * "보드 컨텍스트 없음"으로 취급하게 한다.
    */
   boardIdOf(key: string): string | undefined {
-    return this.boardByKey(key)?.id;
+    return this.boardRowByAnyKey(key)?.id;
   }
 
   // ── sections ──────────────────────────────────────────────────────────────
@@ -715,84 +788,139 @@ export class TodoStore {
   /** boardId 로 보드 한 건. 이슈 라우트가 todo → 보드 → repo 를 따라갈 때 쓴다. */
   boardById(boardId: string): Board | undefined {
     const row = this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE id = ?').get(boardId);
-    return row ? toBoard(row) : undefined;
+    return row ? this.hydrateBoard(row) : undefined;
   }
 
-  /** 보드 key 로 보드 한 건을 반환한다. 없으면 undefined. */
+  /** 보드 key(옛 key 포함)로 보드 한 건을 반환한다. 없으면 undefined. */
   getBoard(key: string): Board | undefined {
     return this.boardByKey(key);
   }
 
   /**
-   * 보드의 GitHub 레포(`owner/name`)를 설정한다.
+   * 보드 메타를 부분 수정한다 — key(slug) · title · description · repo · path.
    *
-   * 값은 여기서 한 번 더 trim 한다 — 호출부(REST 라우트·CLI·오케스트레이터)가 이미
-   * 다듬어 넘기지만, 스토어를 통과한 값은 그대로 `gh -R` 인자가 되므로 공백이 섞인 채
-   * 저장되면 이후 모든 이슈 생성이 조용히 실패한다. 마지막 관문에서 막는 편이 싸다.
+   * **한 트랜잭션에 전부 적용한다.** 예전에는 REST 가 `repo` 와 `path` 를 동시에 받으면
+   * 400 으로 거절했는데(store 호출이 둘로 갈려 한쪽만 적용된 채 실패할 수 있었다),
+   * 편집 폼은 여러 필드를 한 번에 보내는 게 자연스럽다 — 부분 적용 위험을 API 제약이
+   * 아니라 트랜잭션으로 없앤다.
    *
-   * trim 한 값이 기존 값과 같으면 write 도 히스토리도 남기지 않는다(no-op) — 같은 값의
-   * 반복 설정이 흔한 경로라서다.
+   * 값은 여기서 한 번 더 trim 한다 — 호출부가 이미 다듬어 넘기지만, 스토어를 통과한
+   * `repo` 는 그대로 `gh -R` 인자가 되므로 공백이 섞인 채 저장되면 이후 모든 이슈 생성이
+   * 조용히 실패한다. 마지막 관문에서 막는 편이 싸다. `description`/`repo`/`path` 는
+   * `null` 이나 빈 문자열이면 지운다(NULL). key/title 은 비울 수 없다.
+   *
+   * 실제로 바뀐 필드가 하나도 없으면 write 도 히스토리도 남기지 않는다(no-op) — 같은
+   * 값의 반복 설정이 흔한 경로다(`createIssueForTodo` 는 `options.repo` 가 오면 매번
+   * 이걸 부른다). 바뀐 필드는 **하나의** `update` 히스토리에 모아 기록한다.
+   *
+   * ## key 변경
+   *
+   * key 는 단순 라벨이 아니라 cwd 로 유추되는 식별자이자 참조 접두사(`rocky-12`)다. 그래서
+   * 옛 key 를 `board_aliases` 에 남긴다 — 히스토리·댓글·GitHub 이슈에 박혀 있는 옛 참조와
+   * 훅/CLI 가 유추해 보내는 옛 `board` 인자가 계속 이 보드로 풀린다
+   * ({@link boardIdOf}/`resolveRef`/{@link ensureBoard} 가 모두 별칭을 본다).
+   * 새로 내보내는 문자열은 언제나 새 key 다 — 별칭은 입력 전용이다.
    *
    * @throws 없는 보드면 — 여기서 보드를 만들지 않는다. 오타난 key 로 빈 보드가 생기는
    *   편이 조용한 사고가 된다(`ensureSection` 과 같은 판단).
+   * @throws 새 key 가 비었거나 공백/`#` 를 담으면, 또는 **다른** 보드가 그 key 를 (현재
+   *   이름으로든 별칭으로든) 이미 쓰고 있으면. 이름을 뺏어오면 그쪽 참조가 조용히 이쪽을
+   *   가리키게 된다.
+   * @throws title 이 공백뿐이면.
    */
-  setBoardRepo(key: string, repo: string, actor: string): Board {
-    const existing = this.db
-      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
-      .get(key);
+  updateBoard(key: string, patch: BoardPatch, actor: string): Board {
+    const existing = this.boardRowByAnyKey(key);
     if (!existing) {
       throw new Error(`board not found: ${key}`);
     }
-    const normalized = repo.trim();
-    // 같은 값이면 아무것도 하지 않는다 — `createIssueForTodo` 는 `options.repo` 가 오면
-    // 매번 이걸 부르고, `issue REF --repo o/n` 이나 웹 UI 재시도는 같은 슬러그를 반복해
-    // 넘긴다. 그때마다 `update` 히스토리와 SSE 가 쌓이면 "안 바뀐 변경"이 타임라인을
-    // 어지럽힌다(MCP `todo_write` 가 빈 patch 를 건너뛰는 것과 같은 판단).
-    if (existing.repo === normalized) {
-      return toBoard(existing);
+
+    const changes: Record<string, [unknown, unknown]> = {};
+    const sets: string[] = [];
+    const params: (string | null)[] = [];
+    const stage = (column: string, before: string | null, after: string | null): void => {
+      if (before === after) {
+        return;
+      }
+      changes[column] = [before, after];
+      sets.push(`${column} = ?`);
+      params.push(after);
+    };
+
+    let rename: { from: string; to: string } | undefined;
+    if (patch.key !== undefined) {
+      const nextKey = patch.key.trim();
+      if (nextKey !== existing.key) {
+        assertUsableBoardKey(nextKey);
+        const owner = this.boardRowByAnyKey(nextKey);
+        if (owner && owner.id !== existing.id) {
+          throw new Error(`board key already in use: ${nextKey}`);
+        }
+        rename = { from: existing.key, to: nextKey };
+        stage('key', existing.key, nextKey);
+      }
     }
-    this.db.query('UPDATE boards SET repo = ? WHERE id = ?').run(normalized, existing.id);
-    this.recordHistory(
-      'board',
-      existing.id,
-      actor,
-      'update',
-      { repo: [existing.repo ?? null, normalized] },
-      existing.id,
+    if (patch.title !== undefined) {
+      const nextTitle = patch.title.trim();
+      if (nextTitle === '') {
+        throw new Error('board title must not be empty');
+      }
+      stage('title', existing.title, nextTitle);
+    }
+    if (patch.description !== undefined) {
+      stage('description', existing.description, blankToNull(patch.description));
+    }
+    if (patch.repo !== undefined) {
+      stage('repo', existing.repo, blankToNull(patch.repo));
+    }
+    if (patch.path !== undefined) {
+      stage('path', existing.path, blankToNull(patch.path));
+    }
+
+    if (sets.length === 0) {
+      return this.hydrateBoard(existing);
+    }
+
+    // key 변경과 별칭 기록은 원자적이어야 한다 — 사이에서 끊기면 옛 참조를 되읽을 수
+    // 없는 보드가 남는다.
+    this.db.transaction(() => {
+      this.db
+        .query(`UPDATE boards SET ${sets.join(', ')} WHERE id = ?`)
+        .run(...params, existing.id);
+      if (rename) {
+        // 되돌리기(`tally` → `gotgan` → `tally`)로 자기 별칭을 다시 현재 이름으로 쓰는
+        // 경우가 있다 — 그 별칭은 걷어내야 "key 와 별칭이 같은 이름" 이라는 모순이 안 남는다.
+        this.db
+          .query('DELETE FROM board_aliases WHERE board_id = ? AND key = ?')
+          .run(existing.id, rename.to);
+        this.db
+          .query('INSERT INTO board_aliases (key, board_id, created_at) VALUES (?, ?, ?)')
+          .run(rename.from, existing.id, nowIso());
+      }
+    })();
+
+    this.recordHistory('board', existing.id, actor, 'update', changes, existing.id);
+    return this.hydrateBoard(
+      this.db.query<BoardRow, [string]>('SELECT * FROM boards WHERE id = ?').get(existing.id) ??
+        existing,
     );
-    return { ...toBoard(existing), repo: normalized };
+  }
+
+  /**
+   * 보드의 GitHub 레포(`owner/name`)를 설정한다 — {@link updateBoard} 의 좁은 입구.
+   * @throws 없는 보드면.
+   */
+  setBoardRepo(key: string, repo: string, actor: string): Board {
+    return this.updateBoard(key, { repo }, actor);
   }
 
   /**
    * 보드의 메인 레포 경로를 설정한다 — 백그라운드 세션을 띄우는 자리다.
-   *
-   * `setBoardRepo` 와 같은 규칙: 값은 여기서 한 번 더 trim 하고, 같은 값이면 write 도
-   * 히스토리도 남기지 않는다(no-op). 경로가 실제로 존재하는지·git 레포인지는 여기서
-   * 보지 않는다 — 스토어는 파일시스템을 모르고, 그 판정은 spawn 라우트가 한다.
-   *
-   * @throws 없는 보드면 — 여기서 보드를 만들지 않는다(`setBoardRepo` 와 같은 판단).
+   * 경로가 실제로 존재하는지·git 레포인지는 보지 않는다 — 스토어는 파일시스템을 모르고,
+   * 그 판정은 spawn 라우트가 한다.
+   * @throws 없는 보드면.
    */
   setBoardPath(key: string, path: string, actor: string): Board {
-    const existing = this.db
-      .query<BoardRow, [string]>('SELECT * FROM boards WHERE key = ?')
-      .get(key);
-    if (!existing) {
-      throw new Error(`board not found: ${key}`);
-    }
-    const normalized = path.trim();
-    if (existing.path === normalized) {
-      return toBoard(existing);
-    }
-    this.db.query('UPDATE boards SET path = ? WHERE id = ?').run(normalized, existing.id);
-    this.recordHistory(
-      'board',
-      existing.id,
-      actor,
-      'update',
-      { path: [existing.path ?? null, normalized] },
-      existing.id,
-    );
-    return { ...toBoard(existing), path: normalized };
+    return this.updateBoard(key, { path }, actor);
   }
 
   // ── todos ─────────────────────────────────────────────────────────────────
@@ -1740,6 +1868,9 @@ export class TodoStore {
    * LIKE 와일드카드 가드에 걸려 레거시 분기(`my_board#1` → `undefined`)와 다른 에러
    * (`invalid id prefix`)를 내는 모순이 생긴다.
    *
+   * 두 스코프 분기의 board 조회는 {@link boardIdOf} 를 거치므로 **옛 key(별칭)도** 푼다
+   * — 이름이 바뀐 보드의 `gotgan-12` 가 계속 살아 있다(`updateBoard` 참고).
+   *
    * board key 조회는 대소문자를 구분한다(SQLite 기본) — 정규식이 대소문자를 가리지 않고
    * 넓게 받아도(`/i` 없음) `WHERE key = ?` 조회 자체가 대소문자를 구분해 `ROCKY#1` 은
    * `rocky` 보드에 매칭되지 않고 `undefined` 로 끝난다. 조회를 대소문자 무시로 바꾸는
@@ -1764,16 +1895,14 @@ export class TodoStore {
 
     const scoped = /^([^#\s]+)#(\d+)$/.exec(trimmed);
     if (scoped?.[1] && scoped[2]) {
-      const board = this.db
-        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
-        .get(scoped[1]);
-      if (!board) {
+      const boardId = this.boardIdOf(scoped[1]);
+      if (!boardId) {
         return undefined;
       }
       return (
         this.db
           .query<Row, [string, number]>(`SELECT * FROM ${table} WHERE board_id = ? AND number = ?`)
-          .get(board.id, Number(scoped[2])) ?? undefined
+          .get(boardId, Number(scoped[2])) ?? undefined
       );
     }
 
@@ -1801,16 +1930,16 @@ export class TodoStore {
             .get(number) ?? undefined
         );
       }
-      const board = this.db
-        .query<{ id: string }, [string]>('SELECT id FROM boards WHERE key = ?')
-        .get(dashed[1]);
-      if (board) {
+      // 옛 key 도 푼다(`boardIdOf` 가 별칭을 본다) — 이름을 바꾼 보드의 참조가 히스토리·
+      // 댓글·GitHub 이슈 본문에 그대로 박혀 있고, 그것들이 죽으면 이름을 못 바꾼다.
+      const boardId = this.boardIdOf(dashed[1]);
+      if (boardId) {
         return (
           this.db
             .query<Row, [string, number]>(
               `SELECT * FROM ${table} WHERE board_id = ? AND number = ?`,
             )
-            .get(board.id, number) ?? undefined
+            .get(boardId, number) ?? undefined
         );
       }
       // 보드를 못 찾으면 여기서 명시적으로 undefined 를 반환한다 — 흘려보내면(과거 코드)
@@ -1862,16 +1991,47 @@ export class TodoStore {
   }
 }
 
-function toBoard(row: BoardRow): Board {
+function toBoard(row: BoardRow, aliases?: readonly string[]): Board {
   return {
     id: row.id,
     key: row.key,
     title: row.title,
+    description: row.description ?? undefined,
     repo: row.repo ?? undefined,
     path: row.path ?? undefined,
+    // 빈 배열은 싣지 않는다 — 별칭이 있는 보드는 소수이고, JSON 에 `[]` 가 늘 붙으면
+    // "이 보드는 이름을 바꾼 적이 있다"는 신호가 흐려진다.
+    ...(aliases && aliases.length > 0 ? { previousKeys: [...aliases] } : {}),
     createdAt: row.created_at,
     archivedAt: row.archived_at ?? undefined,
   };
+}
+
+/**
+ * 빈 값("지운다")을 NULL 로 접는다 — `description`/`repo`/`path` 가 공유하는 규칙.
+ * 세 필드 모두 "설정 전"과 "빈 문자열"을 구분할 이유가 없다.
+ */
+function blankToNull(value: string | null): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * board key 로 쓸 수 있는 모양인지 검증한다 — 생성(`ensureBoard`)과 이름 변경
+ * (`updateBoard`)이 같은 규칙을 쓰게 하는 단일 출처. 왜 이 두 문자만 막는지는
+ * `ensureBoard` 의 주석 참고.
+ * @throws 비었거나 공백/`#` 를 담으면 — 어느 문자가 문제인지 명시한다.
+ */
+function assertUsableBoardKey(key: string): void {
+  if (key === '') {
+    throw new Error('board key must not be empty');
+  }
+  if (/\s/.test(key)) {
+    throw new Error(`board key must not contain whitespace: ${JSON.stringify(key)}`);
+  }
+  if (key.includes('#')) {
+    throw new Error(`board key must not contain '#': ${JSON.stringify(key)}`);
+  }
 }
 
 function toSection(row: SectionRow): Section {
