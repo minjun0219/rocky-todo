@@ -1,7 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NoteView } from '../../server';
 import { boardCommand, copyRefWithFeedback, formatElapsed } from '../lib';
 import { useUiStore } from '../store';
+
+const NARROW_QUERY = '(max-width: 900px)';
+
+/** 좁은 화면인가 — responsive.css 의 900px 경계와 같은 값이다. */
+function useIsNarrow(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const mq = window.matchMedia(NARROW_QUERY);
+      mq.addEventListener('change', notify);
+      return () => mq.removeEventListener('change', notify);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+  );
+}
 
 /**
  * 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영.
@@ -15,6 +29,8 @@ export function NotesRail() {
   const selected = useUiStore((s) => s.selected);
   const addNote = useUiStore((s) => s.addNote);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // 넓은 화면에선 본문이 항상 보이므로 토글은 no-op 이고 aria 도 '펼침'이 정직하다.
+  const isNarrow = useIsNarrow();
 
   return (
     <aside className={`notes-rail ${mobileOpen ? 'is-open' : ''}`}>
@@ -22,8 +38,12 @@ export function NotesRail() {
         <button
           type="button"
           className="notes-toggle"
-          aria-expanded={mobileOpen}
-          onClick={() => setMobileOpen((v) => !v)}
+          aria-expanded={isNarrow ? mobileOpen : true}
+          onClick={() => {
+            if (isNarrow) {
+              setMobileOpen((v) => !v);
+            }
+          }}
         >
           <span className="sidebar-label">
             NOTES

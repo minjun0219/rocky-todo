@@ -41,6 +41,10 @@
   .sidebar-label {
     display: none;
   }
+  /* 위 숨김은 칩 행(BOARDS)용이다 — NOTES 토글의 라벨(개수·캐럿 포함)은 보여야 한다. */
+  .notes-toggle .sidebar-label {
+    display: inline;
+  }
   .board-item {
     white-space: nowrap;
     flex-shrink: 0;
