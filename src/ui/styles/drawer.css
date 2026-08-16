@@ -1,0 +1,155 @@
+/*
+ * 상세 드로어.
+ */
+
+/* ── drawer ─────────────────────────────────────── */
+
+/* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. iOS 는 `html, body` 를 100%(큰
+   뷰포트) 로 두고 `.app` 은 100dvh(작은 뷰포트) 라, 그 차이(URL 바 높이만큼) 만큼 document
+   자체가 스크롤 가능해진다 — `.drawer-backdrop` 은 fixed 라 `.layout` 을 거치지 않고 이
+   document 스크롤로 바로 새므로, body 의 overflow 를 hidden 으로 눌러 뷰포트 스크롤 자체를
+   막는다. */
+body.is-drawer-open {
+  overflow: hidden;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 7, 4, 0.55);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+.drawer {
+  width: min(440px, 92vw);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  height: 100%;
+  overflow-y: auto;
+  /* 드로어 안에서 끝까지 스크롤한 뒤 계속 스와이프하면 스크롤이 밖(backdrop 뒤 document)으로
+     새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
+  overscroll-behavior: contain;
+  padding: 20px 22px;
+  position: relative;
+}
+
+.drawer-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  color: var(--faint);
+  font-size: 14px;
+}
+
+.drawer-close:hover {
+  color: var(--text);
+}
+
+.drawer-ref {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.drawer-ref:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.drawer-id {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+  opacity: 0.6;
+  margin: 2px 0 10px;
+}
+
+.drawer-chips,
+.drawer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.drawer-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--faint);
+  margin: 16px 0 6px;
+}
+
+.drawer-desc {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.drawer-desc-static {
+  cursor: default;
+}
+
+.drawer-desc-empty {
+  color: var(--faint);
+}
+
+.md-line {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.md-line code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.md-line a {
+  color: var(--cool);
+}
+
+.drawer-desc-edit {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--warm-dim);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.drawer-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.drawer-btn:hover {
+  border-color: var(--warm-dim);
+  color: var(--warm);
+}

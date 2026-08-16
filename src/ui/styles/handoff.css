@@ -1,0 +1,154 @@
+/*
+ * 핸드오프·spawn·doing 배지 — "두 대기"의 온도가 드러나는 자리.
+ */
+
+/* ── handoff — "보냈다"(파랑) 은 doing(앰버)과 다른 상태다 ─────────────── */
+
+.chip-handoff {
+  background: var(--handoff-dim);
+  color: var(--handoff);
+}
+
+.handoff-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.handoff-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--handoff);
+}
+
+.handoff-stale {
+  color: var(--p1);
+}
+
+.handoff-unstarted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--p1);
+}
+
+.handoff-error {
+  color: var(--p1);
+  width: 100%;
+}
+
+/* ── spawn — 새 세션 띄우기 ─────────────────────────────────────────────── */
+.spawn-action {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.spawn-path-input,
+.spawn-note-input {
+  width: 100%;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: inherit;
+}
+
+.spawn-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--handoff);
+}
+
+.spawn-result code {
+  user-select: all;
+}
+
+.spawn-error {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--p1);
+  white-space: pre-wrap;
+}
+
+/* 실패가 아니라 "여기서는 불가"라는 안내 — 에러색을 쓰지 않는다. */
+.spawn-unavailable {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ── doing badge — 두 대기의 온도 ─────────────────── */
+
+.doing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.tone-warm {
+  color: var(--warm);
+}
+
+.doing-badge.tone-warm {
+  border: 1px solid var(--warm-dim);
+  background: color-mix(in srgb, var(--warm) 8%, transparent);
+}
+
+.tone-cool {
+  color: var(--cool);
+}
+
+.doing-badge.tone-cool {
+  border: 1px solid var(--cool-dim);
+  background: color-mix(in srgb, var(--cool) 8%, transparent);
+}
+
+.doing-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.doing-badge.is-stale {
+  opacity: 0.55;
+}
+
+.doing-badge.is-stale .doing-pulse {
+  animation: none;
+}
+
+/*
+ * 경고의 세기는 "누가 아직 들고 있는가" 를 따라간다. `slow` 는 세션이 멀쩡한데 오래
+ * 걸리는 것뿐이라 흐릿하게 두고(위 .is-stale 이 하는 일), `idle` 은 말을 걸면 이어지는
+ * 상태라 색만 되살리고, `gone` 은 아무도 안 들고 있으므로 완전히 또렷하게 경고한다.
+ */
+.doing-badge.warn-idle {
+  opacity: 0.85;
+}
+
+.doing-badge.warn-dead {
+  opacity: 1;
+  color: var(--p1);
+  border-color: var(--p1);
+  background: color-mix(in srgb, var(--p1) 10%, transparent);
+}

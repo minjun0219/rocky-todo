@@ -1,0 +1,159 @@
+/*
+ * 반응형 + reduced-motion.
+ *
+ * ⚠ 이 파일의 위치가 곧 우선순위다 — @import 순서를 바꾸면 렌더가 바뀐다.
+ * 아래 3개 파일은 원본에서 이 블록 **뒤**에 있었고, 그 순서를 그대로 보존한다.
+ */
+
+/* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
+
+@media (max-width: 900px) {
+  /* iOS Safari 의 동적 툴바 대응 — dvh 미지원 브라우저는 베이스의 100vh 유지 */
+  @supports (height: 100dvh) {
+    .app {
+      height: 100dvh;
+    }
+  }
+  .layout {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  /* 사이드바 → 가로 스크롤 보드 칩 행 */
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 12px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .sidebar-label {
+    display: none;
+  }
+  .board-item {
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-height: 44px;
+  }
+  .archived-toggle {
+    white-space: nowrap;
+    min-height: 44px;
+  }
+  .todo-pane {
+    padding: 14px 14px 6px;
+    overflow-y: visible;
+    flex-shrink: 0;
+  }
+  /* 좁은 화면에서는 메타 칩이 다음 줄로 흐르게 */
+  .todo-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .todo-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    /* 둘 다 필요하다 — 제목이 어느 flex 줄에 놓이느냐에 따라 모자라는 쪽이 다르다.
+       390px 실측(제목 길이를 늘려가며):
+
+         제목이 `.todo-ref` 와 같은 줄  → 줄 높이가 ref 의 44px 라 stretch 만으로 44px
+         제목이 자기 줄로 밀려 1줄      → 그 줄의 높이는 제목 자신뿐이라 21px (여기가 구멍)
+         제목이 자기 줄로 밀려 2줄      → 42px
+
+       stretch 는 "줄 높이를 채운다"일 뿐이라, 제목이 혼자인 줄에서는 채울 높이가 자기
+       높이다 — 21px 짜리 타깃이 남는다. min-height 가 그 바닥을 받친다.
+       반대로 min-height 만 쓰면 ref 와 같은 줄일 때 글자 위아래 여백을 안 먹는다.
+       함께 쓰면 같은 줄일 때는 이미 44px 라 행이 커지지 않고(공짜), 혼자인 줄에서만
+       44px 로 자란다 — 자라는 그 행은 원래 타깃이 진짜로 작던 행이다. */
+    align-self: stretch;
+    min-height: 44px;
+  }
+  /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
+     예전엔 건드리는 컨트롤마다 그때그때 더해 왔는데, 한 번에 모아 정리했다. */
+  .todo-check-hit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
+    margin: -8px 0 -8px -8px;
+  }
+  .todo-ref {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .drawer-ref {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .note-action {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .drawer-close {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .comment-tool {
+    min-height: 44px;
+    padding: 0 8px;
+  }
+  /* 메타 칩 전반(`.comment-badge`, `.chip-link` 등)은 여기서 제외한다 — `.todo-row` 가
+     줄바꿈되면 이들은 두 번째 줄에 놓이는데, 여기에 44px 바닥을 주면 그 줄 전체가 44px 로
+     늘어나 행 높이가 두 배가 된다. 배지·링크가 여는 대상(드로어·이슈)은 이미 44px 바닥을
+     가진 `.todo-title`/`.todo-ref` 나 드로어 안에서도 도달할 수 있다. 칩 자체를 접어
+     줄바꿈을 없애는 건 별도 백로그 — 그게 되면 여기 바닥을 되살린다. */
+  /* `.drawer-btn` 은 버튼뿐 아니라 `<a>`("이슈 열기 ↗")에도 쓰인다. `<a>` 는 인라인이라
+     min-height 가 먹지 않으므로 display 를 함께 준다. */
+  .drawer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+  .notes-rail {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    padding: 14px;
+    overflow-y: visible;
+    flex-shrink: 0;
+  }
+  .drawer {
+    width: 100vw;
+  }
+  /* iOS Safari: 16px 미만 입력 필드 포커스 시 자동 확대 방지 */
+  .quick-add-input,
+  .note-title,
+  .note-content,
+  .actor-input,
+  .drawer-desc-edit {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-on .link-pulse,
+  .doing-dot,
+  .doing-pulse {
+    animation: none;
+  }
+}
+
+.backdrop-hit {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}

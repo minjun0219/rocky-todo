@@ -1,0 +1,12 @@
+/*
+ * 앱 골격 — 사이드바 | 본문 | 노트 레일.
+ */
+
+/* ── layout ─────────────────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px 1fr 300px;
+  flex: 1;
+  min-height: 0;
+}
