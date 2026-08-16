@@ -25,6 +25,35 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif;
 }
 
+/*
+ * Tailwind 유틸리티 ↔ 토큰 다리. `inline` 이라 유틸리티가 `var(--warm)` 참조로 나와
+ * 토큰 값이 단일 출처로 남는다 — 위 `:root` 값을 바꾸면 유틸리티도 따라온다.
+ * `text-warm` / `bg-surface` / `border-line` / `font-mono` 처럼 **의미 이름 그대로** 쓴다.
+ * `text-amber-400` 같은 원색 팔레트는 이 프로젝트에서 금지 — 색 이름이 곧 의미다.
+ */
+@theme inline {
+  --color-*: initial; /* 기본 팔레트(red-500 등) 비활성 — 의미 토큰만 남긴다 */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-warm: var(--warm);
+  --color-warm-dim: var(--warm-dim);
+  --color-cool: var(--cool);
+  --color-cool-dim: var(--cool-dim);
+  --color-p1: var(--p1);
+  --color-p2: var(--p2);
+  --color-p3: var(--p3);
+  --color-ok: var(--ok);
+  --color-handoff: var(--handoff);
+  --color-handoff-dim: var(--handoff-dim);
+  --font-mono: var(--mono);
+  --font-sans: var(--sans);
+}
+
 * {
   box-sizing: border-box;
 }

@@ -126,7 +126,7 @@
   height: 6px;
   border-radius: 50%;
   background: currentColor;
-  animation: pulse 1.6s ease-in-out infinite;
+  animation: rt-pulse 1.6s ease-in-out infinite;
 }
 
 .doing-badge.is-stale {

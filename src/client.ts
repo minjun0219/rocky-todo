@@ -114,6 +114,9 @@ export async function ensureDaemon(ctx: CliContext): Promise<void> {
     cmd: [process.execPath, 'run', daemonPath],
     stdio: ['ignore', 'ignore', 'ignore'],
     env: process.env,
+    // 레포 루트 고정 — bunfig.toml(Tailwind serve 플러그인)은 프로세스 시작 시점의
+    // cwd 에서 읽힌다. 호출자 cwd 를 상속시키면 CSS 가 Tailwind 처리 없이 나간다.
+    cwd: join(import.meta.dir, '..'),
   }).unref();
   for (let i = 0; i < 25; i++) {
     await Bun.sleep(200);

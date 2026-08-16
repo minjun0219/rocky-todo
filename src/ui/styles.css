@@ -12,6 +12,16 @@
  * 수단이 순서이기 때문이다. 새 파일은 그 **앞에** 넣는다.
  */
 
+/*
+ * Tailwind 는 preflight 없이 들어온다 — theme + utilities 레이어만. 전체
+ * `@import "tailwindcss"` 는 요소 리셋(preflight)을 끌고 와 tokens.css 의 수제 리셋과
+ * 겹치며 화면을 바꾼다. 시각 동결이 이 마이그레이션의 성공 기준이다.
+ * utilities 는 온디맨드 생성이라 클래스를 쓰기 전까지 출력에 아무것도 더하지 않는다.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
 @import "./styles/tokens.css";
 @import "./styles/topbar.css";
 @import "./styles/layout.css";

@@ -47,7 +47,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--warm);
-  animation: pulse 2.4s ease-in-out infinite;
+  animation: rt-pulse 2.4s ease-in-out infinite;
 }
 
 .archived-toggle {

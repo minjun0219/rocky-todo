@@ -49,10 +49,10 @@
 }
 
 .is-on .link-pulse {
-  animation: pulse 2.4s ease-in-out infinite;
+  animation: rt-pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes rt-pulse {
   0%,
   100% {
     opacity: 1;
