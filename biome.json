@@ -7,6 +7,11 @@
   "assist": {
     "enabled": false
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "linter": {
     "rules": {
       "complexity": {

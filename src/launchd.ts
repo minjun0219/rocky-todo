@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DEFAULT_TODO_DIR } from './config';
 
 /**
@@ -94,6 +94,8 @@ export function plistContent(overrides?: PlistValues): string {
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <!-- bunfig.toml(Tailwind serve 플러그인)은 시작 시점 cwd 에서 읽힌다 — 레포 루트 고정. -->
+  <key>WorkingDirectory</key><string>${escapeXml(join(dirname(entryPath), '..'))}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>${escapeXml(path)}</string>

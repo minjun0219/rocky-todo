@@ -1,0 +1,10 @@
+# Bun fullstack 이 `src/ui/index.html` 을 서빙할 때 CSS 를 Tailwind 로 처리한다.
+# 별도 빌드 스텝 없이 요청 시점에 번들되므로 `dist/` 는 여전히 없다.
+#
+# 주의: bunfig.toml 은 프로세스 **시작 시점의 cwd** 기준으로 로드된다 (daemon.ts 의
+# chdir 는 그 뒤라 무관). 데몬은 세션의 임의 디렉터리에서 detached spawn 되므로,
+# spawn 하는 쪽이 cwd 를 레포 루트로 고정한다 — `src/client.ts` 의 `ensureDaemon`,
+# `src/launchd.ts` 의 plist(WorkingDirectory). 맨손 `bun run src/daemon.ts` 를 레포
+# 밖에서 부르면 이 파일을 못 읽어 CSS 가 Tailwind 처리 없이 나간다.
+[serve.static]
+plugins = ["bun-plugin-tailwind"]
