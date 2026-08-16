@@ -984,6 +984,22 @@ describe('handoff routes', () => {
     expect(body.note).toBe('테스트부터');
   });
 
+  test('POST handoff — 대상 세션을 깨울 poke 를 함께 돌려준다', async () => {
+    const todo = store.createTodo({ board: 'rocky-todo', title: '프렁크 래치 로깅' }, 'logan');
+    const res = await reqTo(
+      handleWith(() => SESSIONS),
+      `/api/todos/${todo.id}/handoff`,
+      { method: 'POST', body: JSON.stringify({ sessionId: 'sess-1' }) },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { poke: { to: string; message: string } };
+    // `to` 는 SendMessage 가 그대로 받는 세션 이름이어야 한다 — sessionId 가 아니다.
+    expect(body.poke.to).toBe('rocky-todo-1e');
+    expect(body.poke.message).toContain('프렁크 래치 로깅');
+    // 훅 주입이 실패해도 이것만 읽고 착수할 수 있어야 한다.
+    expect(body.poke.message).toContain('todo_list');
+  });
+
   test('POST handoff — sessionId 를 생략하면 보드로 자동 매칭', async () => {
     const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'logan');
     const res = await reqTo(

@@ -9,7 +9,7 @@ import {
   type RunCommand,
 } from './github';
 import { handoffPhase, type HandoffView, isUnstarted, resolveDoingState } from './doing';
-import { buildHandoffPromptFrom } from './handoff';
+import { buildHandoffPoke, buildHandoffPromptFrom } from './handoff';
 import {
   CROSS_SITE_MESSAGE,
   isCrossSiteRequest,
@@ -717,7 +717,14 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
           actor,
           currentBoardId,
         });
-        return json(handoff, 201);
+        // 큐에 넣는 것까지가 데몬이 할 수 있는 전부다 — 대상 세션의 턴을 여는 건 호출자
+        // 몫이라, 그대로 `SendMessage` 에 넘길 수 있는 모양으로 함께 돌려준다.
+        const poke = buildHandoffPoke({
+          sessionName: target.name,
+          todoRef: refOf(store, todo.boardId, todo.number, todo.id),
+          todoTitle: todo.title,
+        });
+        return json({ ...handoff, poke }, 201);
       }
 
       const todoSpawn = /^\/api\/todos\/([^/]+)\/spawn$/.exec(path);

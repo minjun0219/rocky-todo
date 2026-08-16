@@ -266,14 +266,19 @@ CLI `rocky-todo issue REF [--repo OWNER/NAME]`, MCP `todo_write { id, createIssu
 - 에이전트 자신의 변경(claude-code/codex/opencode)은 걸러서 자기 반향 없음
 - 끄기: `rocky.json` `todo.watch: false` 또는 env `ROCKY_TODO_WATCH=0`
 
-## 보드 → 세션 핸드오프 (Stop 훅, Claude Code 전용)
+## 보드 → 세션 핸드오프 (턴 경계 배달, Claude Code 전용)
 
 보드의 todo 를 실행 중인 Claude Code 세션에 넘길 수 있다 — 웹 UI 드로어의 "에이전트에게
 보내기" 버튼, 또는 `rocky-todo handoff REF [--session NAME] [--message "본문"]`. 데몬은
-세션에 아무것도 밀 수 없으므로(훅으로 유휴 세션을 깨울 수단이 없다) 요청은 큐에 쌓이고,
-대상 세션이 **턴을 끝내는 순간** `Stop` 훅이 집어 `decision: block` 으로 그 자리에서
-착수시킨다. `UserPromptSubmit` 훅도 같은 큐를 보므로 사용자가 그 세션에 먼저 말을 걸어도
-배달된다. 한 번에 한 건씩 순서대로 소화한다.
+세션에 아무것도 밀 수 없으므로 요청은 큐에 쌓이고, 대상 세션이 **턴 경계**에 이를 때
+훅이 집어간다 — `UserPromptSubmit`(턴 시작) 또는 `Stop`(턴 끝, `decision: block` 으로 그
+자리에서 착수). 한 번에 한 건씩 순서대로 소화한다.
+
+> **큐잉은 배달이 아니다.** 턴 경계가 와야 배달되므로 **idle 세션은 아무 일도 일어나지
+> 않는다** — 누군가 그 세션의 턴을 열어줘야 한다. 그래서 `handoff` 응답(`--json`)에는
+> `poke: { to, message }` 가 함께 온다. 에이전트라면 그대로 `SendMessage` 로 보내면 되고
+> (그 메시지가 여는 바로 그 턴에 훅이 상세 지시를 주입한다), 사람이라면 그 세션에 아무
+> 입력이나 한 줄 넣으면 된다. CLI 출력도 이 두 갈래를 그대로 안내한다.
 
 운영자가 알아둘 것:
 - **`claude` CLI 가 PATH 에 있어야 동작한다** — 세션 목록(`rocky-todo sessions`, 웹 UI 드로어의

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildHandoffPrompt, buildHandoffPromptFrom } from './handoff';
+import { buildHandoffPoke, buildHandoffPrompt, buildHandoffPromptFrom } from './handoff';
 import type { ClaimedHandoff } from './store';
 
 const base: ClaimedHandoff = {
@@ -58,4 +58,30 @@ test('buildHandoffPromptFrom — claim 없이도 같은 주입문을 만든다',
   expect(prompt).toContain('logan → rocky-todo#16 "세션 띄우기"');
   expect(prompt).toContain('메모: 테스트부터');
   expect(prompt).not.toContain('대기 중인 요청이');
+});
+
+describe('buildHandoffPoke', () => {
+  const poke = buildHandoffPoke({
+    sessionName: 'eelpout-a3',
+    todoRef: 'rocky-todo-11',
+    todoTitle: '세션 띄우기',
+  });
+
+  test('SendMessage 의 to 는 세션 이름이다', () => {
+    expect(poke.to).toBe('eelpout-a3');
+  });
+
+  test('참조와 제목으로 어느 건인지 알아볼 수 있다', () => {
+    expect(poke.message).toContain('rocky-todo-11');
+    expect(poke.message).toContain('세션 띄우기');
+  });
+
+  test('훅 주입이 없어도 착수할 수 있는 폴백을 담는다', () => {
+    expect(poke.message).toContain('todo_list { id: "rocky-todo-11" }');
+  });
+
+  test('본문(메모·착수 지시)은 싣지 않는다 — 같은 턴의 훅 주입과 겹친다', () => {
+    expect(poke.message).not.toContain('todo_status');
+    expect(poke.message).not.toContain('메모:');
+  });
 });

@@ -5,6 +5,7 @@ import { boardKeyFrom, detectActor } from './actor';
 import { buildContext, type CliContext, ensureDaemon, health, request } from './client';
 import { resolveTodoRuntimeConfig } from './config';
 import { isRepoSlug, parseRepoFromRemote } from './github';
+import type { HandoffPoke } from './handoff';
 import { installLaunchd, launchdStatus, uninstallLaunchd } from './launchd';
 import { formatNextCandidates, NEXT_DEFAULT_LIMIT, rankNext, toJsonCandidates } from './next';
 import { loadTodoConfig } from './rocky-config';
@@ -198,6 +199,43 @@ export function formatSpawnResult(ref: string, result: SpawnResult): string {
   return result.reused
     ? `✓ ${ref} → 이미 도는 세션(${result.handoff.sessionName ?? result.handoff.sessionId})에 큐잉 · ${result.worktreePath}`
     : `✓ ${ref} → 새 세션 ${result.sessionShortId} · ${result.worktreePath}\n  claude attach ${result.sessionShortId}`;
+}
+
+/** `POST /api/todos/:ref/handoff` 응답 — 생성된 handoff + 대상 세션을 깨울 poke. */
+export interface HandoffCreated extends Handoff {
+  /**
+   * **optional 이다** — CLI 와 데몬의 버전이 갈릴 수 있다. 데몬은 자기 버전이 설치본과
+   * 같으면 경로가 달라도 재기동하지 않으므로(의도된 동작) `poke` 를 모르는 데몬이 계속
+   * 살아 있을 수 있고, 그때 이 필드는 오지 않는다.
+   */
+  poke?: HandoffPoke;
+}
+
+/**
+ * `handoff` 결과를 렌더한다.
+ *
+ * "보냄"이라고 쓰지 않는다 — 이 시점에 일어난 일은 **큐잉**뿐이고, 배달은 대상 세션이
+ * 다음 턴 경계에 이르러야 일어난다. idle 세션은 그 턴이 영영 오지 않으므로 호출자가
+ * 턴을 열어줘야 한다는 것까지가 이 출력의 책임이다.
+ */
+export function renderHandoffCreated(ref: string, created: HandoffCreated): string {
+  const target = created.sessionName ?? created.sessionId;
+  const head = `✓ ${ref} → ${target} 큐에 넣음 (아직 배달 전 — 대상의 다음 턴에 주입된다)`;
+  if (!created.poke) {
+    // 구버전 데몬이다. 없는 poke 를 지어내지 않고 무엇이 어긋났는지와 두 갈래를 그대로 준다
+    // — 여기서 조용히 예전 문구로 돌아가면 "보냈는데 안 온다" 를 다시 만든다.
+    return [
+      head,
+      '  이 데몬은 poke 를 주지 않는다 (CLI 보다 낮은 버전) — 대상이 idle 이면 배달되지 않는다.',
+      '  `rocky-todo daemon stop` 후 최신 버전으로 다시 띄우거나, 그 세션에 직접 한 줄 입력해라.',
+    ].join('\n');
+  }
+  return [
+    head,
+    `  대상이 idle 이면 턴을 열어줘야 한다:`,
+    `    에이전트 → SendMessage { to: "${created.poke.to}", message: ... }  (--json 에 poke.message)`,
+    `    사람   → 그 세션에 아무 입력이나 한 줄`,
+  ].join('\n');
 }
 
 function renderTree(
@@ -726,11 +764,16 @@ export async function runCli(): Promise<void> {
           throw new Error(`활성 세션이 아니다: ${sessionName}`);
         }
       }
-      const handoff = await request<Handoff>(ctx, 'POST', todoRefPath(id, '/handoff', board), {
-        sessionId,
-        note: str(flags.message),
-      });
-      print(handoff, () => `✓ ${id} → ${handoff.sessionName ?? handoff.sessionId} 에게 보냄`);
+      const handoff = await request<HandoffCreated>(
+        ctx,
+        'POST',
+        todoRefPath(id, '/handoff', board),
+        {
+          sessionId,
+          note: str(flags.message),
+        },
+      );
+      print(handoff, () => renderHandoffCreated(id, handoff));
       return;
     }
 

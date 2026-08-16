@@ -54,7 +54,7 @@ rocky-todo/
 │   ├── rocky-config.ts             # ★ 경량 config 로더 (todo 블록만, enabled 미read, expandTilde 자체)
 │   ├── notify.ts                   # UserPromptSubmit 훅 순수 로직 (사람 변경 필터 + 세션별 커서)
 │   ├── sessions.ts                 # claude agents --json 래퍼 (활성 세션 목록 + 보드 매칭)
-│   ├── handoff.ts                  # 핸드오프 주입문 생성 (순수)
+│   ├── handoff.ts                  # 핸드오프 주입문 + 대상 세션을 깨울 poke 생성 (순수)
 │   ├── spawn.ts                    # 백그라운드 세션 기동 (워크트리 이름 규약 + claude --bg)
 │   ├── tailscale.ts / launchd.ts   # tailscale serve 연동 / launchd install
 │   ├── github.ts                   # gh CLI 연동 — createIssue/createIssueForTodo, git remote → owner/name 파싱
@@ -181,9 +181,14 @@ rocky-todo/
   웹 UI 의 번호 버튼은 참조가 아니라 `/rocky-todo:board rocky-12` 슬래시 커맨드를
   복사한다(`boardCommand` in `src/ui/lib.ts`) — 붙여넣기 한 번이 곧 착수 요청이 된다.
 - **핸드오프(보드 → 세션)**: 보드에서 todo 를 실행 중인 Claude Code 세션에 넘긴다.
-  데몬은 세션에 밀 수 없다(훅으로 유휴 세션을 깨울 수단이 없다) — `handoffs` 큐에 쌓고
-  세션 훅이 당겨간다. `Stop` 훅이 집으면 `decision: block` 으로 그 자리에서 착수하고,
-  `UserPromptSubmit` 훅은 사용자가 말을 걸 때 같은 큐를 본다. 한 번에 한 건만 배달한다.
+  데몬은 세션에 밀 수 없다 — `handoffs` 큐에 쌓고 세션 훅이 당겨간다. `Stop` 훅이 집으면
+  `decision: block` 으로 그 자리에서 착수하고, `UserPromptSubmit` 훅은 턴이 열릴 때 같은
+  큐를 본다. 한 번에 한 건만 배달한다.
+  **배달은 턴 경계에서만 일어나므로 idle 세션에는 닿지 않는다** — 턴을 여는 건 handoff 를
+  호출한 에이전트 몫이다. `POST /api/todos/:ref/handoff` 는 그래서 `poke: { to, message }`
+  (`buildHandoffPoke`)를 함께 돌려주고, 호출자가 그대로 `SendMessage` 로 보내면 그 턴의
+  `UserPromptSubmit` 훅이 상세 지시를 주입한다. poke 본문을 늘리지 마라 — 같은 턴에
+  주입문이 따로 오므로 내용이 겹친다.
   세션 목록은 `claude agents --json` (`src/sessions.ts`, 주입 가능 `RunCommand`) — `claude`
   CLI 가 없으면 이 기능만 비활성되고(`available: false` + `reason`) 보드 나머지는 정상이다.
   대상은 보드 key ↔ 세션 cwd **경로 세그먼트** 매칭 — 후보가 정확히 1개일 때만 자동으로
@@ -325,3 +330,7 @@ bunx changeset      # user-facing 변경의 버전 의도 선언 (패키지 이�
   changeset 어디에도 보드 참조(`rocky-12`)를 적지 않는다. 보드 번호는 사용자 로컬
   데몬의 것이라 레포를 보는 다른 사람에게는 해석 불가능하고, 보드가 재생성되면 번호가
   달라진다. 작업과 항목의 연결은 보드 쪽(댓글·`links`)에 남긴다.
+  **예외: 테스트 픽스처.** `renderHandoffCreated('rocky-12', …)` 처럼 ref 파서·렌더러에
+  먹이는 합성 입력은 실재하는 항목을 가리키는 주장이 아니라 `<board>-<number>` 라는 **형태**
+  자체가 테스트 대상이라, 중립 문자열로 바꾸면 오히려 무엇을 검증하는지가 흐려진다. 금지의
+  이유(외부인이 해석 못 하는 식별자를 레포에 박는 것)가 여기엔 해당하지 않는다.
