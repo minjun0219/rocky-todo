@@ -28,5 +28,3 @@ export function Markdown({ text }: { text: string }) {
     </>
   );
 }
-
-/** 댓글 작성 — ⌘/Ctrl+Enter 로 전송. 빈 본문은 보내지 않는다. */

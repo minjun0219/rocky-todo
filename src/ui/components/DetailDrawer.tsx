@@ -44,7 +44,9 @@ export function DetailDrawer() {
           <Dialog.Title className="sr-only">
             {detail.kind === 'todo' ? '할 일 상세' : '메모 상세'}
           </Dialog.Title>
-          <Dialog.Close className="drawer-close">✕</Dialog.Close>
+          <Dialog.Close className="drawer-close" aria-label="상세 닫기">
+            ✕
+          </Dialog.Close>
           {detail.kind === 'todo' ? <TodoDetail /> : <NoteDetail />}
           {detail.kind === 'todo' && detail.todo && <CommentComposer todoId={detail.todo.id} />}
           <Timeline history={detail.history} comments={detail.comments} />
