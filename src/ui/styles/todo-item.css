@@ -135,3 +135,11 @@
 .chip-link:hover {
   border-color: var(--cool);
 }
+
+/* 메타 칩 묶음.
+   넓은 화면에서는 `display: contents` — 칩들이 그대로 `.todo-row` 의 flex 아이템이라
+   래퍼가 생겨도 레이아웃이 바뀌지 않는다. 좁은 화면에서만 실제 박스가 된다
+   (`responsive.css` 의 grid 배치). */
+.todo-meta {
+  display: contents;
+}

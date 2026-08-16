@@ -55,28 +55,62 @@
     overflow-y: visible;
     flex-shrink: 0;
   }
-  /* 좁은 화면에서는 메타 칩이 다음 줄로 흐르게 */
+  /* 한 항목은 한 덩어리다 — 2행 grid.
+
+       [✓]  7  제목 (길면 감싼다)
+                p2  💬3  링크↗
+
+     이전에는 `flex-wrap: wrap` + `.todo-ref`/`.todo-title` 양쪽의 `min-height: 44px`
+     조합이었는데, 탭 타깃을 맞추려던 그 min-height 가 각자 자기 flex 줄을 44px 로
+     밀어올려 한 항목이 세 줄 120px 로 흩어졌다(390px 실측). 체크박스와 번호만 있는
+     첫 줄이 제목과 떨어져 보이는 것도 그 부작용이다.
+
+     grid 는 배치와 타깃 크기를 분리한다 — 행은 두 줄로 고정하고, 44px 는 각 컨트롤의
+     padding 으로 확보한다. 그래서 칩이 없는 항목은 한 줄(~52px)로 끝난다. */
   .todo-row {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: 8px;
     row-gap: 2px;
+    align-items: start;
+    padding: 2px 6px;
+  }
+  .todo-check-hit {
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .todo-ref {
+    grid-row: 1;
   }
   .todo-title {
+    grid-row: 1;
     white-space: normal;
     overflow-wrap: anywhere;
-    /* 둘 다 필요하다 — 제목이 어느 flex 줄에 놓이느냐에 따라 모자라는 쪽이 다르다.
-       390px 실측(제목 길이를 늘려가며):
-
-         제목이 `.todo-ref` 와 같은 줄  → 줄 높이가 ref 의 44px 라 stretch 만으로 44px
-         제목이 자기 줄로 밀려 1줄      → 그 줄의 높이는 제목 자신뿐이라 21px (여기가 구멍)
-         제목이 자기 줄로 밀려 2줄      → 42px
-
-       stretch 는 "줄 높이를 채운다"일 뿐이라, 제목이 혼자인 줄에서는 채울 높이가 자기
-       높이다 — 21px 짜리 타깃이 남는다. min-height 가 그 바닥을 받친다.
-       반대로 min-height 만 쓰면 ref 와 같은 줄일 때 글자 위아래 여백을 안 먹는다.
-       함께 쓰면 같은 줄일 때는 이미 44px 라 행이 커지지 않고(공짜), 혼자인 줄에서만
-       44px 로 자란다 — 자라는 그 행은 원래 타깃이 진짜로 작던 행이다. */
-    align-self: stretch;
-    min-height: 44px;
+    text-align: left;
+    /* 44px 타깃을 min-height 가 아니라 padding 으로 만든다 — min-height 는 grid 행을
+       늘리지만 padding 은 글자를 감싸므로, 제목이 한 줄이든 두 줄이든 타깃이 따라온다. */
+    padding: 11px 0;
+  }
+  /* 칩 줄. **제목 열에 맞춰** 시작한다 — 번호 열부터 시작하면 제목과 좌측이 어긋나
+     한 항목이 두 덩어리로 읽힌다. */
+  .todo-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    grid-column: 3 / -1;
+    grid-row: 2;
+  }
+  /* 칩이 하나도 없으면 빈 줄이 생기지 않게 한다. */
+  .todo-meta:empty {
+    display: none;
+  }
+  /* 끝난 항목은 목록에 남되 자리를 덜 차지한다 — 좁은 화면에서 남은 일을 가리는 게
+     가장 큰 비용이라, 완료 항목의 칩 줄은 접어 한 줄로 만든다. 라벨·마감처럼 접히는
+     정보는 이미 끝난 일에 대한 것이고, 필요하면 눌러서 드로어에서 본다.
+     댓글은 예외다 — 완료 뒤에 달린 논의가 오히려 읽어야 할 것이라 남긴다. */
+  .is-done .todo-meta > :not(.comment-badge) {
+    display: none;
   }
   /* 터치 타깃 44×44 — 손가락으로 누르는 컨트롤은 시각 크기와 무관하게 히트 영역을 확보한다.
      예전엔 건드리는 컨트롤마다 그때그때 더해 왔는데, 한 번에 모아 정리했다. */
@@ -91,7 +125,7 @@
   }
   .todo-ref {
     min-height: 44px;
-    min-width: 44px;
+    min-width: 32px;
   }
   .drawer-ref {
     display: inline-flex;
