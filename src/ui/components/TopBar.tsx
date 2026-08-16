@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useUiStore } from '../store';
+import { ThermalStrip } from './ThermalStrip';
 
 /** 상단 바 — 워드마크 + 링크(SSE) 상태 + 보관됨 표시 토글 + 호출자(actor) 설정. */
 export function TopBar() {
@@ -20,6 +21,8 @@ export function TopBar() {
         <span className="link-pulse" />
         {connected ? 'LINK ♪' : 'NO LINK'}
       </span>
+      <div className="topbar-spacer" />
+      <ThermalStrip />
       <div className="topbar-spacer" />
       <label className="archived-toggle">
         <input

@@ -25,9 +25,15 @@ export function BoardHeader({ board }: { board: Board }) {
     <header className="board-header">
       <div className="board-header-line">
         <h1 className="board-header-title">{board.title}</h1>
-        <span className="board-header-key" title="보드 key — 참조 접두사이자 cwd 로 유추되는 이름">
-          {board.key}
-        </span>
+        {/* 제목이 key 그대로면 같은 글자를 두 번 찍지 않는다. */}
+        {board.title !== board.key && (
+          <span
+            className="board-header-key"
+            title="보드 key — 참조 접두사이자 cwd 로 유추되는 이름"
+          >
+            {board.key}
+          </span>
+        )}
         <div className="board-header-spacer" />
         <button
           type="button"
