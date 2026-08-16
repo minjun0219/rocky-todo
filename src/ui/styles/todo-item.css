@@ -110,6 +110,9 @@
 .prio-p1 {
   color: var(--p1);
   border-color: var(--p1);
+  /* 긴급만 면을 깐다 — 외곽선뿐인 p2/p3 과 무게가 갈려 스캔에서 먼저 잡힌다.
+     doing-badge 의 8% 틴트와 같은 수법. */
+  background: color-mix(in srgb, var(--p1) 14%, transparent);
 }
 
 .prio-p2 {

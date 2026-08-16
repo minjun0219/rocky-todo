@@ -199,6 +199,15 @@
   .doing-pulse {
     animation: none;
   }
+  /* tokens.css 의 공통 전이도 끈다. */
+  a,
+  button,
+  input,
+  .todo-row,
+  .board-item,
+  .chip {
+    transition: none;
+  }
 }
 
 .backdrop-hit {

@@ -98,3 +98,18 @@ textarea {
   flex-direction: column;
   height: 100vh;
 }
+
+/* 상호작용 요소 공통 전이 — 호버/포커스가 뚝뚝 끊기지 않게. 색·배경·테두리만 걸고
+   레이아웃 속성(폭·높이)은 걸지 않는다. reduced-motion 은 responsive.css 가 처리. */
+a,
+button,
+input,
+.todo-row,
+.board-item,
+.chip {
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
