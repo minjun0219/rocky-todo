@@ -1,5 +1,107 @@
 # @minjun0219/rocky-todo
 
+## 0.12.0
+
+### Minor Changes
+
+- [#53](https://github.com/minjun0219/rocky-todo/pull/53) [`e89e69f`](https://github.com/minjun0219/rocky-todo/commit/e89e69f6a303ac31b64e25b0d8e135ea689d2791) Thanks [@minjun0219](https://github.com/minjun0219)! - 상세 드로어를 Radix Dialog 셸로 바꾼다
+
+  수제 셸의 유일한 접근성 결함이던 **포커스 트랩·복원**이 생겼다 — 열리면 포커스가
+  드로어 안으로 들어가고, Tab 이 밖으로 새지 않으며, 닫으면 원래 자리로 돌아간다.
+  Esc(편집 중 가드 유지)·백드롭 탭·배경 스크롤 잠금은 Radix 로 넘어갔고 시각은 그대로다.
+  912줄 단일 파일이던 DetailDrawer 는 셸 + 6파일로 분해됐다.
+
+- [#40](https://github.com/minjun0219/rocky-todo/pull/40) [`3a9835e`](https://github.com/minjun0219/rocky-todo/commit/3a9835e2de7ef3a105147f1401ec0bdd1030feaa) Thanks [@minjun0219](https://github.com/minjun0219)! - handoff 가 idle 세션에도 닿게 한다
+
+  `handoff` 배달(claim)은 훅에서만 일어나고 훅은 턴 경계(`UserPromptSubmit` / `Stop`)에서만
+  돈다. idle 세션에는 그 경계가 오지 않아 요청이 큐에 앉은 채 방치됐고, CLI 는 그걸
+  "✓ … 에게 보냄" 이라고 알려 배달된 것처럼 보이게 했다.
+
+  - `POST /api/todos/:ref/handoff` 응답에 `poke: { to, message }` 추가 — 대상 세션의 턴을 여는
+    `SendMessage` 페이로드. 호출한 에이전트가 그대로 보내면 그 턴의 훅이 상세 지시를 주입한다.
+  - CLI 출력을 "큐에 넣음 (아직 배달 전)" 으로 고치고, 턴을 여는 방법을 에이전트/사람 양쪽으로
+    안내한다.
+  - `/rocky-todo:next` 의 넘기기 절차에 poke 단계를 명시.
+
+- [#37](https://github.com/minjun0219/rocky-todo/pull/37) [`f4fa3d3`](https://github.com/minjun0219/rocky-todo/commit/f4fa3d32bc8d65d8a42a0237ee3029d379324a26) Thanks [@minjun0219](https://github.com/minjun0219)! - 보드 메타 관리 — 이름·key·설명·GitHub 을 보고 고친다
+
+  보드를 열면 목록 위에 헤더가 뜬다: 이름 · key · 한 줄 설명 · GitHub 링크 · 레포 경로.
+  `편집` 으로 그 자리에서 이름·key·설명·GitHub 을 한 번에 고치고, CLI 는 `board show|rename|title|desc`
+  가 같은 일을 한다. `PATCH /api/boards/:key` 도 이제 여러 필드를 함께 받는다 — 한
+  트랜잭션이라 부분 적용이 없다(예전의 "repo 와 path 를 같이 보내면 400" 제약이 사라졌다).
+
+  **key 를 바꿔도 옛 참조는 죽지 않는다.** 옛 key 는 별칭으로 남아 `gotgan-12` 같은 참조와
+  옛 `board` 인자를 계속 받는다. 내보내는 문자열은 언제나 새 key 다.
+
+  곁들여, 변경 요청(POST/PATCH/PUT/DELETE)에 cross-site 가드를 붙였다 — 다른 사이트의
+  페이지가 무인증 로컬 데몬에 폼을 POST 하던 통로를 막는다. CLI·훅·MCP·웹 UI 는 영향 없다.
+
+- [#43](https://github.com/minjun0219/rocky-todo/pull/43) [`28b2e3d`](https://github.com/minjun0219/rocky-todo/commit/28b2e3d9cf0734e3773878200ad785d3ad0f961c) Thanks [@minjun0219](https://github.com/minjun0219)! - 좁은 화면에서 할 일 한 줄을 한 덩어리로 붙인다
+
+  390px 에서 한 항목이 세 줄 120px 로 흩어져 한 화면에 5개밖에 안 들어갔다. 체크박스와
+  번호만 있는 첫 줄이 제목과 떨어져 보여 한 항목이 두 개처럼 읽히기도 했다.
+
+  원인은 `flex-wrap: wrap` + `.todo-ref`/`.todo-title` 양쪽의 `min-height: 44px` 였다 —
+  탭 타깃을 맞추려던 그 min-height 가 각자 자기 flex 줄을 44px 로 밀어올렸다.
+
+  2행 grid 로 바꿔 배치와 타깃 크기를 분리했다. 44px 는 컨트롤의 padding 으로 확보하므로
+  칩이 없는 항목은 한 줄로 끝난다. 칩 줄은 제목 열에 맞춰 좌측을 정렬했고, 완료된 항목은
+  칩 줄을 접어(댓글 배지는 남긴다) 남은 일을 덜 가리게 했다.
+
+  같은 화면에 5개 → 9개. **넓은 화면 레이아웃은 바뀌지 않는다** — 새로 생긴 `.todo-meta`
+  래퍼가 그쪽에서는 `display: contents` 다.
+
+- [#48](https://github.com/minjun0219/rocky-todo/pull/48) [`0c3c5e9`](https://github.com/minjun0219/rocky-todo/commit/0c3c5e9bce3d50a9950a7c5d3ce3a87ec7e52b95) Thanks [@minjun0219](https://github.com/minjun0219)! - 모바일 사용성 — 바텀시트 드로어 + 메모 레일 접힘
+
+  - 좁은 화면의 상세 드로어가 옆이 아니라 **아래에서 올라오는 시트**가 된다 (88dvh,
+    상단 그랩바, 올라오는 전이 — reduced-motion 시 꺼짐). 닫기 버튼은 우상단에서
+    **우하단 엄지 존의 고정 pill** 로 내려온다 (safe-area 대응).
+  - 메모 레일이 좁은 화면에서 **기본 접힘**이다 — 헤더가 개수를 보여주는 토글이 되고,
+    `+ 메모` 는 접힘을 강제로 편다. 넓은 화면은 그대로.
+
+- [#45](https://github.com/minjun0219/rocky-todo/pull/45) [`db3eb94`](https://github.com/minjun0219/rocky-todo/commit/db3eb9436ff59be8ba55cb7938b913d889e45f44) Thanks [@minjun0219](https://github.com/minjun0219)! - Tailwind v4 토대를 깐다 — 시각 무변경
+
+  `bun-plugin-tailwind` 를 `[serve.static]` 에 걸어 데몬이 서빙 시점에 CSS 를 Tailwind 로
+  처리한다. 빌드 스텝은 여전히 없다. preflight 는 들이지 않고(theme + utilities 레이어만)
+  `@theme inline` 으로 기존 의미 토큰(`--warm`/`--cool`/…)을 유틸리티에 다리 놓는다 —
+  `text-warm` 처럼 의미 이름 그대로 쓰고, `text-amber-400` 류 원색 팔레트는 비활성.
+
+  bunfig.toml 은 시작 시점 cwd 에서 읽히므로 spawn 쪽(cli/hook 의 `ensureDaemon`, launchd
+  plist)이 cwd 를 레포 루트로 고정한다. 수제 keyframes 는 `rt-pulse` 로 네임스페이스 —
+  Tailwind 스캐너가 bare `pulse` 를 클래스 후보로 오인해 자기 keyframes 를 싣는 충돌을
+  원천 차단한다.
+
+  기존 화면은 그대로다 — computed 스타일 스팟 체크로 확인. 파티션별 유틸리티 이관은
+  후속 PR 에서 파일 단위로 간다.
+
+- [#46](https://github.com/minjun0219/rocky-todo/pull/46) [`98facc7`](https://github.com/minjun0219/rocky-todo/commit/98facc7bfcb35c316f3731412fc4d49a0ad1eab3) Thanks [@minjun0219](https://github.com/minjun0219)! - 온도 띠 + 마이크로 폴리시
+
+  - **온도 띠(thermal strip)** — 상단 바 중앙에 최근 활동 48건을 시간순 눈금으로 그린다.
+    색은 두 대기 그대로(warm=에이전트, cool=사람), 과거로 갈수록 식는다(투명해진다).
+    `/api/history` 가 이미 주는 `{actor, at}` 만 쓴다 — 스키마 변경 없음. 560px 아래에선
+    숨긴다.
+  - 상호작용 요소에 150ms 색 전이 (reduced-motion 시 꺼짐).
+  - p1 칩에 14% 틴트 — 긴급이 외곽선뿐인 p2/p3 과 무게가 갈린다.
+  - 보드 제목이 key 그대로면 같은 글자를 두 번 찍지 않는다.
+
+### Patch Changes
+
+- [#42](https://github.com/minjun0219/rocky-todo/pull/42) [`f35a6ff`](https://github.com/minjun0219/rocky-todo/commit/f35a6ff437cef643fc3470364897c87795786cf7) Thanks [@minjun0219](https://github.com/minjun0219)! - 모바일 댓글 도구의 좌우 탭 여백을 되살린다
+
+  `@media (max-width: 900px)` 의 `.comment-tool { padding: 0 8px }` 가 뒤에 오는 베이스
+  규칙의 `padding: 0` 에 덮여 있었다. 좁은 화면에서 댓글 수정·보관 버튼의 탭 타깃이
+  글자 폭만큼으로 좁아져 누르기 어려웠다.
+
+  반응형 파티션을 @import 목록의 마지막으로 옮겨 고쳤다 — 베이스를 `!important` 없이
+  덮으려면 순서가 뒤여야 한다는 원래 의도대로다.
+
+- [#54](https://github.com/minjun0219/rocky-todo/pull/54) [`f501d16`](https://github.com/minjun0219/rocky-todo/commit/f501d16b1e5f461528b7db1c6215c7c524b52ce2) Thanks [@minjun0219](https://github.com/minjun0219)! - 좁은 화면을 문서 스크롤로 되돌린다
+
+  내부 스크롤 컨테이너(.layout overflow-y:auto)가 iOS 의 네이티브 스크롤 동작 —
+  사파리 툴바 자동 숨김, 상태바 탭으로 맨 위, 자연스러운 고무줄 — 을 전부 죽이고
+  있었다. 높이를 뷰포트에 가두지 않고 내용대로 흐르게 두면 문서가 스크롤한다.
+  새 작업 입력(quick-add)의 sticky 는 문서 스크롤 기준으로 그대로 동작한다.
+
 ## 0.11.0
 
 ### Minor Changes
