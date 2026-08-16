@@ -63,7 +63,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       </button>
       <button
         type="button"
-        className={`todo-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left hover:text-warm ${done ? 'text-faint line-through' : 'text-text'}`}
+        className={`todo-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left ${done ? 'text-faint line-through' : 'text-text hover:text-warm'}`}
         onClick={() => void openTodoDetail(todo.id)}
       >
         {todo.title}
