@@ -4,25 +4,20 @@
 
 /* ── drawer ─────────────────────────────────────── */
 
-/* 드로어가 열린 동안 뒤 배경이 스크롤되지 않게 한다. iOS 는 `html, body` 를 100%(큰
-   뷰포트) 로 두고 `.app` 은 100dvh(작은 뷰포트) 라, 그 차이(URL 바 높이만큼) 만큼 document
-   자체가 스크롤 가능해진다 — `.drawer-backdrop` 은 fixed 라 `.layout` 을 거치지 않고 이
-   document 스크롤로 바로 새므로, body 의 overflow 를 hidden 으로 눌러 뷰포트 스크롤 자체를
-   막는다. */
-body.is-drawer-open {
-  overflow: hidden;
-}
-
+/* Radix Portal 구조 — Overlay 와 Content 는 형제다. 스크림은 깔개일 뿐이고
+   드로어는 스스로 자리를 잡는다(fixed). 배경 스크롤 잠금은 Radix 가 한다. */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(10, 7, 4, 0.55);
-  display: flex;
-  justify-content: flex-end;
   z-index: 10;
 }
 
 .drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 10;
   width: min(440px, 92vw);
   background: var(--surface);
   border-left: 1px solid var(--line);
@@ -32,7 +27,6 @@ body.is-drawer-open {
      새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
   overscroll-behavior: contain;
   padding: 20px 22px;
-  position: relative;
 }
 
 .drawer-close {
