@@ -85,6 +85,12 @@
     grid-row: 1;
     align-self: center;
   }
+  /* 손가락 기준의 시각 크기 — 데스크톱 15px 는 폰에서 소심하다(실기기 피드백).
+     히트 영역(44px)은 그대로다. */
+  .todo-check {
+    width: 18px;
+    height: 18px;
+  }
   .todo-ref {
     grid-row: 1;
   }
@@ -139,12 +145,15 @@
   .todo-ref {
     position: relative;
     min-height: 44px;
-    min-width: 32px;
+    /* 32px 예약 폭이 폰에서는 체크박스와 번호 사이 빈 공터로 보였다(실기기 피드백).
+       2ch 면 두 자리까지 우정렬이 유지되면서 번호가 체크박스 옆에 붙는다. */
+    min-width: 2ch;
   }
   .todo-ref::after {
     content: "";
     position: absolute;
-    inset: 0 -6px;
+    /* 예약 폭이 준 만큼 히트 영역을 좌우로 더 벌린다. */
+    inset: 0 -12px;
   }
   .drawer-ref {
     display: inline-flex;
@@ -190,6 +199,10 @@
     align-items: center;
     justify-content: center;
     min-height: 44px;
+  }
+  /* 버튼이 44px 로 커지면 8px 세로 간격이 붙어 보인다(실기기 피드백) — 줄 사이만 넓힌다. */
+  .drawer-actions {
+    row-gap: 12px;
   }
   .notes-rail {
     border-left: none;
