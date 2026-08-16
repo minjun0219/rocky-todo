@@ -75,8 +75,10 @@
     align-items: start;
     padding: 2px 6px;
   }
+  /* 제목 줄에 맞춘다 — `1 / span 2` 로 두면 메타 행이 없을 때도 2행이 생겨 row-gap 이
+     남고, 제목이 길어질수록 체크박스가 블록 중앙으로 내려가 어느 제목의 것인지 흐려진다. */
   .todo-check-hit {
-    grid-row: 1 / span 2;
+    grid-row: 1;
     align-self: center;
   }
   .todo-ref {
@@ -101,8 +103,13 @@
     grid-column: 3 / -1;
     grid-row: 2;
   }
-  /* 칩이 하나도 없으면 빈 줄이 생기지 않게 한다. */
+  /* 메타 행을 아예 만들지 않아야 하는 두 경우.
+     `:empty` 는 **DOM 에 자식이 없을 때만** 맞는다 — 아래 완료 항목처럼 자식이 있는데
+     전부 `display: none` 인 경우는 잡지 못해 0 높이 박스가 2행을 차지한다(실측 확인). */
   .todo-meta:empty {
+    display: none;
+  }
+  .is-done .todo-meta:not(:has(.comment-badge)) {
     display: none;
   }
   /* 끝난 항목은 목록에 남되 자리를 덜 차지한다 — 좁은 화면에서 남은 일을 가리는 게
@@ -123,9 +130,17 @@
     /* 늘어난 히트 영역이 행 높이와 좌측 정렬을 밀지 않게 상쇄한다 — 시각 밀도는 그대로. */
     margin: -8px 0 -8px -8px;
   }
+  /* 번호는 한두 자리라 44px 를 시각 폭으로 주면 제목이 그만큼 밀린다. 히트 영역만
+     가상 요소로 넓혀 레이아웃을 건드리지 않고 44×44 를 만든다. */
   .todo-ref {
+    position: relative;
     min-height: 44px;
     min-width: 32px;
+  }
+  .todo-ref::after {
+    content: "";
+    position: absolute;
+    inset: 0 -6px;
   }
   .drawer-ref {
     display: inline-flex;
