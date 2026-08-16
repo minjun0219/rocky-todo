@@ -8,17 +8,17 @@
 /* ── responsive & reduced-motion (베이스 규칙 뒤 — !important 없이 우선) ── */
 
 @media (max-width: 900px) {
-  /* iOS Safari 의 동적 툴바 대응 — dvh 미지원 브라우저는 베이스의 100vh 유지 */
-  @supports (height: 100dvh) {
-    .app {
-      height: 100dvh;
-    }
+  /* 좁은 화면은 **문서 스크롤**이다 — 내부 스크롤 컨테이너로 만들면 iOS 의 네이티브
+     스크롤 동작(사파리 툴바 자동 숨김, 상태바 탭으로 맨 위, 자연스러운 고무줄)이 전부
+     죽는다. 높이를 뷰포트에 가두지 않고 내용대로 흐르게 두면 문서가 스크롤한다.
+     quick-add 의 sticky 도 문서 스크롤 기준이라 그대로 동작한다. */
+  .app {
+    height: auto;
+    min-height: 100dvh;
   }
   .layout {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
   .topbar {
     flex-wrap: wrap;
