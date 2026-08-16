@@ -1,35 +1,76 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NoteView } from '../../server';
 import { boardCommand, copyRefWithFeedback, formatElapsed } from '../lib';
 import { useUiStore } from '../store';
 
-/** 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영. */
+const NARROW_QUERY = '(max-width: 900px)';
+
+/** 좁은 화면인가 — responsive.css 의 900px 경계와 같은 값이다. */
+function useIsNarrow(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const mq = window.matchMedia(NARROW_QUERY);
+      mq.addEventListener('change', notify);
+      return () => mq.removeEventListener('change', notify);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+  );
+}
+
+/**
+ * 우측 메모 레일 — 스티커 카드. 인라인 편집, 저장/보관은 서버 확정 후 반영.
+ *
+ * 좁은 화면에선 세로 스택의 맨 아래라 도달이 멀어 **기본 접힘**이다 — 헤더가 토글이
+ * 되고 개수만 보인다(보드 항목: 모바일 메모 레일 접근성). 넓은 화면에선 토글이
+ * 비활성이고 본문은 항상 보인다(`responsive.css`).
+ */
 export function NotesRail() {
   const notes = useUiStore((s) => s.notes);
   const selected = useUiStore((s) => s.selected);
   const addNote = useUiStore((s) => s.addNote);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // 넓은 화면에선 본문이 항상 보이므로 토글은 no-op 이고 aria 도 '펼침'이 정직하다.
+  const isNarrow = useIsNarrow();
 
   return (
-    <aside className="notes-rail">
+    <aside className={`notes-rail ${mobileOpen ? 'is-open' : ''}`}>
       <div className="notes-head">
-        <span className="sidebar-label">NOTES</span>
+        <button
+          type="button"
+          className="notes-toggle"
+          aria-expanded={isNarrow ? mobileOpen : true}
+          onClick={() => {
+            if (isNarrow) {
+              setMobileOpen((v) => !v);
+            }
+          }}
+        >
+          <span className="sidebar-label">
+            NOTES
+            {notes.length > 0 ? ` · ${notes.length}` : ''}
+            <span className="notes-caret">{mobileOpen ? ' ▾' : ' ▸'}</span>
+          </span>
+        </button>
         <button
           type="button"
           className="notes-add"
-          onClick={() =>
+          onClick={() => {
+            setMobileOpen(true); // 접힌 채 추가하면 새 메모가 안 보인다
             void addNote({
               board: selected === 'all' ? undefined : selected,
               title: '새 메모',
-            })
-          }
+            });
+          }}
         >
           + 메모
         </button>
       </div>
-      {notes.length === 0 && <div className="empty-state">메모가 없다. 스크래치패드로 쓰자.</div>}
-      {notes.map((note) => (
-        <NoteCard key={note.id} note={note} />
-      ))}
+      <div className="notes-body">
+        {notes.length === 0 && <div className="empty-state">메모가 없다. 스크래치패드로 쓰자.</div>}
+        {notes.map((note) => (
+          <NoteCard key={note.id} note={note} />
+        ))}
+      </div>
     </aside>
   );
 }

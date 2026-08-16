@@ -41,6 +41,10 @@
   .sidebar-label {
     display: none;
   }
+  /* 위 숨김은 칩 행(BOARDS)용이다 — NOTES 토글의 라벨(개수·캐럿 포함)은 보여야 한다. */
+  .notes-toggle .sidebar-label {
+    display: inline;
+  }
   .board-item {
     white-space: nowrap;
     flex-shrink: 0;
@@ -152,9 +156,23 @@
     min-height: 44px;
     min-width: 44px;
   }
+  /* 닫기를 엄지 범위로 — 우상단 ✕ 는 한 손 파지에서 못 닿는다. 스크롤과 무관하게
+     제자리에 있도록 viewport 고정. 시트가 전폭이라 겹칠 레이아웃이 없다. */
   .drawer-close {
-    min-height: 44px;
-    min-width: 44px;
+    position: fixed;
+    top: auto;
+    right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: 11;
+    min-height: 48px;
+    min-width: 48px;
+    display: grid;
+    place-content: center;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 16px;
   }
   .comment-tool {
     min-height: 44px;
@@ -180,8 +198,50 @@
     overflow-y: visible;
     flex-shrink: 0;
   }
+  /* 메모는 기본 접힘 — 헤더(개수 표시)만 남기고, 토글로 편다. */
+  .notes-toggle {
+    cursor: pointer;
+    min-height: 44px;
+  }
+  .notes-caret {
+    display: inline;
+  }
+  .notes-body {
+    display: none;
+  }
+  .notes-rail.is-open .notes-body {
+    display: contents;
+  }
+  /* 좁은 화면에선 옆이 아니라 **아래에서 올라오는 시트**다. 전폭 오버레이 + 우상단 ✕ 는
+     엄지 도달 범위 밖이었다 (보드 항목: 모바일 드로어를 바텀시트로). 상단 그랩바는
+     닫기 힌트, 실제 닫기는 백드롭 탭(위 12dvh)·Esc·닫기 버튼 그대로. */
+  .drawer-backdrop {
+    justify-content: stretch;
+    align-items: flex-end;
+  }
   .drawer {
     width: 100vw;
+    height: 88dvh;
+    border-left: none;
+    border-top: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+    animation: rt-sheet-up 0.22s ease-out;
+  }
+  /* 그랩바 — 시트 문법의 관례적 신호. 장식이므로 콘텐츠 흐름 밖(::before)에 둔다. */
+  .drawer::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--faint);
+    margin: 0 auto 10px;
+  }
+  @keyframes rt-sheet-up {
+    from {
+      transform: translateY(24px);
+      opacity: 0.6;
+    }
   }
   /* iOS Safari: 16px 미만 입력 필드 포커스 시 자동 확대 방지 */
   .quick-add-input,
@@ -196,7 +256,8 @@
 @media (prefers-reduced-motion: reduce) {
   .is-on .link-pulse,
   .doing-dot,
-  .doing-pulse {
+  .doing-pulse,
+  .drawer {
     animation: none;
   }
   /* tokens.css 의 공통 전이도 끈다. */
