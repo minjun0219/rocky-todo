@@ -119,3 +119,33 @@ describe('TodoItem 참조 복사 버튼', () => {
     }
   });
 });
+
+describe('메타 칩 묶음(.todo-meta)', () => {
+  // 좁은 화면의 2행 grid 는 칩이 이 래퍼 **안**에 있다는 전제로 배치된다
+  // (`responsive.css` 의 `.todo-meta { grid-column: 3 / -1; grid-row: 2 }`).
+  // 칩을 래퍼 밖에 새로 추가하면 그 칩만 grid 자동 배치로 엉뚱한 칸에 떨어지는데,
+  // 넓은 화면에서는 `display: contents` 라 티가 나지 않아 모르고 지나치기 쉽다.
+  test('우선순위·라벨·링크·댓글 배지가 모두 래퍼 안에 있다', () => {
+    mountItem(
+      todoFixture({
+        priority: 'p1',
+        labels: ['api'],
+        links: [{ url: 'https://example.com' }],
+        commentCount: 2,
+      }),
+    );
+    const meta = document.querySelector('.todo-meta');
+    expect(meta).not.toBeNull();
+    expect(meta?.querySelector('.prio-p1')).not.toBeNull();
+    expect(meta?.querySelector('.chip-label')).not.toBeNull();
+    expect(meta?.querySelector('.chip-link')).not.toBeNull();
+    expect(meta?.querySelector('.comment-badge')).not.toBeNull();
+    // 래퍼 밖에 남은 칩이 없어야 한다.
+    expect(document.querySelectorAll('.todo-row > .chip').length).toBe(0);
+  });
+
+  test('칩이 하나도 없으면 래퍼가 비어 있다 — :empty 로 빈 줄을 없앤다', () => {
+    mountItem(todoFixture({ priority: 'p4', labels: [], links: [], commentCount: 0 }));
+    expect(document.querySelector('.todo-meta')?.children.length).toBe(0);
+  });
+});

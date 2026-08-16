@@ -64,67 +64,74 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       <button type="button" className="todo-title" onClick={() => void openTodoDetail(todo.id)}>
         {todo.title}
       </button>
-      {todo.priority !== 'p4' && (
-        <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
-      )}
-      {todo.labels.map((label) => (
-        <span key={label} className="chip chip-label">
-          {label}
-        </span>
-      ))}
-      {todo.due && (
-        <span className={`chip chip-due ${!done && isOverdue(todo.due) ? 'is-overdue' : ''}`}>
-          {formatDue(todo.due)}
-        </span>
-      )}
-      {todo.links.map((link) => (
-        <a
-          key={link.url}
-          className="chip chip-link"
-          href={link.url}
-          target="_blank"
-          rel="noreferrer"
-          title={link.title ?? link.url}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {link.title ?? linkLabel(link.url)} ↗
-        </a>
-      ))}
-      {todo.commentCount > 0 && (
-        <button
-          type="button"
-          className={`comment-badge ${unread ? 'is-unread' : ''}`}
-          title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
-          aria-label={
-            unread
-              ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
-              : `댓글 ${todo.commentCount}개 — 눌러서 열기`
-          }
-          onClick={() => void openTodoDetail(todo.id)}
-        >
-          💬 {todo.commentCount}
-        </button>
-      )}
-      {pendingHandoff ? (
-        <span
-          className="chip chip-handoff"
-          title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
-        >
-          → {pendingHandoff.sessionName ?? '세션'}
-        </span>
-      ) : null}
-      {doing && todo.doingBy && (
-        <span
-          className={`doing-badge tone-${actorTone(todo.doingBy)} ${
-            warning ? `is-stale warn-${warning.tone}` : ''
-          }`}
-          title={warning ? warning.title : '처리중'}
-        >
-          <span className="doing-pulse" />
-          {todo.doingBy} · {todo.doingSince ? formatElapsed(todo.doingSince) : ''}
-          {warning ? ` ⚠ ${warning.label}` : ''}
-        </span>
-      )}
+      {/*
+        메타 칩 묶음. 넓은 화면에서는 `display: contents` 라 칩들이 그대로 `.todo-row` 의
+        flex 아이템이 된다 — 이 래퍼가 생겨도 레이아웃이 바뀌지 않는다. 좁은 화면에서만
+        실제 박스가 되어 제목 아래 줄로 내려간다(`responsive.css`).
+      */}
+      <span className="todo-meta">
+        {todo.priority !== 'p4' && (
+          <span className={`chip prio-${todo.priority}`}>{todo.priority}</span>
+        )}
+        {todo.labels.map((label) => (
+          <span key={label} className="chip chip-label">
+            {label}
+          </span>
+        ))}
+        {todo.due && (
+          <span className={`chip chip-due ${!done && isOverdue(todo.due) ? 'is-overdue' : ''}`}>
+            {formatDue(todo.due)}
+          </span>
+        )}
+        {todo.links.map((link) => (
+          <a
+            key={link.url}
+            className="chip chip-link"
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            title={link.title ?? link.url}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {link.title ?? linkLabel(link.url)} ↗
+          </a>
+        ))}
+        {todo.commentCount > 0 && (
+          <button
+            type="button"
+            className={`comment-badge ${unread ? 'is-unread' : ''}`}
+            title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
+            aria-label={
+              unread
+                ? `읽지 않은 댓글 ${todo.commentCount}개 — 눌러서 열기`
+                : `댓글 ${todo.commentCount}개 — 눌러서 열기`
+            }
+            onClick={() => void openTodoDetail(todo.id)}
+          >
+            💬 {todo.commentCount}
+          </button>
+        )}
+        {pendingHandoff ? (
+          <span
+            className="chip chip-handoff"
+            title={`${pendingHandoff.sessionName ?? pendingHandoff.sessionId} 에게 보냄`}
+          >
+            → {pendingHandoff.sessionName ?? '세션'}
+          </span>
+        ) : null}
+        {doing && todo.doingBy && (
+          <span
+            className={`doing-badge tone-${actorTone(todo.doingBy)} ${
+              warning ? `is-stale warn-${warning.tone}` : ''
+            }`}
+            title={warning ? warning.title : '처리중'}
+          >
+            <span className="doing-pulse" />
+            {todo.doingBy} · {todo.doingSince ? formatElapsed(todo.doingSince) : ''}
+            {warning ? ` ⚠ ${warning.label}` : ''}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
