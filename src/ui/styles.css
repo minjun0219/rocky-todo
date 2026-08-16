@@ -24,14 +24,12 @@
 
 @import "./styles/tokens.css";
 @import "./styles/topbar.css";
-@import "./styles/layout.css";
 @import "./styles/sidebar.css";
 @import "./styles/todo-pane.css";
 @import "./styles/todo-item.css";
 @import "./styles/handoff.css";
 @import "./styles/notes.css";
 @import "./styles/drawer.css";
-@import "./styles/history.css";
 @import "./styles/inline-edit.css";
 @import "./styles/comments.css";
 @import "./styles/issue.css";

@@ -803,7 +803,9 @@ function CommentCard({ comment }: { comment: Comment }) {
   return (
     <div className={`comment-card${archived ? ' is-archived' : ''}`}>
       <div className="comment-head">
-        <span className={`history-dot tone-${actorTone(comment.actor)}`} />
+        <span
+          className={`history-dot size-[7px] shrink-0 self-center rounded-full bg-current tone-${actorTone(comment.actor)}`}
+        />
         <span className={`comment-actor tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
         <span className="comment-at">{formatStamp(comment.createdAt)}</span>
         {edited && <span className="comment-edited">(수정됨)</span>}
@@ -863,22 +865,28 @@ function CommentCard({ comment }: { comment: Comment }) {
 function Timeline({ history, comments }: { history: HistoryEntry[]; comments: Comment[] }) {
   const items = mergeTimeline(history, comments);
   return (
-    <div className="drawer-history">
+    <div className="mt-[18px] border-t border-line">
       <div className="drawer-section-label">타임라인</div>
       {items.map((item) =>
         item.kind === 'comment' ? (
           <CommentCard key={`c-${item.comment.id}`} comment={item.comment} />
         ) : (
-          <div key={`h-${item.entry.id}`} className="history-row">
-            <span className={`history-dot tone-${actorTone(item.entry.actor)}`} />
-            <span className={`history-actor tone-${actorTone(item.entry.actor)}`}>
+          <div key={`h-${item.entry.id}`} className="flex items-baseline gap-2 py-[5px] text-xs">
+            <span
+              className={`history-dot size-[7px] shrink-0 self-center rounded-full bg-current tone-${actorTone(item.entry.actor)}`}
+            />
+            <span className={`font-mono text-[11px] tone-${actorTone(item.entry.actor)}`}>
               {item.entry.actor}
             </span>
-            <span className="history-action">{actionLabel(item.entry.action)}</span>
+            <span className="text-muted">{actionLabel(item.entry.action)}</span>
             {item.entry.changes?.title && (
-              <span className="history-change">→ {String(item.entry.changes.title[1])}</span>
+              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-faint">
+                → {String(item.entry.changes.title[1])}
+              </span>
             )}
-            <span className="history-at">{formatElapsed(item.entry.at)} 전</span>
+            <span className="ml-auto shrink-0 font-mono text-[10px] text-faint">
+              {formatElapsed(item.entry.at)} 전
+            </span>
           </div>
         ),
       )}

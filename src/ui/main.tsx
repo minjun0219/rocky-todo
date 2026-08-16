@@ -92,7 +92,7 @@ function App() {
   return (
     <div className="app">
       <TopBar />
-      <div className="layout">
+      <div className="layout grid min-h-0 flex-1 grid-cols-[200px_1fr_300px]">
         <Sidebar />
         <TodoPane />
         <NotesRail />

@@ -54,43 +54,52 @@
   --font-sans: var(--sans);
 }
 
-* {
-  box-sizing: border-box;
-}
+/*
+ * 요소 리셋은 **@layer base** 다 — unlayered 로 두면 어떤 레이어보다도 우선해서,
+ * `@layer utilities` 의 Tailwind 유틸리티가 버튼·인풋 위에서 조용히 전멸한다
+ * (`button { padding: 0 }` 이 `px-2.5` 를 이기는 식 — 특이도 무관, 실측).
+ * base 는 선언 순서상 utilities 아래라 유틸리티가 이기고, 파티션 CSS(unlayered)는
+ * 여전히 모두를 이긴다 — 이관 중 기존 화면이 안 흔들리는 이유다.
+ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
 
-html,
-body {
-  margin: 0;
-  height: 100%;
-}
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+  }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
-}
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
 
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
 
-input,
-textarea {
-  font: inherit;
-  color: inherit;
-}
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--warm);
-  outline-offset: 2px;
-  border-radius: 4px;
+  :focus-visible {
+    outline: 2px solid var(--warm);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 .app {
