@@ -1,0 +1,52 @@
+/*
+ * 드로어 안 히스토리 목록.
+ */
+
+/* ── history ────────────────────────────────────── */
+
+.drawer-history {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+
+.history-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.history-actor {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.history-action {
+  color: var(--muted);
+}
+
+.history-change {
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.history-at {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  flex-shrink: 0;
+}

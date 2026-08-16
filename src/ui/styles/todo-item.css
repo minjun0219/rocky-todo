@@ -1,0 +1,137 @@
+/*
+ * 할 일 한 줄 — 체크박스 / ref / 제목 / 메타 칩.
+ */
+
+.todo-group {
+  margin-bottom: 26px;
+}
+
+.group-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--warm-dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+  margin-bottom: 6px;
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  min-height: 32px;
+}
+
+.todo-row:hover {
+  background: var(--surface);
+}
+
+.todo-check {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: grid;
+  place-content: center;
+}
+
+.todo-check:checked {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.todo-check:checked::after {
+  content: "✓";
+  font-size: 11px;
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.todo-ref {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: pointer;
+}
+
+.todo-ref:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.todo-title {
+  text-align: left;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-title:hover {
+  color: var(--warm);
+}
+
+.is-done .todo-title {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.is-archived {
+  opacity: 0.45;
+}
+
+/* ── chips ──────────────────────────────────────── */
+
+.chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.prio-p1 {
+  color: var(--p1);
+  border-color: var(--p1);
+}
+
+.prio-p2 {
+  color: var(--p2);
+  border-color: var(--p2);
+}
+
+.prio-p3 {
+  color: var(--p3);
+  border-color: var(--p3);
+}
+
+.chip-due.is-overdue {
+  color: var(--p1);
+  border-color: var(--p1);
+}
+
+.chip-link {
+  text-decoration: none;
+  color: var(--cool);
+}
+
+.chip-link:hover {
+  border-color: var(--cool);
+}
