@@ -87,3 +87,18 @@
   font-size: 13px;
   padding: 18px 4px;
 }
+
+/* 접힘 토글 — 좁은 화면 전용 장치라 기본은 비활성(본문 항상 표시). responsive.css 가
+   좁은 화면에서 뒤집는다. 캐럿도 거기서만 보인다. */
+.notes-toggle {
+  cursor: default;
+}
+
+.notes-caret {
+  display: none;
+}
+
+/* 카드 스택은 aside 의 flex/gap 흐름을 그대로 탄다 — 래퍼가 박스를 만들지 않는다. */
+.notes-body {
+  display: contents;
+}
