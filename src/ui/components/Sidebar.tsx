@@ -40,11 +40,11 @@ export function Sidebar() {
   };
 
   return (
-    <nav className="sidebar">
+    <nav className="sidebar flex flex-col gap-0.5 overflow-y-auto border-r border-line px-2.5 py-4">
       <div className="sidebar-label">BOARDS</div>
       <button
         type="button"
-        className={`board-item ${selected === 'all' ? 'is-active' : ''}`}
+        className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${selected === 'all' ? 'bg-surface-2 font-semibold text-text' : 'text-muted hover:bg-surface hover:text-text'}`}
         onClick={() => setSelected('all')}
       >
         전체
@@ -53,11 +53,13 @@ export function Sidebar() {
         <button
           key={board.id}
           type="button"
-          className={`board-item ${selected === board.key ? 'is-active' : ''}`}
+          className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${selected === board.key ? 'bg-surface-2 font-semibold text-text' : 'text-muted hover:bg-surface hover:text-text'}`}
           onClick={() => setSelected(board.key)}
         >
           {board.title}
-          {doingBoards.has(board.id) && <span className="doing-dot" title="처리중인 항목 있음" />}
+          {doingBoards.has(board.id) && (
+            <span className="doing-dot size-1.5 rounded-full bg-warm" title="처리중인 항목 있음" />
+          )}
         </button>
       ))}
       {adding ? (
@@ -89,7 +91,11 @@ export function Sidebar() {
           )}
         </div>
       ) : (
-        <button type="button" className="board-item board-add-open" onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          className="board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-surface hover:text-text board-add-open text-faint"
+          onClick={() => setAdding(true)}
+        >
           + 새 보드
         </button>
       )}

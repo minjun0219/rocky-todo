@@ -1,52 +1,7 @@
 /*
- * 상단 바 — 브랜드 / 노출 링크 / 보관됨 토글 / actor.
+ * 상단 바 — 정적 스타일은 TopBar.tsx 의 유틸리티로 옮겼다. 여기 남는 것은
+ * 유틸리티로 표현할 수 없는 것뿐: keyframes 와 상태(.is-on) 종속 애니메이션.
  */
-
-/* ── topbar ─────────────────────────────────────── */
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.wordmark {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-}
-
-.wordmark-dot {
-  color: var(--warm);
-}
-
-.link-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-}
-
-.link-status.is-on {
-  color: var(--warm);
-}
-
-.link-status.is-off {
-  color: var(--faint);
-}
-
-.link-pulse {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 
 .is-on .link-pulse {
   animation: rt-pulse 2.4s ease-in-out infinite;
@@ -60,28 +15,4 @@
   50% {
     opacity: 0.25;
   }
-}
-
-.topbar-spacer {
-  flex: 1;
-}
-
-.actor-chip {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--cool-dim);
-  color: var(--cool);
-}
-
-.actor-input {
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--cool);
-  background: var(--bg);
-  color: var(--cool);
-  width: 120px;
 }

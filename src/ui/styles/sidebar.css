@@ -1,17 +1,8 @@
 /*
- * 보드 목록 사이드바. 900px 아래에서는 가로 스크롤 칩 행이 된다(responsive).
+ * 보드 목록 사이드바 — 정적 스타일은 Sidebar.tsx 의 유틸리티로 옮겼다.
+ * 남는 것: 애니메이션(.doing-dot)과 두 컴포넌트(Sidebar·NotesRail)가 공유하는
+ * .sidebar-label. 900px 아래의 칩 행 전환은 responsive.css.
  */
-
-/* ── sidebar ────────────────────────────────────── */
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 16px 10px;
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
-}
 
 .sidebar-label {
   font-family: var(--mono);
@@ -21,40 +12,6 @@
   padding: 0 10px 6px;
 }
 
-.board-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  padding: 6px 10px;
-  border-radius: 6px;
-  color: var(--muted);
-}
-
-.board-item:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.board-item.is-active {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-
 .doing-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warm);
   animation: rt-pulse 2.4s ease-in-out infinite;
-}
-
-.archived-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
 }
