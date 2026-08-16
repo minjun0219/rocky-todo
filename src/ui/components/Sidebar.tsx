@@ -44,7 +44,7 @@ export function Sidebar() {
       <div className="sidebar-label">BOARDS</div>
       <button
         type="button"
-        className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-surface hover:text-text ${selected === 'all' ? 'bg-surface-2 font-semibold text-text' : ''}`}
+        className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${selected === 'all' ? 'bg-surface-2 font-semibold text-text' : 'text-muted hover:bg-surface hover:text-text'}`}
         onClick={() => setSelected('all')}
       >
         전체
@@ -53,7 +53,7 @@ export function Sidebar() {
         <button
           key={board.id}
           type="button"
-          className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-muted hover:bg-surface hover:text-text ${selected === board.key ? 'bg-surface-2 font-semibold text-text' : ''}`}
+          className={`board-item flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${selected === board.key ? 'bg-surface-2 font-semibold text-text' : 'text-muted hover:bg-surface hover:text-text'}`}
           onClick={() => setSelected(board.key)}
         >
           {board.title}
