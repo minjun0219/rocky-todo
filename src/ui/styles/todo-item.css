@@ -1,34 +1,11 @@
 /*
- * 할 일 한 줄 — 체크박스 / ref / 제목 / 메타 칩.
+ * 할 일 한 줄 — 여기 남은 규칙은 유틸리티로 옮기지 **않는** 것들이다:
+ * - .todo-check: appearance 리셋과 ::after 체크마크가 한 몸 — 한 컨트롤을 두
+ *   시스템에 가르지 않는다.
+ * - .todo-ref: TodoItem 과 NoteCard 가 공유 + responsive 의 ::after 히트 확장 대상.
+ * - .chip 가족(.prio-p1~p3 · .chip-due · .chip-link): 여러 컴포넌트가 공유하는 어휘.
+ * - .is-archived / .todo-meta: 상태·responsive 훅.
  */
-
-.todo-group {
-  margin-bottom: 26px;
-}
-
-.group-eyebrow {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--warm-dim);
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 5px;
-  margin-bottom: 6px;
-}
-
-.todo-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  min-height: 32px;
-}
-
-.todo-row:hover {
-  background: var(--surface);
-}
 
 .todo-check {
   appearance: none;
@@ -70,24 +47,6 @@
 .todo-ref:hover {
   color: var(--text);
   text-decoration: underline;
-}
-
-.todo-title {
-  text-align: left;
-  color: var(--text);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.todo-title:hover {
-  color: var(--warm);
-}
-
-.is-done .todo-title {
-  color: var(--faint);
-  text-decoration: line-through;
 }
 
 .is-archived {

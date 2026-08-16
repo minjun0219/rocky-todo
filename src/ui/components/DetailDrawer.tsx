@@ -340,9 +340,9 @@ function TodoDetail() {
           : statusButton('▣ 보관', 'archive')}
       </div>
       {pending ? (
-        <div className="handoff-pending">
+        <div className="mt-2 flex items-center gap-2 text-handoff">
           <span>대기 중 · {pending.sessionName ?? pending.sessionId} 에게</span>
-          {pending.stale ? <span className="handoff-stale">세션 없음</span> : null}
+          {pending.stale ? <span className="text-p1">세션 없음</span> : null}
           <button type="button" onClick={() => void cancelHandoff(pending.id)}>
             취소
           </button>
@@ -353,7 +353,7 @@ function TodoDetail() {
         </button>
       )}
       {unstarted ? (
-        <div className="handoff-unstarted" role="status">
+        <div className="mt-2 flex items-center gap-2 text-p1" role="status">
           <span>
             ⚠ {unstarted.sessionName ?? unstarted.sessionId} 이(가) 받았지만 착수하지 않았다
           </span>
@@ -365,7 +365,7 @@ function TodoDetail() {
         </div>
       ) : null}
       {handoffOpen && !pending ? (
-        <div className="handoff-panel">
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {sessions.available ? (
             <>
               <select value={handoffSession} onChange={(e) => setHandoffSession(e.target.value)}>
@@ -389,7 +389,7 @@ function TodoDetail() {
             <p>세션 목록을 가져올 수 없다: {sessions.reason}</p>
           )}
           {handoffError ? (
-            <p className="handoff-error" role="alert">
+            <p className="w-full text-p1" role="alert">
               {handoffError}
             </p>
           ) : null}
@@ -532,8 +532,8 @@ function SpawnAction({ todo }: { todo: TodoView }) {
 
   if (!spawnAllowed) {
     return (
-      <div className="spawn-action">
-        <p className="spawn-unavailable">
+      <div className="mt-2.5 flex flex-col gap-1.5">
+        <p className="m-0 text-xs leading-[1.4] text-muted">
           세션 띄우기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
         </p>
       </div>
@@ -562,10 +562,10 @@ function SpawnAction({ todo }: { todo: TodoView }) {
   };
 
   return (
-    <div className="spawn-action">
+    <div className="mt-2.5 flex flex-col gap-1.5">
       {asking && (
         <input
-          className="spawn-path-input"
+          className="w-full rounded-md border border-line bg-bg px-2 py-1.5 text-inherit"
           value={path}
           placeholder="/Users/…/레포 절대경로"
           aria-label="메인 레포 절대경로"
@@ -573,7 +573,7 @@ function SpawnAction({ todo }: { todo: TodoView }) {
         />
       )}
       <input
-        className="spawn-note-input"
+        className="w-full rounded-md border border-line bg-bg px-2 py-1.5 text-inherit"
         value={note}
         placeholder="메모 (선택)"
         aria-label="세션에 함께 보낼 메모"
@@ -597,7 +597,7 @@ function SpawnAction({ todo }: { todo: TodoView }) {
         </button>
       </div>
       {result && (
-        <div className="spawn-result">
+        <div className="mt-1.5 flex flex-col gap-1 text-xs leading-[1.4] text-handoff [&_code]:select-all">
           {result.reused ? (
             <span>이미 도는 세션에 넘겼다 · {result.worktreePath}</span>
           ) : (
@@ -612,7 +612,7 @@ function SpawnAction({ todo }: { todo: TodoView }) {
       )}
       {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
       {error && (
-        <div className="spawn-error" role="alert">
+        <div className="mt-1.5 whitespace-pre-wrap text-xs leading-[1.4] text-p1" role="alert">
           {error}
         </div>
       )}
