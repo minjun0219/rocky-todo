@@ -67,7 +67,7 @@ export function TodoPane() {
   const currentBoard = selected === 'all' ? undefined : boards.find((b) => b.key === selected);
 
   return (
-    <main className="todo-pane">
+    <main className="todo-pane min-w-0 overflow-y-auto px-[26px] py-5">
       {/*
         `key` 로 보드가 바뀌면 헤더를 새로 만든다. 없으면 React 가 같은 인스턴스를 재사용해
         열려 있던 편집 폼과 그 입력값(직전 보드의 것)이 그대로 남고, 그 상태로 저장하면
@@ -76,7 +76,7 @@ export function TodoPane() {
       {currentBoard && <BoardHeader key={currentBoard.key} board={currentBoard} />}
       {selected !== 'all' && (
         <form
-          className="quick-add"
+          className="sticky top-0 z-[1] bg-bg pb-[18px]"
           onSubmit={(e) => {
             e.preventDefault();
             const title = draft.trim();
@@ -88,7 +88,7 @@ export function TodoPane() {
           }}
         >
           <input
-            className="quick-add-input"
+            className="quick-add-input mb-0 w-full rounded-lg border border-line bg-surface px-3.5 py-[9px] text-text placeholder:text-faint"
             placeholder="+ 새 작업 (Enter 로 추가)"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
