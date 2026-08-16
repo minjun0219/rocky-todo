@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 /**
@@ -10,8 +11,10 @@ import { describe, expect, test } from 'bun:test';
  * `.comment-tool` 의 좌우 패딩이 죽어 있었다 — 화면에 티가 안 나서 오래 살아남았다.
  * 파일을 새로 추가할 때 목록 끝에 붙이는 것이 자연스러워서 재발하기 쉽다.
  */
-const ENTRY = new URL('./styles.css', import.meta.url).pathname;
-const PARTIALS_DIR = new URL('./styles', import.meta.url).pathname;
+// `new URL(...).pathname` 은 쓰지 않는다 — 경로에 공백이나 유니코드가 있으면 `%20` 처럼
+// 퍼센트 인코딩된 문자열이 나와 읽기가 실패한다. 레포 관행대로 `import.meta.dir` 를 쓴다.
+const ENTRY = join(import.meta.dir, 'styles.css');
+const PARTIALS_DIR = join(import.meta.dir, 'styles');
 
 const entryText = readFileSync(ENTRY, 'utf8');
 
