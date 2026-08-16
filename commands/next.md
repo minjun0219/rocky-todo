@@ -66,7 +66,11 @@ CLI 출력을 **그대로** 옮긴다. 재작문·재정렬·요약 금지 — �
 
 - `여기서 진행` — 다른 레포 항목을 이 세션에서 다룬다(문서·조사처럼 코드를 안 건드릴 때).
 - `새 세션 띄우기` — `rocky-todo spawn <ref>`. 그 todo 전용 워크트리에서 백그라운드로 돈다.
-- `다른 세션에 넘기기` — `rocky-todo sessions` 로 후보를 보고 `rocky-todo handoff <ref> --session <name>`.
+- `다른 세션에 넘기기` — `rocky-todo sessions` 로 후보를 보고
+  `rocky-todo handoff <ref> --session <name> --json`. **여기서 끝내지 마라**: 이 호출은 큐잉일
+  뿐이고, 대상이 idle 이면 배달되지 않는다. 응답의 `poke` 를 그대로
+  `SendMessage { to: poke.to, message: poke.message }` 로 보내 대상의 턴을 열어라 — 그 턴에
+  훅이 상세 지시를 주입한다.
 
 spawn/handoff 를 골랐으면 이 세션은 결과 위치만 한두 줄로 보고하고 끝낸다 — 그 작업을 여기서
 같이 하지 않는다.

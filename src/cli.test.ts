@@ -9,10 +9,12 @@ import {
   formatSpawnResult,
   formatTodoLine,
   formatTodoShow,
+  type HandoffCreated,
   isMissingRepoError,
   noteRefPath,
   parseFlags,
   renderBoard,
+  renderHandoffCreated,
   resolveHistoryEntity,
   todoRefPath,
   withBoard,
@@ -713,6 +715,39 @@ describe('formatSpawnResult', () => {
       worktreePath: '/w/rocky-todo/wt-12',
     });
     expect(out).toContain('이미 도는 세션(sess-1)');
+  });
+});
+
+describe('renderHandoffCreated', () => {
+  const created: HandoffCreated = {
+    id: 'h1',
+    todoId: 't1',
+    sessionId: 'sess-1',
+    sessionName: 'rocky-todo-1e',
+    note: '',
+    actor: 'minjun',
+    status: 'pending',
+    createdAt: '2026-07-27T00:00:00.000Z',
+    poke: { to: 'rocky-todo-1e', message: '# rocky-todo: ...' },
+  };
+
+  // "보냄"은 거짓말이었다 — 이 시점에 배달된 것은 아무것도 없다.
+  test('배달이 아직 아니라는 걸 분명히 말한다', () => {
+    const out = renderHandoffCreated('rocky-12', created);
+    expect(out).toContain('큐에 넣음');
+    expect(out).not.toContain('에게 보냄');
+  });
+
+  test('턴을 여는 방법을 에이전트/사람 양쪽으로 안내한다', () => {
+    const out = renderHandoffCreated('rocky-12', created);
+    expect(out).toContain('SendMessage');
+    expect(out).toContain('"rocky-todo-1e"');
+    expect(out).toContain('사람');
+  });
+
+  test('sessionName 이 없으면 sessionId 로 떨어뜨린다', () => {
+    const out = renderHandoffCreated('rocky-12', { ...created, sessionName: undefined });
+    expect(out).toContain('sess-1');
   });
 });
 

@@ -1,9 +1,15 @@
 /**
  * 활성 Claude Code 세션 목록 — `claude agents --json` 을 감싼다.
  *
- * 데몬은 세션에 아무것도 밀 수 없으므로(훅으로 유휴 세션을 깨울 수단이 없다) 세션을
- * "고르는" 일만 여기서 한다. 세션이 자기를 데몬에 등록하는 프로토콜을 따로 만들지 않는
- * 이유가 이것 — CLI 가 이미 pid/cwd/sessionId/name/status 를 다 준다.
+ * 데몬은 세션에 아무것도 밀 수 없으므로 세션을 "고르는" 일만 여기서 한다. 세션이 자기를
+ * 데몬에 등록하는 프로토콜을 따로 만들지 않는 이유가 이것 — CLI 가 이미
+ * pid/cwd/sessionId/name/status 를 다 준다.
+ *
+ * **유휴 세션을 깨우는 건 호출자 몫이다.** handoff 배달(claim)은 훅에서만 일어나고 훅은
+ * 턴 경계에서만 돈다(`UserPromptSubmit` / `Stop`) — idle 세션에는 그 경계가 오지 않아
+ * 큐에 그대로 앉는다. `claude` CLI 에도 실행 중 세션에 입력을 넣는 서브커맨드는 없다.
+ * 그래서 턴을 여는 일은 `SendMessage` 를 가진 **호출 에이전트**가 하고, 데몬은 그 문구를
+ * `POST /api/todos/:ref/handoff` 응답의 `poke` 로 만들어 넘겨준다 (`src/handoff.ts`).
  *
  * `src/tailscale.ts` 와 같은 형태로 외부 명령은 주입 가능한 `RunCommand` 를 거친다 —
  * `claude` 가 없는 머신에서도 전 테스트가 통과한다.

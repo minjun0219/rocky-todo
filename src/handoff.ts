@@ -42,6 +42,46 @@ export function buildHandoffPromptFrom(input: HandoffPromptInput): string {
   return lines.join('\n');
 }
 
+/**
+ * 대상 세션의 **턴을 여는** 짧은 신호. `SendMessage` 로 보낸다.
+ *
+ * 배달(claim)은 훅에서만 일어나고 훅은 턴 경계에서만 돈다 — `UserPromptSubmit`(턴 시작)
+ * 또는 `Stop`(턴 종료). 그래서 idle 세션은 큐에 요청이 있어도 스스로 집어가지 못한다.
+ * 데몬은 세션에 아무것도 밀 수 없으므로(`src/sessions.ts` 참고) 턴을 여는 일은 handoff 를
+ * **호출한 에이전트**의 몫이다 — 그쪽에는 `SendMessage` 가 있다.
+ */
+export interface HandoffPoke {
+  /** `SendMessage` 의 `to` — 세션 이름. */
+  to: string;
+  /** `SendMessage` 의 `message`. */
+  message: string;
+}
+
+export interface HandoffPokeInput {
+  sessionName: string;
+  todoRef: string;
+  todoTitle: string;
+}
+
+/**
+ * poke 문구를 만든다.
+ *
+ * 짧게 두는 이유: 이 메시지가 여는 바로 그 턴의 `UserPromptSubmit` 훅이 상세 지시문
+ * (`buildHandoffPrompt`)을 함께 주입하므로, 본문까지 실으면 같은 내용이 두 번 온다.
+ * 다만 주입이 실패해도 굴러가야 하니 **이것만 읽고도 착수할 수 있을 만큼**은 남긴다.
+ */
+export function buildHandoffPoke(input: HandoffPokeInput): HandoffPoke {
+  return {
+    to: input.sessionName,
+    message: [
+      `# rocky-todo: 보드에서 작업 요청이 도착했다 — ${input.todoRef} "${input.todoTitle}"`,
+      '',
+      '이 메시지는 턴을 여는 신호다. 상세 지시는 같은 턴의 훅 주입으로 함께 도착한다 —',
+      `주입이 보이지 않으면 todo_list { id: "${input.todoRef}" } 로 직접 읽고 착수해라.`,
+    ].join('\n'),
+  };
+}
+
 /** claim 결과로 주입문을 만든다 — 훅(`Stop` / `UserPromptSubmit`)이 쓰는 입구. */
 export function buildHandoffPrompt(claimed: ClaimedHandoff): string {
   return buildHandoffPromptFrom({
