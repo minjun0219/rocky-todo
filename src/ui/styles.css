@@ -7,10 +7,9 @@
  * 컴포넌트별로 나뉘어 있고, 데몬의 Bun fullstack 번들러가 아래 @import 를 순서대로
  * 인라인한다(빌드 단계·의존성 추가 없음).
  *
- * ⚠ **@import 순서가 곧 캐스케이드 우선순위다.** 이 목록은 원본 단일 파일의 규칙 순서를
- * 그대로 보존한 것이라, 재배열하면 렌더가 바뀐다. 특히 `responsive.css` 뒤에 파일 3개가
- * 오는 것은 의도가 아니라 **원본 상태의 보존**이다 — 원본에서 그 세 섹션이 미디어 쿼리
- * 뒤에 덧붙어 있었다. 순서를 고치는 것은 렌더가 바뀌는 별도 변경이다.
+ * ⚠ **@import 순서가 곧 캐스케이드 우선순위다.** 재배열하면 렌더가 바뀐다.
+ * `responsive.css` 는 반드시 마지막이다 — 베이스 규칙을 `!important` 없이 덮는 유일한
+ * 수단이 순서이기 때문이다. 새 파일은 그 **앞에** 넣는다.
  */
 
 @import "./styles/tokens.css";
@@ -23,7 +22,10 @@
 @import "./styles/notes.css";
 @import "./styles/drawer.css";
 @import "./styles/history.css";
-@import "./styles/responsive.css";
 @import "./styles/inline-edit.css";
 @import "./styles/comments.css";
 @import "./styles/issue.css";
+
+/* 반응형은 **마지막**이다 — 베이스 규칙을 !important 없이 덮으려면 순서가 뒤여야 한다.
+   원본 단일 파일에서는 이 블록 뒤에 세 섹션이 덧붙어 있어 그 의도가 깨져 있었다. */
+@import "./styles/responsive.css";
