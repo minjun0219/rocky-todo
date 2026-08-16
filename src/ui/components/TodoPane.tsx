@@ -97,7 +97,7 @@ export function TodoPane() {
       )}
 
       {groups.length === 0 && (
-        <div className="empty-state">
+        <div className="empty-state px-1 py-[18px] text-[13px] text-faint">
           아직 항목이 없다.{' '}
           {selected === 'all'
             ? '보드를 골라 작업을 추가해 보자.'

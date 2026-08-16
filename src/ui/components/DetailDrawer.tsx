@@ -439,8 +439,8 @@ function IssueAction({ todo }: { todo: TodoView }) {
   // tailscale 로 접속한 사용자는 기능이 없어진 줄로 읽는다.
   if (!issueCreateAllowed) {
     return (
-      <div className="issue-action">
-        <p className="issue-unavailable">
+      <div className="mt-2.5">
+        <p className="m-0 text-xs leading-[1.4] text-muted">
           GitHub 이슈 만들기는 로컬(루프백)에서만 — 이 화면은 노출된 데몬을 거쳐 열렸다.
         </p>
       </div>
@@ -464,10 +464,10 @@ function IssueAction({ todo }: { todo: TodoView }) {
   };
 
   return (
-    <div className="issue-action">
+    <div className="mt-2.5">
       {asking && (
         <input
-          className="issue-repo-input"
+          className="issue-repo-input w-full rounded-md border border-line bg-bg px-2 py-1.5 text-inherit"
           value={repo}
           placeholder="OWNER/NAME"
           aria-label="GitHub 레포 (OWNER/NAME)"
@@ -493,7 +493,7 @@ function IssueAction({ todo }: { todo: TodoView }) {
       </div>
       {/* 실패 사유는 즉시 읽혀야 한다 — 보이기만 하면 스크린리더가 놓친다. */}
       {error && (
-        <div className="issue-error" role="alert">
+        <div className="mt-1.5 whitespace-pre-wrap text-xs leading-[1.4] text-p1" role="alert">
           {error}
         </div>
       )}
