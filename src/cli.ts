@@ -203,7 +203,12 @@ export function formatSpawnResult(ref: string, result: SpawnResult): string {
 
 /** `POST /api/todos/:ref/handoff` 응답 — 생성된 handoff + 대상 세션을 깨울 poke. */
 export interface HandoffCreated extends Handoff {
-  poke: HandoffPoke;
+  /**
+   * **optional 이다** — CLI 와 데몬의 버전이 갈릴 수 있다. 데몬은 자기 버전이 설치본과
+   * 같으면 경로가 달라도 재기동하지 않으므로(의도된 동작) `poke` 를 모르는 데몬이 계속
+   * 살아 있을 수 있고, 그때 이 필드는 오지 않는다.
+   */
+  poke?: HandoffPoke;
 }
 
 /**
@@ -215,8 +220,18 @@ export interface HandoffCreated extends Handoff {
  */
 export function renderHandoffCreated(ref: string, created: HandoffCreated): string {
   const target = created.sessionName ?? created.sessionId;
+  const head = `✓ ${ref} → ${target} 큐에 넣음 (아직 배달 전 — 대상의 다음 턴에 주입된다)`;
+  if (!created.poke) {
+    // 구버전 데몬이다. 없는 poke 를 지어내지 않고 무엇이 어긋났는지와 두 갈래를 그대로 준다
+    // — 여기서 조용히 예전 문구로 돌아가면 "보냈는데 안 온다" 를 다시 만든다.
+    return [
+      head,
+      '  이 데몬은 poke 를 주지 않는다 (CLI 보다 낮은 버전) — 대상이 idle 이면 배달되지 않는다.',
+      '  `rocky-todo daemon stop` 후 최신 버전으로 다시 띄우거나, 그 세션에 직접 한 줄 입력해라.',
+    ].join('\n');
+  }
   return [
-    `✓ ${ref} → ${target} 큐에 넣음 (아직 배달 전 — 대상의 다음 턴에 주입된다)`,
+    head,
     `  대상이 idle 이면 턴을 열어줘야 한다:`,
     `    에이전트 → SendMessage { to: "${created.poke.to}", message: ... }  (--json 에 poke.message)`,
     `    사람   → 그 세션에 아무 입력이나 한 줄`,
