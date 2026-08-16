@@ -25,13 +25,15 @@ export function ThermalStrip() {
   useEffect(() => {
     let alive = true;
     fetch(`/api/history?limit=${LIMIT}`)
-      .then((res) => (res.ok ? (res.json() as Promise<HistoryEvent[]>) : []))
+      .then((res) => (res.ok ? (res.json() as Promise<HistoryEvent[]>) : null))
       .then((rows) => {
-        if (alive) {
+        // 실패(HTTP 에러 포함)는 상태를 건드리지 않는다 — 장식이 순간적으로
+        // 사라졌다 나타나는 것보다 마지막 성공 스냅샷이 낫다.
+        if (alive && rows) {
           setEvents([...rows].reverse()); // 최신순으로 오므로 뒤집어 왼쪽=과거
         }
       })
-      .catch(() => {}); // 장식이다 — 실패해도 침묵
+      .catch(() => {}); // 네트워크 에러도 같은 원칙 — 침묵
     return () => {
       alive = false;
     };
