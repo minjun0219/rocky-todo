@@ -22,30 +22,30 @@ export function BoardHeader({ board }: { board: Board }) {
   }
 
   return (
-    <header className="board-header">
-      <div className="board-header-line">
-        <h1 className="board-header-title">{board.title}</h1>
+    <header className="mb-4">
+      <div className="flex items-baseline gap-2.5">
+        <h1 className="m-0 text-[17px] font-bold leading-[1.3]">{board.title}</h1>
         {/* 제목이 key 그대로면 같은 글자를 두 번 찍지 않는다. */}
         {board.title !== board.key && (
           <span
-            className="board-header-key"
+            className="font-mono text-[11px] text-faint"
             title="보드 key — 참조 접두사이자 cwd 로 유추되는 이름"
           >
             {board.key}
           </span>
         )}
-        <div className="board-header-spacer" />
+        <div className="flex-1" />
         <button
           type="button"
-          className="board-header-edit"
+          className="text-[11px] text-faint hover:text-warm"
           onClick={() => setEditing(true)}
           title="보드 이름·slug·설명·GitHub 레포 수정"
         >
           편집
         </button>
       </div>
-      {board.description && <p className="board-header-desc">{board.description}</p>}
-      <div className="board-header-meta">
+      {board.description && <p className="mt-1 mb-0 text-[13px] text-muted">{board.description}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {board.repo && (
           <a
             className="chip chip-link"
@@ -56,11 +56,11 @@ export function BoardHeader({ board }: { board: Board }) {
             {board.repo} ↗
           </a>
         )}
-        {board.path && <span className="chip board-header-path">{board.path}</span>}
+        {board.path && <span className="chip text-faint">{board.path}</span>}
         {board.previousKeys && board.previousKeys.length > 0 && (
           // 옛 참조(`gotgan-12`)가 아직 살아 있다는 걸 아는 유일한 자리다 — 다른 표면은
           // 언제나 새 key 만 내보낸다.
-          <span className="chip board-header-alias" title="옛 이름 — 이 참조도 계속 풀린다">
+          <span className="chip text-faint" title="옛 이름 — 이 참조도 계속 풀린다">
             옛 이름 {board.previousKeys.join(', ')}
           </span>
         )}
@@ -127,48 +127,59 @@ function BoardEditForm({
 
   return (
     <form
-      className="board-header board-edit"
+      className="mb-4 rounded-lg border border-line bg-surface px-3.5 py-3"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <label className="board-edit-field">
-        <span className="board-edit-label">이름</span>
+      <label className="mb-1.5 flex items-center gap-2.5">
+        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          이름
+        </span>
         <input
-          className="board-edit-input"
+          className="board-edit-input min-w-0 flex-1 rounded-md border border-line bg-bg px-[9px] py-[5px] text-[13px] text-text placeholder:text-faint"
           value={title}
           // biome-ignore lint/a11y/noAutofocus: 편집 버튼을 눌러 진입한 폼이라 즉시 입력이 기대 동작
           autoFocus
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
-      <label className="board-edit-field">
-        <span className="board-edit-label">key</span>
+      <label className="mb-1.5 flex items-center gap-2.5">
+        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          key
+        </span>
         <input
-          className="board-edit-input"
+          className="board-edit-input min-w-0 flex-1 rounded-md border border-line bg-bg px-[9px] py-[5px] text-[13px] text-text placeholder:text-faint"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           aria-describedby="board-edit-key-hint"
         />
       </label>
-      <p className="board-edit-hint" id="board-edit-key-hint">
+      <p
+        className="mb-2 ml-[66px] mt-0 text-[11px] leading-normal text-faint [&_code]:font-mono"
+        id="board-edit-key-hint"
+      >
         key 는 참조 접두사(<code>{key.trim() || board.key}-12</code>)이자 레포 이름으로 유추되는
         식별자다. 바꿔도 옛 참조는 계속 풀린다.
       </p>
-      <label className="board-edit-field">
-        <span className="board-edit-label">설명</span>
+      <label className="mb-1.5 flex items-center gap-2.5">
+        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          설명
+        </span>
         <input
-          className="board-edit-input"
+          className="board-edit-input min-w-0 flex-1 rounded-md border border-line bg-bg px-[9px] py-[5px] text-[13px] text-text placeholder:text-faint"
           value={description}
           placeholder="이 보드가 무엇인가 (한 줄)"
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
-      <label className="board-edit-field">
-        <span className="board-edit-label">GitHub</span>
+      <label className="mb-1.5 flex items-center gap-2.5">
+        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          GitHub
+        </span>
         <input
-          className="board-edit-input"
+          className="board-edit-input min-w-0 flex-1 rounded-md border border-line bg-bg px-[9px] py-[5px] text-[13px] text-text placeholder:text-faint"
           value={repo}
           placeholder="OWNER/NAME"
           onChange={(e) => setRepo(e.target.value)}

@@ -99,7 +99,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
         {todo.commentCount > 0 && (
           <button
             type="button"
-            className={`comment-badge ${unread ? 'is-unread' : ''}`}
+            className={`comment-badge cursor-pointer border-none bg-transparent px-0.5 py-0 text-xs ${unread ? 'is-unread font-semibold text-inherit' : 'text-muted'}`}
             title={unread ? '읽지 않은 댓글이 있다' : '댓글 보기'}
             aria-label={
               unread

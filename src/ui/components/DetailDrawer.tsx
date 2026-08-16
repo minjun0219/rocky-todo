@@ -200,7 +200,7 @@ function TodoDetail() {
       </button>
       {editingTitle ? (
         <input
-          className="drawer-title-input"
+          className="drawer-title-input mt-1 mb-2.5 w-full rounded-md border border-warm-dim bg-surface px-1.5 py-[3px] text-lg font-bold leading-[1.35] text-text"
           value={title}
           aria-label="제목 수정 (Enter 저장 · Esc 취소)"
           // biome-ignore lint/a11y/noAutofocus: 클릭으로 진입한 편집이라 즉시 입력이 기대 동작
@@ -232,10 +232,10 @@ function TodoDetail() {
       ) : (
         // heading 시맨틱은 유지한다 — 노트 상세도 h2 라 같은 영역에서 구조가 갈리지 않게.
         // 클릭 affordance 는 안쪽 버튼에만 건다.
-        <h2 className="drawer-title">
+        <h2 className="m-0 mt-1 mb-2.5 text-lg font-bold leading-[1.35] text-text">
           <button
             type="button"
-            className="drawer-title-edit"
+            className="block w-full cursor-text border-0 bg-transparent p-0 text-left text-inherit hover:rounded-[3px] hover:bg-surface hover:shadow-[0_0_0_4px_var(--surface)]"
             onClick={() => setEditingTitle(true)}
             title="클릭해서 제목 수정 (Enter 저장 · Esc 취소)"
             aria-label={`제목 수정: ${todo.title}`}
@@ -262,10 +262,10 @@ function TodoDetail() {
         멀쩡한 섹션이 해제된다.
       */}
       {boardSections.length > 0 && (
-        <label className="drawer-section-pick">
+        <label className="mt-2.5 mb-1 flex items-center gap-2">
           <span className="drawer-section-label">섹션</span>
           <select
-            className="drawer-select"
+            className="flex-auto rounded-md border border-line bg-surface px-2 py-[5px] text-[13px] text-text"
             value={todo.sectionId ?? ''}
             onChange={(e) => {
               const picked = boardSections.find((s) => s.id === e.target.value);
@@ -644,7 +644,7 @@ function NoteDetail() {
       >
         {copied ? '✓' : note.ref}
       </button>
-      <h2 className="drawer-title">{note.title}</h2>
+      <h2 className="m-0 mt-1 mb-2.5 text-lg font-bold leading-[1.35] text-text">{note.title}</h2>
       <div className="drawer-id">{note.id}</div>
       <div className="drawer-desc drawer-desc-static">
         <Markdown text={note.content} />
@@ -712,10 +712,10 @@ function CommentComposer({ todoId }: { todoId: string }) {
   };
 
   return (
-    <div className="comment-compose">
+    <div className="mt-3.5">
       <div className="drawer-section-label">댓글</div>
       <textarea
-        className="comment-input"
+        className="w-full resize-y rounded-md border border-line bg-bg p-2 text-inherit"
         value={body}
         rows={3}
         placeholder="진행 상황이나 질문을 남긴다 (⌘/Ctrl+Enter 전송)"
@@ -728,7 +728,7 @@ function CommentComposer({ todoId }: { todoId: string }) {
         }}
       />
       {error && (
-        <div className="comment-error" role="alert">
+        <div className="px-0.5 pt-1 text-xs leading-[1.4] text-p1" role="alert">
           {error}
         </div>
       )}
@@ -801,19 +801,19 @@ function CommentCard({ comment }: { comment: Comment }) {
   };
 
   return (
-    <div className={`comment-card${archived ? ' is-archived' : ''}`}>
-      <div className="comment-head">
+    <div className={`border-b border-line py-2 ${archived ? 'is-archived' : ''}`}>
+      <div className="flex items-center gap-1.5 text-xs">
         <span
           className={`history-dot size-[7px] shrink-0 self-center rounded-full bg-current tone-${actorTone(comment.actor)}`}
         />
-        <span className={`comment-actor tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
-        <span className="comment-at">{formatStamp(comment.createdAt)}</span>
-        {edited && <span className="comment-edited">(수정됨)</span>}
-        {archived && <span className="comment-edited">(보관됨)</span>}
-        <span className="comment-tools">
+        <span className={`font-semibold tone-${actorTone(comment.actor)}`}>{comment.actor}</span>
+        <span className="text-muted">{formatStamp(comment.createdAt)}</span>
+        {edited && <span className="text-muted">(수정됨)</span>}
+        {archived && <span className="text-muted">(보관됨)</span>}
+        <span className="ml-auto flex gap-1.5">
           <button
             type="button"
-            className="comment-tool"
+            className="comment-tool cursor-pointer border-none bg-transparent p-0 text-xs text-muted hover:text-inherit"
             onClick={() => {
               setEditing(!editing);
               setError(null);
@@ -823,7 +823,7 @@ function CommentCard({ comment }: { comment: Comment }) {
           </button>
           <button
             type="button"
-            className="comment-tool"
+            className="comment-tool cursor-pointer border-none bg-transparent p-0 text-xs text-muted hover:text-inherit"
             disabled={busy}
             onClick={() =>
               void run(() => (archived ? unarchiveComment(comment.id) : archiveComment(comment.id)))
@@ -836,7 +836,7 @@ function CommentCard({ comment }: { comment: Comment }) {
       {editing ? (
         <div>
           <textarea
-            className="comment-input"
+            className="w-full resize-y rounded-md border border-line bg-bg p-2 text-inherit"
             value={draft}
             rows={3}
             onChange={(e) => setDraft(e.target.value)}
@@ -848,12 +848,12 @@ function CommentCard({ comment }: { comment: Comment }) {
           </div>
         </div>
       ) : (
-        <div className="comment-body">
+        <div className="mt-1 text-[13px] leading-normal">
           <Markdown text={comment.body} />
         </div>
       )}
       {error && (
-        <div className="comment-error" role="alert">
+        <div className="px-0.5 pt-1 text-xs leading-[1.4] text-p1" role="alert">
           {error}
         </div>
       )}
