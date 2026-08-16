@@ -32,7 +32,6 @@
 @import "./styles/drawer.css";
 @import "./styles/inline-edit.css";
 @import "./styles/comments.css";
-@import "./styles/issue.css";
 
 /* 반응형은 **마지막**이다 — 베이스 규칙을 !important 없이 덮으려면 순서가 뒤여야 한다.
    원본 단일 파일에서는 이 블록 뒤에 세 섹션이 덧붙어 있어 그 의도가 깨져 있었다. */
