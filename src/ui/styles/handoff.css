@@ -1,5 +1,8 @@
 /*
- * 핸드오프·spawn·doing 배지 — "두 대기"의 온도가 드러나는 자리.
+ * 두 대기의 온도가 드러나는 자리 — 여기 남은 것은 유틸리티로 옮기지 않는다:
+ * .chip-handoff 는 공유 어휘(.chip 변형), .tone-warm/.tone-cool 은 여러 컴포넌트가
+ * 공유하는 색 톤, .doing-badge 가족은 tone×warn×stale 상태 기계(color-mix 포함)다.
+ * 단일 사용처 정적 패널(handoff-· spawn- 계열)은 DetailDrawer 유틸리티로 이관됐다.
  */
 
 /* ── handoff — "보냈다"(파랑) 은 doing(앰버)과 다른 상태다 ─────────────── */
@@ -7,87 +10,6 @@
 .chip-handoff {
   background: var(--handoff-dim);
   color: var(--handoff);
-}
-
-.handoff-panel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.handoff-pending {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--handoff);
-}
-
-.handoff-stale {
-  color: var(--p1);
-}
-
-.handoff-unstarted {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--p1);
-}
-
-.handoff-error {
-  color: var(--p1);
-  width: 100%;
-}
-
-/* ── spawn — 새 세션 띄우기 ─────────────────────────────────────────────── */
-.spawn-action {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.spawn-path-input,
-.spawn-note-input {
-  width: 100%;
-  font: inherit;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: inherit;
-}
-
-.spawn-result {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--handoff);
-}
-
-.spawn-result code {
-  user-select: all;
-}
-
-.spawn-error {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--p1);
-  white-space: pre-wrap;
-}
-
-/* 실패가 아니라 "여기서는 불가"라는 안내 — 에러색을 쓰지 않는다. */
-.spawn-unavailable {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--muted);
 }
 
 /* ── doing badge — 두 대기의 온도 ─────────────────── */

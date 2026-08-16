@@ -39,7 +39,7 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
 
   return (
     <div
-      className={`todo-row ${done ? 'is-done' : ''} ${todo.archivedAt ? 'is-archived' : ''}`}
+      className={`todo-row flex min-h-8 items-center gap-2 rounded-md px-1.5 py-[5px] hover:bg-surface ${done ? 'is-done' : ''} ${todo.archivedAt ? 'is-archived' : ''}`}
       style={{ paddingLeft: `${depth * 22}px` }}
     >
       <label className="todo-check-hit">
@@ -61,7 +61,11 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
       >
         {copied ? '✓' : todo.number}
       </button>
-      <button type="button" className="todo-title" onClick={() => void openTodoDetail(todo.id)}>
+      <button
+        type="button"
+        className={`todo-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left hover:text-warm ${done ? 'text-faint line-through' : 'text-text'}`}
+        onClick={() => void openTodoDetail(todo.id)}
+      >
         {todo.title}
       </button>
       {/*
