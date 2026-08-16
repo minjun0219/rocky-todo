@@ -1,5 +1,16 @@
 # @minjun0219/rocky-todo
 
+## 0.12.1
+
+### Patch Changes
+
+- [#55](https://github.com/minjun0219/rocky-todo/pull/55) [`c814dd3`](https://github.com/minjun0219/rocky-todo/commit/c814dd37151ebcdb5a0be7b0930d8a93b936ccb8) Thanks [@minjun0219](https://github.com/minjun0219)! - 좁은 화면 터치 다듬기 — 실기기 피드백 3건
+
+  - 체크박스 시각 크기 15 → 18px (히트 영역 44px 는 그대로)
+  - 번호의 예약 폭 32px → 2ch — 체크박스와 번호 사이 빈 공터가 사라지고 두 자리까지
+    우정렬 유지. 히트 영역은 그만큼 좌우로 더 벌림.
+  - 드로어 액션 줄 간격 row-gap 8 → 12px — 44px 버튼이 줄바꿈되면 붙어 보이던 것.
+
 ## 0.12.0
 
 ### Minor Changes
