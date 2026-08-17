@@ -206,7 +206,14 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
 async function readOptionalBody(req: Request): Promise<Record<string, unknown> | undefined> {
   const text = await req.text();
   if (text.trim() === '') {
-    return undefined; // 빈 본문은 타입을 따지지 않는다 — body 없는 POST 가 정상 경로다
+    // 빈 본문이라도 content-type 이 **있으면** JSON 만 허용한다. 이 함수가 쓰이는
+    // issue/spawn 은 빈 본문만으로 부작용이 나는 라우트라, 폼(빈 본문 + text/plain 등)이
+    // 그대로 통과하면 구형 브라우저의 마지막 우회로가 남는다. 폼은 타입을 반드시 붙이고,
+    // body 없는 정상 클라이언트(CLI·웹 UI)는 헤더 자체를 안 붙인다 — 부재만 통과시킨다.
+    if (req.headers.has('content-type')) {
+      assertJsonContentType(req);
+    }
+    return undefined;
   }
   assertJsonContentType(req);
   let parsed: unknown;

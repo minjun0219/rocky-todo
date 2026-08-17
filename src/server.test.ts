@@ -2319,6 +2319,20 @@ describe('CSRF 심층 방어', () => {
     expect((await res.json()).error).toContain('application/json');
   });
 
+  // 빈 본문 + 폼 타입은 issue/spawn 같은 무본문 부작용 라우트의 마지막 우회로다.
+  test('빈 본문이라도 폼 content-type 이 붙어 있으면 거부한다', async () => {
+    const todo2 = store.createTodo({ board: 'rocky-todo', title: 'y' }, 'tester');
+    const res = await handle(
+      new Request(`${BASE}/api/todos/${todo2.id}/issue`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain', 'x-rocky-actor': 'tester' },
+      }),
+      '127.0.0.1',
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('application/json');
+  });
+
   test('빈 본문 POST 는 타입 없이도 통과한다 — body 없는 정상 경로', async () => {
     // readOptionalBody 경로(issue)는 gh 부재로 다른 이유의 에러가 날 수 있으니
     // 타입 에러가 아닌 것만 확인한다.
