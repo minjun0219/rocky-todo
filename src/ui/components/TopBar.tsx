@@ -43,7 +43,9 @@ export function TopBar() {
         title="데몬 SSE 연결 상태"
       >
         <span className="link-pulse size-1.5 rounded-full bg-current" />
-        {connected ? 'LINK ♪' : 'NO LINK'}
+        {/* 초좁은 화면에선 텍스트를 접고 펄스 점만 — 상태는 점 색과 title 로 남는다.
+            한 줄에 전부 들어가는 게 그룹째 줄바꿈보다 낫다(실기기 제보). */}
+        <span className="max-[430px]:hidden">{connected ? 'LINK ♪' : 'NO LINK'}</span>
       </span>
       <div className="flex-1" />
       <ThermalStrip />

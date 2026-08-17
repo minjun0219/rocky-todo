@@ -308,7 +308,14 @@ export function TodoDetail() {
         <div className="mt-2 flex flex-wrap gap-1.5">
           {sessions.available ? (
             <>
-              <select value={handoffSession} onChange={(e) => setHandoffSession(e.target.value)}>
+              {/* w-full + min-w-0 — select 는 가장 긴 option(세션 cwd 전체 경로)의 고유
+                  폭으로 늘어나 시트에 가로 스크롤을 만든다(실기기 제보). 폭을 컨테이너에
+                  가두면 긴 옵션은 select 상자 안에서 잘려 보인다. */}
+              <select
+                className="w-full min-w-0 rounded-md border border-line bg-surface px-2 py-[5px] text-[13px] text-text"
+                value={handoffSession}
+                onChange={(e) => setHandoffSession(e.target.value)}
+              >
                 <option value="">자동 (이 보드의 세션)</option>
                 {sessions.list.map((session) => (
                   <option key={session.sessionId} value={session.sessionId}>

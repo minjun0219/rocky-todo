@@ -23,6 +23,9 @@
   border-left: 1px solid var(--line);
   height: 100%;
   overflow-y: auto;
+  /* 시트는 가로로 절대 스크롤하지 않는다 — 폭을 넘는 자식(긴 select·코드 스팬)이
+     생겨도 페이지 팬 대신 그 자식이 잘리거나 자체적으로 처리해야 한다. */
+  overflow-x: hidden;
   /* 드로어 안에서 끝까지 스크롤한 뒤 계속 스와이프하면 스크롤이 밖(backdrop 뒤 document)으로
      새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
   overscroll-behavior: contain;
