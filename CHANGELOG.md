@@ -1,5 +1,34 @@
 # @minjun0219/rocky-todo
 
+## 0.13.0
+
+### Minor Changes
+
+- [#58](https://github.com/minjun0219/rocky-todo/pull/58) [`73b78b0`](https://github.com/minjun0219/rocky-todo/commit/73b78b0638e8bb54bd30706556341bbc4d1f3888) Thanks [@minjun0219](https://github.com/minjun0219)! - 라이트 모드
+
+  상단 바의 테마 토글(◐ 시스템 → ● 다크 → ○ 라이트 순환)로 켠다. 기본은 시스템
+  설정 추종이고 명시 선택은 localStorage 에 남는다. 첫 페인트 전에 인라인 스크립트가
+  `data-theme` 을 확정해 깜빡임(FOUC)이 없다.
+
+  라이트 팔레트는 순백이 아니라 웜 아이보리다 — 순백 위에서는 앰버가 탁해져
+  "두 대기"(warm=에이전트 / cool=사람)의 온도 대비가 죽는다. 값은 대비 튜닝을 마친
+  닫힌 브랜치의 팔레트를 그대로 살렸다. 다크는 기존 그대로가 기본값이다.
+
+### Patch Changes
+
+- [#57](https://github.com/minjun0219/rocky-todo/pull/57) [`b3ca2dd`](https://github.com/minjun0219/rocky-todo/commit/b3ca2dd60cd4b75de07c7729d569afad2e9053ab) Thanks [@minjun0219](https://github.com/minjun0219)! - 브라우저發 CSRF 심층 방어 두 겹을 더한다
+
+  cross-site 변경 가드(Sec-Fetch-Site/Origin)는 이미 전 변경 라우트에 걸려 있다.
+  이번에 남은 갭 둘을 닫는다:
+
+  - **변경 본문은 `application/json` 만** — `<form enctype="text/plain">` 은 Fetch
+    Metadata 를 모르는 구형 브라우저에서 preflight 없이 나가는 마지막 통로였다.
+    정상 클라이언트(CLI·웹 UI·훅)는 전부 이 타입을 이미 보낸다. 빈 본문 POST 는
+    타입을 따지지 않는다.
+  - **보드 `path`·`repo` 변경은 로컬 요청만** — path 는 spawn 워크트리 경로, repo 는
+    이슈 생성 대상이다. 노출 채널이 이걸 바꿔두면 로컬 사용자의 다음 spawn/이슈
+    버튼이 조용히 다른 곳을 향한다. 제목·설명·key 는 노출 채널에서도 그대로 편집된다.
+
 ## 0.12.1
 
 ### Patch Changes
