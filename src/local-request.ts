@@ -140,6 +140,18 @@ export const CROSS_SITE_MESSAGE =
 export const NON_LOCAL_ISSUE_MESSAGE =
   'GitHub 이슈 생성은 로컬(루프백) 요청만 할 수 있다 — 데몬 사용자의 gh 인증을 쓰기 때문에 노출된 표면으로는 허용하지 않는다';
 
+/**
+ * 보드의 로컬 정체(path·repo) 변경 거부 문구.
+ *
+ * `path` 는 spawn 이 워크트리를 만드는 **이 기계의 파일시스템 경로**고, `repo` 는 이슈
+ * 생성이 향하는 GitHub 대상이다. 노출 채널에서 이 둘을 바꿔두면 로컬 사용자의 다음
+ * spawn/이슈 버튼이 조용히 다른 곳을 향한다 — 소비 지점이 로컬 전용인 값은 변경도
+ * 로컬 전용이어야 앞뒤가 맞는다. 제목·설명·key 는 보드 자체의 것이라 노출 채널에서도
+ * 편집할 수 있게 남긴다.
+ */
+export const NON_LOCAL_BOARD_META_MESSAGE =
+  '보드의 path·repo 변경은 로컬(루프백) 요청만 할 수 있다 — spawn 워크트리와 이슈 대상이 걸린 값이라 노출된 표면으로는 허용하지 않는다';
+
 /** spawn 거부 문구 — 이슈 생성과 같은 등급의 게이트다. */
 export const NON_LOCAL_SPAWN_MESSAGE =
   '백그라운드 세션 띄우기는 로컬(루프백) 요청만 할 수 있다 — 이 기계에서 파일을 고치는 프로세스를 띄우기 때문에 노출된 표면으로는 허용하지 않는다';

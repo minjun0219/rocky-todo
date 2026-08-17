@@ -14,6 +14,7 @@ import {
   CROSS_SITE_MESSAGE,
   isCrossSiteRequest,
   isLocalRequest,
+  NON_LOCAL_BOARD_META_MESSAGE,
   NON_LOCAL_ISSUE_MESSAGE,
   NON_LOCAL_SPAWN_MESSAGE,
 } from './local-request';
@@ -166,7 +167,24 @@ function alreadyHasIssue(url: string): Response {
   return json({ error: `todo already has a GitHub issue: ${url}`, url }, 409);
 }
 
+/**
+ * 변경 본문은 `application/json` 만 받는다.
+ *
+ * `<form enctype="text/plain">` 은 preflight 없이 나가는 cross-site 쓰기의 마지막
+ * 통로다 — Fetch Metadata 를 모르는 구형 브라우저에서는 위의 cross-site 가드가
+ * 못 잡을 수 있어, 타입 강제가 그 심층 방어가 된다. 정상 클라이언트(CLI·웹 UI·훅)는
+ * 전부 이 타입을 보낸다. 폼이 만들 수 있는 타입(text/plain 등)으로는 JSON 본문을
+ * 실을 수 없게 된다.
+ */
+function assertJsonContentType(req: Request): void {
+  const type = req.headers.get('content-type') ?? '';
+  if (!type.toLowerCase().includes('application/json')) {
+    throw new Error(`content-type must be application/json (got: ${type || '(없음)'})`);
+  }
+}
+
 async function readBody(req: Request): Promise<Record<string, unknown>> {
+  assertJsonContentType(req);
   try {
     const body = (await req.json()) as unknown;
     if (typeof body !== 'object' || body === null) {
@@ -188,8 +206,9 @@ async function readBody(req: Request): Promise<Record<string, unknown>> {
 async function readOptionalBody(req: Request): Promise<Record<string, unknown> | undefined> {
   const text = await req.text();
   if (text.trim() === '') {
-    return undefined;
+    return undefined; // 빈 본문은 타입을 따지지 않는다 — body 없는 POST 가 정상 경로다
   }
+  assertJsonContentType(req);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -453,6 +472,12 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
       const boardDetail = path.match(/^\/api\/boards\/([^/]+)$/);
       if (boardDetail?.[1] && method === 'PATCH') {
         const body = await readBody(req);
+        // path 는 spawn 워크트리의 파일시스템 경로, repo 는 이슈 생성 대상 — 소비 지점이
+        // 로컬 전용인 값은 변경도 로컬 전용이다. 노출 채널이 이걸 바꿔두면 로컬 사용자의
+        // 다음 spawn/이슈 버튼이 조용히 다른 곳을 향한다. 제목·설명·key 는 그대로 열어 둔다.
+        if ((body.path !== undefined || body.repo !== undefined) && !local) {
+          return errorResponse(NON_LOCAL_BOARD_META_MESSAGE, 403);
+        }
         const key = decodeURIComponent(boardDetail[1]);
         // 필드는 서로 독립이고 **함께 보낼 수 있다** — 편집 폼은 한 번에 여러 개를
         // 바꾼다. 예전에는 `repo`+`path` 동시 전송을 400 으로 막았는데(store 호출이 둘로

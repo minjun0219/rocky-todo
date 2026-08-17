@@ -2301,3 +2301,54 @@ describe('statusline route', () => {
     expect(line).toBe('doing=1 stale=1');
   });
 });
+
+describe('CSRF 심층 방어', () => {
+  // cross-site 가드(Sec-Fetch-Site/Origin)를 모르는 구형 브라우저에서는
+  // `<form enctype="text/plain">` 이 마지막 통로다 — 타입 강제가 그걸 끊는다.
+  test('text/plain 본문의 변경 요청은 거부한다', async () => {
+    // req 헬퍼는 body 가 있으면 JSON 타입을 덮어쓰므로, 폼 흉내는 handle 을 직접 부른다.
+    const res = await handle(
+      new Request(`${BASE}/api/todos`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain', 'x-rocky-actor': 'tester' },
+        body: JSON.stringify({ board: 'rocky-todo', title: 'csrf' }),
+      }),
+      '127.0.0.1',
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('application/json');
+  });
+
+  test('빈 본문 POST 는 타입 없이도 통과한다 — body 없는 정상 경로', async () => {
+    // readOptionalBody 경로(issue)는 gh 부재로 다른 이유의 에러가 날 수 있으니
+    // 타입 에러가 아닌 것만 확인한다.
+    const todo = store.createTodo({ board: 'rocky-todo', title: 'x' }, 'tester');
+    const res = await req(`/api/todos/${todo.id}/issue`, { method: 'POST' });
+    const bodyText = await res.text();
+    expect(bodyText).not.toContain('application/json (got');
+  });
+
+  test('보드 path·repo 변경은 로컬 요청만 — 노출 채널이 spawn 목적지를 못 바꾼다', async () => {
+    store.ensureBoard('csrf-board', { actor: 'tester' });
+    // tailscale serve 를 거친 요청 흉내 — peer 는 루프백이지만 중계 헤더가 있다.
+    const remote = await req('/api/boards/csrf-board', {
+      method: 'PATCH',
+      headers: { 'x-forwarded-for': '100.64.0.7' },
+      body: JSON.stringify({ path: '/tmp/evil' }),
+    });
+    expect(remote.status).toBe(403);
+    // 같은 요청이라도 제목 변경은 노출 채널에서 허용된다.
+    const title = await req('/api/boards/csrf-board', {
+      method: 'PATCH',
+      headers: { 'x-forwarded-for': '100.64.0.7' },
+      body: JSON.stringify({ title: '새 제목' }),
+    });
+    expect(title.status).toBe(200);
+    // 로컬에서는 path 변경이 된다.
+    const local = await req('/api/boards/csrf-board', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: '/tmp/ok' }),
+    });
+    expect(local.status).toBe(200);
+  });
+});
