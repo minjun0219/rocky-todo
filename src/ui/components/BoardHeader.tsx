@@ -1,3 +1,4 @@
+import { ArrowUpRight } from 'lucide-react';
 import { useState } from 'react';
 import type { Board } from '../../store';
 import { useUiStore } from '../store';
@@ -53,7 +54,7 @@ export function BoardHeader({ board }: { board: Board }) {
             target="_blank"
             rel="noreferrer"
           >
-            {board.repo} ↗
+            {board.repo} <ArrowUpRight size={11} aria-hidden className="inline align-[-1px]" />
           </a>
         )}
         {board.path && <span className="chip text-faint">{board.path}</span>}

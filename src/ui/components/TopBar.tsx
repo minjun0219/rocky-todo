@@ -1,3 +1,4 @@
+import { Moon, Sun, SunMoon } from 'lucide-react';
 import { useState } from 'react';
 import type { ThemePref } from '../lib';
 import { useUiStore } from '../store';
@@ -10,10 +11,10 @@ const THEME_CYCLE: Record<ThemePref, ThemePref> = {
   light: 'auto',
 };
 
-const THEME_GLYPH: Record<ThemePref, string> = {
-  auto: '◐',
-  dark: '●',
-  light: '○',
+const THEME_ICON: Record<ThemePref, typeof SunMoon> = {
+  auto: SunMoon,
+  dark: Moon,
+  light: Sun,
 };
 
 const THEME_LABEL: Record<ThemePref, string> = {
@@ -61,7 +62,10 @@ export function TopBar() {
           aria-label={`테마 — 현재 ${THEME_LABEL[themePref]}. 눌러서 ${THEME_LABEL[THEME_CYCLE[themePref]]}`}
           onClick={() => setThemePref(THEME_CYCLE[themePref])}
         >
-          {THEME_GLYPH[themePref]}
+          {(() => {
+            const Icon = THEME_ICON[themePref];
+            return <Icon size={15} aria-hidden />;
+          })()}
         </button>
         <label className="archived-toggle flex cursor-pointer items-center gap-1.5 text-xs text-muted">
           <input

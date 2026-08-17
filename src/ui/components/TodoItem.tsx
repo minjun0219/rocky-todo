@@ -1,3 +1,4 @@
+import { ArrowUpRight, GripVertical, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { TodoView } from '../../server';
 import {
@@ -54,7 +55,7 @@ export function TodoItem({ todo, depth, onHandleDown }: TodoItemProps) {
           aria-label={`${todo.title} 순서 이동 핸들`}
           onPointerDown={(e) => onHandleDown(e, todo)}
         >
-          ⠿
+          <GripVertical size={13} aria-hidden />
         </button>
       )}
       <label className="todo-check-hit">
@@ -112,7 +113,8 @@ export function TodoItem({ todo, depth, onHandleDown }: TodoItemProps) {
             title={link.title ?? link.url}
             onClick={(e) => e.stopPropagation()}
           >
-            {link.title ?? linkLabel(link.url)} ↗
+            {link.title ?? linkLabel(link.url)}
+            <ArrowUpRight size={11} aria-hidden className="inline align-[-1px]" />
           </a>
         ))}
         {todo.commentCount > 0 && (
@@ -127,7 +129,8 @@ export function TodoItem({ todo, depth, onHandleDown }: TodoItemProps) {
             }
             onClick={() => void openTodoDetail(todo.id)}
           >
-            💬 {todo.commentCount}
+            <MessageCircle size={12} aria-hidden className="inline align-[-2px]" />{' '}
+            {todo.commentCount}
           </button>
         )}
         {pendingHandoff ? (

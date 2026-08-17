@@ -1,3 +1,4 @@
+import { Archive, ArchiveRestore, ArrowUpRight, Check, Pause, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { boardCommand, copyRefWithFeedback, linkLabel } from '../../lib';
 import { useUiStore } from '../../store';
@@ -119,12 +120,17 @@ export function TodoDetail() {
     setEditingTitle(false);
   };
 
-  const statusButton = (label: string, action: Parameters<typeof setTodoStatus>[1]) => (
+  const statusButton = (
+    Icon: typeof Play,
+    label: string,
+    action: Parameters<typeof setTodoStatus>[1],
+  ) => (
     <button
       type="button"
-      className="drawer-btn"
+      className="drawer-btn inline-flex items-center gap-1"
       onClick={() => void setTodoStatus(todo.id, action)}
     >
+      <Icon size={12} aria-hidden />
       {label}
     </button>
   );
@@ -267,7 +273,8 @@ export function TodoDetail() {
               rel="noreferrer"
               className="chip chip-link"
             >
-              {link.title ?? linkLabel(link.url)} ↗
+              {link.title ?? linkLabel(link.url)}
+              <ArrowUpRight size={11} aria-hidden className="inline align-[-1px]" />
             </a>
           ))}
         </div>
@@ -307,13 +314,13 @@ export function TodoDetail() {
         </button>
       )}
       <div className="drawer-actions">
-        {todo.status !== 'doing' && statusButton('▶ 시작', 'start')}
-        {todo.status === 'doing' && statusButton('⏸ 중단', 'stop')}
-        {todo.status !== 'done' && statusButton('✓ 완료', 'done')}
-        {todo.status === 'done' && statusButton('↺ 다시 열기', 'reopen')}
+        {todo.status !== 'doing' && statusButton(Play, '시작', 'start')}
+        {todo.status === 'doing' && statusButton(Pause, '중단', 'stop')}
+        {todo.status !== 'done' && statusButton(Check, '완료', 'done')}
+        {todo.status === 'done' && statusButton(RotateCcw, '다시 열기', 'reopen')}
         {todo.archivedAt
-          ? statusButton('보관 해제', 'unarchive')
-          : statusButton('▣ 보관', 'archive')}
+          ? statusButton(ArchiveRestore, '보관 해제', 'unarchive')
+          : statusButton(Archive, '보관', 'archive')}
         {/* 같은 액션 어휘이므로 같은 컨테이너다 — 밖에 두면 gap 이 안 닿아 위 줄과
             0px 로 붙는다(실기기 제보 3회의 진범). 대기 중 상태 표시는 버튼이 아니라
             아래 별도 줄로 남는다. */}
