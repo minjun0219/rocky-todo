@@ -10,6 +10,8 @@ export function TodoDetail() {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const patchTodo = useUiStore((s) => s.patchTodo);
   const sections = useUiStore((s) => s.sections);
+  const boards = useUiStore((s) => s.boards);
+  const moveTodoToBoard = useUiStore((s) => s.moveTodoToBoard);
   const handoffs = useUiStore((s) => s.handoffs);
   const sessions = useUiStore((s) => s.sessions);
   const fetchSessions = useUiStore((s) => s.fetchSessions);
@@ -216,6 +218,34 @@ export function TodoDetail() {
             {boardSections.map((section) => (
               <option key={section.id} value={section.id}>
                 {section.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {/*
+        보드 이동 — 번호가 대상 보드에서 새로 발급된다(참조가 바뀐다). 하위 항목이 있으면
+        서버가 거부하고, 그 에러는 alert 대신 콘솔로 — 드로어에 에러 자리를 새로 만들
+        만큼 흔한 실패가 아니다. 섹션은 같은 이름이 대상에 있을 때만 이어진다.
+      */}
+      {boards.length > 1 && (
+        <label className="mt-1 mb-1 flex items-center gap-2">
+          <span className="drawer-section-label">보드</span>
+          <select
+            className="flex-auto rounded-md border border-line bg-surface px-2 py-[5px] text-[13px] text-text"
+            value={todo.boardId}
+            onChange={(e) => {
+              const picked = boards.find((b) => b.id === e.target.value);
+              if (picked && picked.id !== todo.boardId) {
+                void moveTodoToBoard(todo.id, picked.key).catch((err) => {
+                  console.warn('[rocky-todo] 보드 이동 실패', err);
+                });
+              }
+            }}
+          >
+            {boards.map((board) => (
+              <option key={board.id} value={board.id}>
+                {board.title}
               </option>
             ))}
           </select>

@@ -1378,3 +1378,50 @@ describe('moveTodo — 같은 보드 안 순서 이동', () => {
     expect(entry?.action).toBe('reorder');
   });
 });
+
+describe('moveTodoToBoard — 보드 간 이동', () => {
+  test('번호를 새로 발급하고 원래 번호는 빈 자리로 남는다', () => {
+    store.createTodo({ board: 'target', title: 't1' }, 't');
+    const moving = store.createTodo({ board: 'origin', title: 'm' }, 't');
+    const moved = store.moveTodoToBoard(moving.id, 'target', 't');
+    expect(moved.number).toBe(2); // target 의 MAX+1
+    expect(store.listTodos({ board: 'target' }).map((t) => t.title)).toContain('m');
+    expect(store.listTodos({ board: 'origin' })).toHaveLength(0);
+  });
+
+  test('같은 이름의 섹션이 대상에 있으면 붙고, 없으면 비운다', () => {
+    const origin = store.ensureBoard('origin', { actor: 't' });
+    const target = store.ensureBoard('target', { actor: 't' });
+    store.ensureSection(target.id, '설계', 't');
+    const withMatch = store.createTodo({ board: 'origin', title: 'a', section: '설계' }, 't');
+    const withoutMatch = store.createTodo({ board: 'origin', title: 'b', section: '백로그' }, 't');
+    const movedA = store.moveTodoToBoard(withMatch.id, 'target', 't');
+    const movedB = store.moveTodoToBoard(withoutMatch.id, 'target', 't');
+    const targetSections = store.listSections(target.id);
+    expect(targetSections.map((s) => s.title)).toEqual(['설계']); // 몰래 만들지 않는다
+    expect(movedA.sectionId).toBe(targetSections[0]?.id);
+    expect(movedB.sectionId).toBeUndefined();
+    expect(origin.id).toBeTruthy();
+  });
+
+  test('하위 항목이 있으면 거부한다', () => {
+    const parent = store.createTodo({ board: 'origin', title: 'p' }, 't');
+    store.createTodo({ board: 'origin', title: 'c', parentId: parent.id }, 't');
+    expect(() => store.moveTodoToBoard(parent.id, 'target', 't')).toThrow(/children/);
+  });
+
+  test('부모 링크는 보드를 넘으면 끊긴다', () => {
+    const parent = store.createTodo({ board: 'origin', title: 'p' }, 't');
+    const child = store.createTodo({ board: 'origin', title: 'c', parentId: parent.id }, 't');
+    const moved = store.moveTodoToBoard(child.id, 'target', 't');
+    expect(moved.parentId).toBeUndefined();
+  });
+
+  test('히스토리에 move-board 가 보드·번호 변화와 함께 남는다', () => {
+    const moving = store.createTodo({ board: 'origin', title: 'm' }, 't');
+    store.moveTodoToBoard(moving.id, 'target', 't');
+    const entry = store.listHistory({ entityId: moving.id })[0];
+    expect(entry?.action).toBe('move-board');
+    expect(entry?.changes?.board).toEqual(['origin', 'target']);
+  });
+});

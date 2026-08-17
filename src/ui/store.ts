@@ -106,6 +106,8 @@ interface UiState {
   addTodo: (input: { board: string; title: string; section?: string }) => Promise<void>;
   /** 같은 보드 안 순서 이동 — before 앞으로, null 이면 맨 끝. */
   moveTodo: (id: string, before: string | null) => Promise<void>;
+  /** 다른 보드로 이동 — 번호는 대상 보드에서 새로 발급된다. */
+  moveTodoToBoard: (id: string, board: string) => Promise<void>;
   patchTodo: (id: string, patch: Record<string, unknown>) => Promise<void>;
   setTodoStatus: (id: string, action: StatusAction) => Promise<void>;
   addNote: (input: { board?: string; title: string }) => Promise<void>;
@@ -446,6 +448,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   addTodo: async (input) => {
     const { actor } = get();
     await api('/api/todos', actor, { method: 'POST', body: JSON.stringify(input) });
+    await get().refetch();
+  },
+
+  moveTodoToBoard: async (id, board) => {
+    const { actor } = get();
+    await api(`/api/todos/${id}/board`, actor, {
+      method: 'POST',
+      body: JSON.stringify({ board }),
+    });
     await get().refetch();
   },
 

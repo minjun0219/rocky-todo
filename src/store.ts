@@ -1174,6 +1174,71 @@ export class TodoStore {
    *
    * @param beforeRef 이 항목 **앞**에 놓을 기준 todo. null 이면 맨 끝으로.
    */
+  /**
+   * todo 를 다른 보드로 옮긴다.
+   *
+   * - **번호는 대상 보드에서 새로 발급**된다 — 번호는 보드별 공간이라 그대로 못 쓴다.
+   *   원래 번호는 회수되지 않고 빈 자리로 남는다(발급이 MAX+1 이라 재사용도 없다).
+   * - **섹션**: 대상 보드에 같은 이름의 (미보관) 섹션이 있으면 그리로 붙고, 없으면
+   *   비운다 — 이동이 대상 보드에 섹션을 몰래 만들지 않는다.
+   * - **부모**: 보드를 넘으면 끊긴다(비운다). **하위 항목이 있으면 거부** — 자식들의
+   *   부모 링크를 조용히 끊거나 서브트리를 통째로 옮기는 건 어느 쪽도 놀람이라,
+   *   호출자가 하위를 먼저 정리하게 한다.
+   * - position 은 대상 보드 맨 끝.
+   */
+  moveTodoToBoard(
+    ref: string,
+    targetBoardKey: string,
+    actor: string,
+    currentBoardId?: string,
+  ): Todo {
+    const todo = this.mustGetTodo(ref, currentBoardId);
+    const target = this.ensureBoard(targetBoardKey, { actor });
+    if (target.id === todo.boardId) {
+      return todo; // 같은 보드 = 제자리
+    }
+    const childCount = this.db
+      .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM todos WHERE parent_id = ?')
+      .get(todo.id);
+    if ((childCount?.n ?? 0) > 0) {
+      throw new Error(
+        `cannot move todo with children: ${ref} — 하위 항목을 먼저 옮기거나 분리한다`,
+      );
+    }
+    const origin = this.listBoards(true).find((b) => b.id === todo.boardId);
+    return this.db.transaction(() => {
+      const number = this.nextNumber('todos', target.id);
+      const position = this.nextPosition('todos', target.id);
+      // 같은 이름의 미보관 섹션이 대상에 있을 때만 소속을 잇는다.
+      let sectionId: string | null = null;
+      if (todo.sectionId) {
+        const sectionTitle = this.db
+          .query<{ title: string }, [string]>('SELECT title FROM sections WHERE id = ?')
+          .get(todo.sectionId)?.title;
+        if (sectionTitle) {
+          sectionId =
+            this.listSections(target.id).find((s) => s.title === sectionTitle)?.id ?? null;
+        }
+      }
+      this.db
+        .query(
+          'UPDATE todos SET board_id = ?, number = ?, position = ?, section_id = ?, parent_id = NULL, updated_at = ? WHERE id = ?',
+        )
+        .run(target.id, number, position, sectionId, nowIso(), todo.id);
+      this.recordHistory(
+        'todo',
+        todo.id,
+        actor,
+        'move-board',
+        {
+          board: [origin?.key ?? todo.boardId, target.key],
+          number: [todo.number, number],
+        },
+        target.id,
+      );
+      return this.mustGetTodo(todo.id);
+    })();
+  }
   moveTodo(ref: string, beforeRef: string | null, actor: string, currentBoardId?: string): Todo {
     const todo = this.mustGetTodo(ref, currentBoardId);
     let beforeId: string | null = null;

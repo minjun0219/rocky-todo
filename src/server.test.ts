@@ -2391,3 +2391,22 @@ describe('POST /api/todos/:ref/move', () => {
     expect(store.listTodos({ board: 'move-b' }).map((t) => t.title)).toEqual(['z', 'x', 'y']);
   });
 });
+
+describe('POST /api/todos/:ref/board — 보드 이동', () => {
+  test('대상 보드로 옮기고 새 참조를 돌려준다', async () => {
+    const t = store.createTodo({ board: 'bm-origin', title: 'mv' }, 'tester');
+    const res = await req(`/api/todos/${t.id}/board`, {
+      method: 'POST',
+      body: JSON.stringify({ board: 'bm-target' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ref: string };
+    expect(body.ref).toBe('bm-target-1');
+  });
+
+  test('board 없으면 400', async () => {
+    const t = store.createTodo({ board: 'bm-origin', title: 'mv2' }, 'tester');
+    const res = await req(`/api/todos/${t.id}/board`, { method: 'POST', body: '{}' });
+    expect(res.status).toBe(400);
+  });
+});
