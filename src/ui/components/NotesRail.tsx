@@ -1,3 +1,4 @@
+import { Archive, ChevronDown, ChevronRight, History } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { NoteView } from '../../server';
 import { boardCommand, copyRefWithFeedback, formatElapsed } from '../lib';
@@ -50,7 +51,13 @@ export function NotesRail() {
           <span className="sidebar-label">
             NOTES
             {notes.length > 0 ? ` · ${notes.length}` : ''}
-            <span className="notes-caret">{mobileOpen ? ' ▾' : ' ▸'}</span>
+            <span className="notes-caret">
+              {mobileOpen ? (
+                <ChevronDown size={11} aria-hidden className="inline align-[-1px]" />
+              ) : (
+                <ChevronRight size={11} aria-hidden className="inline align-[-1px]" />
+              )}
+            </span>
           </span>
         </button>
         <button
@@ -134,7 +141,7 @@ function NoteCard({ note }: { note: NoteView }) {
           title="히스토리"
           onClick={() => void openNoteDetail(note.id)}
         >
-          ⌚
+          <History size={13} aria-hidden />
         </button>
         <button
           type="button"
@@ -142,7 +149,7 @@ function NoteCard({ note }: { note: NoteView }) {
           title="보관 (삭제는 없다)"
           onClick={() => void archiveNote(note.id)}
         >
-          ▣
+          <Archive size={13} aria-hidden />
         </button>
       </div>
       <textarea

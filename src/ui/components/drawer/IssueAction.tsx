@@ -1,3 +1,4 @@
+import { ArrowUpRight } from 'lucide-react';
 import { useState } from 'react';
 import { findIssueLink } from '../../../github';
 import type { TodoView } from '../../../server';
@@ -19,7 +20,7 @@ export function IssueAction({ todo }: { todo: TodoView }) {
     return (
       <div className="drawer-actions">
         <a className="drawer-btn" href={issueUrl} target="_blank" rel="noreferrer">
-          이슈 열기 ↗
+          이슈 열기 <ArrowUpRight size={11} aria-hidden className="inline align-[-1px]" />
         </a>
       </div>
     );

@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import { isEditableTarget } from '../lib';
 import { useUiStore } from '../store';
 import { NoteDetail } from './drawer/NoteDetail';
@@ -45,7 +46,7 @@ export function DetailDrawer() {
             {detail.kind === 'todo' ? '할 일 상세' : '메모 상세'}
           </Dialog.Title>
           <Dialog.Close className="drawer-close" aria-label="상세 닫기">
-            ✕
+            <X size={16} aria-hidden />
           </Dialog.Close>
           {detail.kind === 'todo' ? <TodoDetail /> : <NoteDetail />}
           {detail.kind === 'todo' && detail.todo && <CommentComposer todoId={detail.todo.id} />}
