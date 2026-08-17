@@ -139,6 +139,7 @@ function NoteCard({ note }: { note: NoteView }) {
           type="button"
           className="note-action px-1 py-0.5 text-xs text-faint hover:text-text"
           title="히스토리"
+          aria-label="히스토리"
           onClick={() => void openNoteDetail(note.id)}
         >
           <History size={13} aria-hidden />
@@ -147,6 +148,7 @@ function NoteCard({ note }: { note: NoteView }) {
           type="button"
           className="note-action px-1 py-0.5 text-xs text-faint hover:text-text"
           title="보관 (삭제는 없다)"
+          aria-label="보관"
           onClick={() => void archiveNote(note.id)}
         >
           <Archive size={13} aria-hidden />
