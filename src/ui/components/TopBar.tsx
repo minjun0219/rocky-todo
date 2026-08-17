@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ThemePref } from '../lib';
 import { useUiStore } from '../store';
+import { ThermalStrip } from './ThermalStrip';
 
 /** 토글 순환 — auto 에서 시작해 명시 선택을 거쳐 다시 auto 로 돌아온다. */
 const THEME_CYCLE: Record<ThemePref, ThemePref> = {
@@ -20,8 +21,6 @@ const THEME_LABEL: Record<ThemePref, string> = {
   dark: '어두운 테마',
   light: '밝은 테마',
 };
-import { ThermalStrip } from './ThermalStrip';
-
 /** 상단 바 — 워드마크 + 링크(SSE) 상태 + 보관됨 표시 토글 + 호출자(actor) 설정. */
 export function TopBar() {
   const connected = useUiStore((s) => s.connected);

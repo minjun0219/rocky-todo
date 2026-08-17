@@ -185,15 +185,17 @@ function assertJsonContentType(req: Request): void {
 
 async function readBody(req: Request): Promise<Record<string, unknown>> {
   assertJsonContentType(req);
+  let body: unknown;
   try {
-    const body = (await req.json()) as unknown;
-    if (typeof body !== 'object' || body === null) {
-      throw new Error('body must be a JSON object');
-    }
-    return body as Record<string, unknown>;
+    body = (await req.json()) as unknown;
   } catch {
-    throw new Error('invalid JSON body');
+    throw new Error('invalid JSON body'); // 파싱 실패만 이 문구다 — 모양 오류를 덮지 않는다
   }
+  // 배열도 typeof 는 'object' 다 — 필드 접근이 undefined 로 조용히 흘러가기 전에 막는다.
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new Error('body must be a JSON object');
+  }
+  return body as Record<string, unknown>;
 }
 
 /**

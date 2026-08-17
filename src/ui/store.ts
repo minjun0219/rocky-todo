@@ -224,7 +224,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       try {
         return localStorage.getItem(THEME_KEY);
       } catch {
-        return null; // 저장소 차단 = 저장값 없음(auto) — index.html 인라인 스크립트와 같은 결
+        return null; // 저장소 차단은 저장값 없음(auto)으로 다룬다 — index.html 인라인 스크립트와 같은 규칙
       }
     })(),
   ),
