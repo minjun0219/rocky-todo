@@ -1166,15 +1166,6 @@ export class TodoStore {
   }
 
   /**
-   * 같은 보드 안에서 todo 의 표시 순서를 옮긴다.
-   *
-   * 보드의 전체 행(보관 포함)을 position 순으로 다시 매긴다 — 보드당 항목이 수십 개
-   * 수준이라 부분 갱신보다 전체 재부여가 단순하고, 트랜잭션 안이라 부분 적용이 없다.
-   * 보관 항목도 상대 순서를 유지한 채 같이 재부여된다("보관됨 표시" 뷰의 순서 보존).
-   *
-   * @param beforeRef 이 항목 **앞**에 놓을 기준 todo. null 이면 맨 끝으로.
-   */
-  /**
    * todo 를 다른 보드로 옮긴다.
    *
    * - **번호는 대상 보드에서 새로 발급**된다 — 번호는 보드별 공간이라 그대로 못 쓴다.
@@ -1239,6 +1230,15 @@ export class TodoStore {
       return this.mustGetTodo(todo.id);
     })();
   }
+  /**
+   * 같은 보드 안에서 todo 의 표시 순서를 옮긴다.
+   *
+   * 보드의 전체 행(보관 포함)을 position 순으로 다시 매긴다 — 보드당 항목이 수십 개
+   * 수준이라 부분 갱신보다 전체 재부여가 단순하고, 트랜잭션 안이라 부분 적용이 없다.
+   * 보관 항목도 상대 순서를 유지한 채 같이 재부여된다("보관됨 표시" 뷰의 순서 보존).
+   *
+   * @param beforeRef 이 항목 **앞**에 놓을 기준 todo. null 이면 맨 끝으로.
+   */
   moveTodo(ref: string, beforeRef: string | null, actor: string, currentBoardId?: string): Todo {
     const todo = this.mustGetTodo(ref, currentBoardId);
     let beforeId: string | null = null;

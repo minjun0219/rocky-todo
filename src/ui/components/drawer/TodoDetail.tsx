@@ -243,6 +243,12 @@ export function TodoDetail() {
               }
             }}
           >
+            {/* 현재 보드가 목록에 없으면(보관된 보드 등) controlled select 의 value 와
+                option 이 어긋나 첫 항목이 선택된 것처럼 보인다 — 현재 값을 담는 option
+                을 하나 만들어 불일치를 막는다. */}
+            {!boards.some((board) => board.id === todo.boardId) && (
+              <option value={todo.boardId}>(현재 보드)</option>
+            )}
             {boards.map((board) => (
               <option key={board.id} value={board.id}>
                 {board.title}
