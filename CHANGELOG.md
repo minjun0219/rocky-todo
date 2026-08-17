@@ -1,5 +1,47 @@
 # @minjun0219/rocky-todo
 
+## 0.14.0
+
+### Minor Changes
+
+- [#64](https://github.com/minjun0219/rocky-todo/pull/64) [`d139e43`](https://github.com/minjun0219/rocky-todo/commit/d139e43bd99aa16b14d28142eff4ba8f26b639e7) Thanks [@minjun0219](https://github.com/minjun0219)! - todo 를 다른 보드로 옮긴다
+
+  드로어의 새 "보드" 선택으로 옮기고, CLI 는 `rocky-todo move REF --to BOARD`
+  (같은 커맨드가 `--before REF | --last` 로 순서 이동도 한다). REST 는
+  `POST /api/todos/:ref/board { board }`.
+
+  - 번호는 대상 보드에서 새로 발급된다 — 참조가 바뀐다(원래 번호는 빈 자리로 남음)
+  - 섹션은 같은 이름이 대상에 있을 때만 이어지고, 이동이 대상 보드에 섹션을 몰래
+    만들지 않는다
+  - 하위 항목이 있으면 거부한다 — 부모/자식 링크를 조용히 끊지 않는다
+  - 히스토리에 move-board (보드·번호 변화) 기록
+
+- [#63](https://github.com/minjun0219/rocky-todo/pull/63) [`9294a60`](https://github.com/minjun0219/rocky-todo/commit/9294a6078557ce35874c5e29e81012ea76527d25) Thanks [@minjun0219](https://github.com/minjun0219)! - todo 를 핸들로 끌어 순서를 바꾼다
+
+  행에 정렬 핸들(⠿)이 생겼다 — 데스크톱은 행 hover 에 나타나고, 좁은 화면은 늘 흐리게
+  보인다. 핸들을 끌면 삽입선이 따라오고, 놓으면 그 자리로 이동한다(터치 포함 — 핸들에서
+  시작한 터치는 스크롤로 새지 않는다). 이동은 같은 보드·섹션·부모 안에서만 — 섹션을
+  넘기는 건 정렬이 아니라 소속 변경이라 드로어의 몫이다.
+
+  서버는 `POST /api/todos/:ref/move { before: ref | null }` — 보드 전체 position 을
+  트랜잭션으로 재부여하고 히스토리에 reorder 를 남긴다.
+
+- [#66](https://github.com/minjun0219/rocky-todo/pull/66) [`714afdd`](https://github.com/minjun0219/rocky-todo/commit/714afdd3872a8b9c64f82afbd04bfa82e6cf57d3) Thanks [@minjun0219](https://github.com/minjun0219)! - 이모지·글리프 아이콘을 lucide 로 교체한다
+
+  💬(댓글)·↗(링크)·✕(닫기)·◐●○(테마)·▶⏸✓↺▣(상태 버튼)·⌚(히스토리)·⠿(핸들)·
+  ▸▾(접힘 캐럿)가 lucide-react 스트로크 아이콘으로 바뀐다 — OS 이모지 렌더링 편차가
+  사라지고 라이트/다크 모두 currentColor 로 일관된다. 트리셰이킹으로 쓰는 아이콘만
+  번들에 실린다(사전 실측 gzip ~1.4KB). `LINK ♪` 와 파비콘 🪨 는 정체성이라 유지.
+
+### Patch Changes
+
+- [#67](https://github.com/minjun0219/rocky-todo/pull/67) [`ef12953`](https://github.com/minjun0219/rocky-todo/commit/ef12953a43d0953cc88922702372d7fd402e9b4d) Thanks [@minjun0219](https://github.com/minjun0219)! - PC 상세를 중앙 모달로
+
+  우측 440px 드로어는 긴 설명을 좁은 기둥에 가둬 스크롤만 길어졌다. 상세는
+  설명·댓글·히스토리까지 있는 문서라, 읽기 자연스러운 **중앙 모달**(680px ≈ 80ch,
+  최대 86vh, 둥근 카드)로 바꾼다 — 좁은 화면의 바텀시트와 "보드 위에 뜨는 카드"
+  문법도 통일된다. 바텀시트는 그대로다.
+
 ## 0.13.1
 
 ### Patch Changes
