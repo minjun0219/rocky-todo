@@ -278,6 +278,14 @@ export function TodoDetail() {
         {todo.archivedAt
           ? statusButton('보관 해제', 'unarchive')
           : statusButton('▣ 보관', 'archive')}
+        {/* 같은 액션 어휘이므로 같은 컨테이너다 — 밖에 두면 gap 이 안 닿아 위 줄과
+            0px 로 붙는다(실기기 제보 3회의 진범). 대기 중 상태 표시는 버튼이 아니라
+            아래 별도 줄로 남는다. */}
+        {!pending && (
+          <button type="button" className="drawer-btn" onClick={() => void openHandoff()}>
+            에이전트에게 보내기
+          </button>
+        )}
       </div>
       {pending ? (
         <div className="mt-2 flex items-center gap-2 text-handoff">
@@ -287,11 +295,7 @@ export function TodoDetail() {
             취소
           </button>
         </div>
-      ) : (
-        <button type="button" className="drawer-btn" onClick={() => void openHandoff()}>
-          에이전트에게 보내기
-        </button>
-      )}
+      ) : null}
       {unstarted ? (
         <div className="mt-2 flex items-center gap-2 text-p1" role="status">
           <span>
