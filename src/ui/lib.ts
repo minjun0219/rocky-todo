@@ -466,3 +466,56 @@ export function resolveTheme(pref: ThemePref, prefersLight: boolean): ResolvedTh
   }
   return pref;
 }
+
+/** 드래그 정렬에서 형제로 인정되는 조건 — 같은 보드·섹션·부모 안에서만 순서를 바꾼다. */
+export interface ReorderSibling {
+  id: string;
+  boardId: string;
+  sectionId?: string;
+  parentId?: string;
+}
+
+/**
+ * 드롭 결과를 move API 의 `before` 값으로 바꾼다 (순수 — 단위 테스트 대상).
+ *
+ * @param siblings 화면 표시 순서의 형제 목록 (드래그 중인 항목 포함)
+ * @param dragId   끌고 있는 항목
+ * @param overId   포인터가 올라간 항목
+ * @param after    포인터가 그 항목의 아래쪽 절반에 있었는가
+ * @returns `{ before }` — null 은 맨 끝. **이동이 무의미하면 undefined** (제자리 드롭,
+ *   형제가 아닌 대상, 자기 자신).
+ */
+export function resolveDropBefore(
+  siblings: ReorderSibling[],
+  dragId: string,
+  overId: string,
+  after: boolean,
+): { before: string | null } | undefined {
+  const drag = siblings.find((s) => s.id === dragId);
+  const over = siblings.find((s) => s.id === overId);
+  if (!drag || !over || dragId === overId) {
+    return undefined;
+  }
+  if (
+    drag.boardId !== over.boardId ||
+    (drag.sectionId ?? null) !== (over.sectionId ?? null) ||
+    (drag.parentId ?? null) !== (over.parentId ?? null)
+  ) {
+    return undefined; // 섹션·부모를 넘는 이동은 정렬이 아니라 소속 변경이다 — 드로어의 몫
+  }
+  const order = siblings.map((s) => s.id);
+  const overIndex = order.indexOf(overId);
+  const beforeId = after ? (order[overIndex + 1] ?? null) : overId;
+  if (beforeId === dragId) {
+    return undefined; // 결과가 제자리
+  }
+  // 바로 앞 형제의 "아래"로 놓는 것도 제자리다
+  const dragIndex = order.indexOf(dragId);
+  if (beforeId === null && dragIndex === order.length - 1) {
+    return undefined;
+  }
+  if (beforeId !== null && order.indexOf(beforeId) === dragIndex + 1) {
+    return undefined;
+  }
+  return { before: beforeId };
+}

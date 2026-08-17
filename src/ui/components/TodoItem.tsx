@@ -16,10 +16,12 @@ import { useUiStore } from '../store';
 interface TodoItemProps {
   todo: TodoView;
   depth: number;
+  /** 정렬 핸들의 pointerdown — TodoPane 이 드래그를 조율한다. 없으면 핸들을 그리지 않는다. */
+  onHandleDown?: (e: React.PointerEvent, todo: TodoView) => void;
 }
 
 /** todo 한 줄 — 번호(클릭 복사) + 체크박스 + 제목 + 메타 칩 + 댓글 뱃지 + doing 뱃지. 클릭 시 상세 드로어. */
-export function TodoItem({ todo, depth }: TodoItemProps) {
+export function TodoItem({ todo, depth, onHandleDown }: TodoItemProps) {
   const setTodoStatus = useUiStore((s) => s.setTodoStatus);
   const openTodoDetail = useUiStore((s) => s.openTodoDetail);
   const seenComments = useUiStore((s) => s.seenComments);
@@ -39,9 +41,22 @@ export function TodoItem({ todo, depth }: TodoItemProps) {
 
   return (
     <div
-      className={`todo-row flex min-h-8 items-center gap-2 rounded-md px-1.5 py-[5px] hover:bg-surface ${done ? 'is-done' : ''} ${todo.archivedAt ? 'is-archived' : ''}`}
+      className={`todo-row group flex min-h-8 items-center gap-2 rounded-md px-1.5 py-[5px] hover:bg-surface ${done ? 'is-done' : ''} ${todo.archivedAt ? 'is-archived' : ''}`}
       style={{ paddingLeft: `${depth * 22}px` }}
+      data-todo-id={todo.id}
     >
+      {onHandleDown && (
+        <button
+          type="button"
+          // touch-none 이 핵심 — 핸들에서 시작한 터치가 스크롤로 새지 않아야 드래그가 된다.
+          // 데스크톱에선 행 hover 에만 보이고, 좁은 화면에선 늘 흐리게 보인다(responsive).
+          className="drag-handle shrink-0 cursor-grab touch-none font-mono text-[11px] text-faint opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          aria-label={`${todo.title} 순서 이동 핸들`}
+          onPointerDown={(e) => onHandleDown(e, todo)}
+        >
+          ⠿
+        </button>
+      )}
       <label className="todo-check-hit">
         <input
           type="checkbox"

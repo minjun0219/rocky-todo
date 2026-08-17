@@ -19,6 +19,8 @@ import {
   type SeenStorage,
   copyRef,
   copyRefWithFeedback,
+  type ReorderSibling,
+  resolveDropBefore,
 } from './lib';
 
 /** copyRef 의 execCommand 폴백 경로를 DOM 없이 검증하기 위한 fake document. */
@@ -438,5 +440,41 @@ describe('doingWarning', () => {
 
   test('막 시작한 항목은 조용하다', () => {
     expect(doingWarning(doing(), NOW)).toBeNull();
+  });
+});
+
+describe('resolveDropBefore — 드래그 정렬 판정', () => {
+  const sib = (id: string, over: Partial<ReorderSibling> = {}) => ({
+    id,
+    boardId: 'b1',
+    ...over,
+  });
+  const list = [sib('a'), sib('b'), sib('c')];
+
+  test('위 절반 드롭 = 그 항목 앞', () => {
+    expect(resolveDropBefore(list, 'c', 'a', false)).toEqual({ before: 'a' });
+  });
+
+  test('아래 절반 드롭 = 다음 항목 앞 (마지막이면 맨 끝)', () => {
+    expect(resolveDropBefore(list, 'a', 'b', true)).toEqual({ before: 'c' });
+    expect(resolveDropBefore(list, 'a', 'c', true)).toEqual({ before: null });
+  });
+
+  test('제자리 드롭은 undefined — 불필요한 API 호출을 막는다', () => {
+    expect(resolveDropBefore(list, 'a', 'a', false)).toBeUndefined();
+    expect(resolveDropBefore(list, 'b', 'a', true)).toBeUndefined(); // a 아래 = b 제자리
+    expect(resolveDropBefore(list, 'c', 'c', true)).toBeUndefined(); // 마지막의 아래 = 제자리
+  });
+
+  test('섹션·부모·보드가 다르면 undefined — 정렬이 아니라 소속 변경', () => {
+    const mixed = [
+      sib('a'),
+      sib('s', { sectionId: 's1' }),
+      sib('p', { parentId: 'a' }),
+      sib('o', { boardId: 'b2' }),
+    ];
+    expect(resolveDropBefore(mixed, 'a', 's', false)).toBeUndefined();
+    expect(resolveDropBefore(mixed, 'a', 'p', false)).toBeUndefined();
+    expect(resolveDropBefore(mixed, 'a', 'o', false)).toBeUndefined();
   });
 });
