@@ -15,6 +15,8 @@ import { useUiStore } from './store';
 function App() {
   const refetch = useUiStore((s) => s.refetch);
   const setConnected = useUiStore((s) => s.setConnected);
+  const themePref = useUiStore((s) => s.themePref);
+  const setThemePref = useUiStore((s) => s.setThemePref);
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -80,6 +82,7 @@ function App() {
     };
     // doing 경과 표시 갱신용 주기 리렌더
     const tick = setInterval(sync, 60_000);
+
     return () => {
       window.removeEventListener('popstate', onPopState);
       document.removeEventListener('visibilitychange', onVisible);
@@ -88,6 +91,19 @@ function App() {
       clearInterval(tick);
     };
   }, [refetch, setConnected]);
+
+  useEffect(() => {
+    // 저장값이 auto 일 때만 OS 를 따라간다 — 명시 선택은 OS 가 바뀌어도 유지돼야 한다.
+    if (themePref !== 'auto') {
+      return;
+    }
+    const query = window.matchMedia('(prefers-color-scheme: light)');
+    // setThemePref('auto') 를 다시 부르면 해석이 새 OS 값으로 다시 돌아 data-theme 이
+    // 갱신된다 — 해석 규칙이 store 한 곳에만 있게 된다.
+    const onChange = () => setThemePref('auto');
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [themePref, setThemePref]);
 
   return (
     <div className="app">

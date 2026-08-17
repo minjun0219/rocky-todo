@@ -2,7 +2,14 @@
  * 디자인 토큰 + 리셋 + 기본 요소. 색 이름이 곧 의미다 — warm=에이전트, cool=사람.
  */
 
-:root {
+/*
+ * 다크가 기본이다. `:root` 를 함께 거는 이유: index.html 의 인라인 스크립트가 어떤
+ * 이유로든(스크립트 차단 등) 실행되지 못하면 data-theme 이 붙지 않는데, 속성 선택자만
+ * 두면 토큰이 하나도 적용되지 않아 페이지가 무스타일로 뜬다.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #16110c;
   --surface: #1f1811;
   --surface-2: #282017;
@@ -52,6 +59,32 @@
   --color-handoff-dim: var(--handoff-dim);
   --font-mono: var(--mono);
   --font-sans: var(--sans);
+}
+
+/*
+ * 라이트 — 배경이 순백이 아니라 웜 아이보리다. 순백 위에서는 앰버가 탁해져
+ * "두 대기"(warm=에이전트 / cool=사람)의 온도 대비가 죽는다. 값은 닫힌 라이트 모드
+ * 브랜치에서 대비 튜닝을 마친 팔레트를 그대로 가져왔다.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #faf6f0;
+  --surface: #ffffff;
+  --surface-2: #f2ebe1;
+  --line: #d6cab9;
+  --text: #241c14;
+  --muted: #6b5c4a;
+  --faint: #756753;
+  --warm: #6b4600;
+  --warm-dim: #8b6019;
+  --cool: #195564;
+  --cool-dim: #52828d;
+  --p1: #b3311c;
+  --p2: #6b4600;
+  --p3: #6f6215;
+  --ok: #3f6b26;
+  --handoff: #1f5aa8;
+  --handoff-dim: #d3e4fb;
 }
 
 /*

@@ -3,7 +3,7 @@ import type { HandoffView } from '../doing';
 import type { NoteView, TodoView } from '../server';
 import type { AgentSession } from '../sessions';
 import type { Board, Comment, HistoryEntry, Section, StatusAction } from '../store';
-import { markSeen, readSeen } from './lib';
+import { markSeen, readSeen, readThemePref, resolveTheme, THEME_KEY, type ThemePref } from './lib';
 import {
   type BoardSelection,
   buildPath,
@@ -45,6 +45,12 @@ interface UiState {
   selected: BoardSelection;
   showArchived: boolean;
   actor: string;
+  /**
+   * 사용자의 테마 **의도**(auto/dark/light).
+   * 해석된 결과(dark/light)는 상태로 들고 있지 않다 — 그 값을 쓰는 건 CSS 뿐이고 CSS 는
+   * `<html data-theme>` 에서 직접 읽는다. 사본을 두면 DOM 과 어긋날 두 번째 진실만 생긴다.
+   */
+  themePref: ThemePref;
   connected: boolean;
   detail: DetailState | null;
   /** todo id → 마지막으로 확인한 댓글 시각. localStorage 의 화면용 사본. */
@@ -71,6 +77,8 @@ interface UiState {
   setSelected: (selection: BoardSelection) => void;
   setShowArchived: (show: boolean) => void;
   setActor: (actor: string) => void;
+  /** 테마 선호를 저장하고 `<html data-theme>` 까지 갱신한다. */
+  setThemePref: (pref: ThemePref) => void;
   setConnected: (connected: boolean) => void;
 
   refetch: () => Promise<void>;
@@ -211,6 +219,15 @@ export const useUiStore = create<UiState>((set, get) => ({
   selected: parseRoute(window.location.pathname).board,
   showArchived: false,
   actor: localStorage.getItem(ACTOR_KEY) ?? 'logan',
+  themePref: readThemePref(
+    (() => {
+      try {
+        return localStorage.getItem(THEME_KEY);
+      } catch {
+        return null; // 저장소 차단은 저장값 없음(auto)으로 다룬다 — index.html 인라인 스크립트와 같은 규칙
+      }
+    })(),
+  ),
   connected: false,
   detail: null,
   seenComments: readSeen(localStorage),
@@ -239,6 +256,20 @@ export const useUiStore = create<UiState>((set, get) => ({
   setActor: (actor) => {
     localStorage.setItem(ACTOR_KEY, actor);
     set({ actor });
+  },
+  setThemePref: (pref) => {
+    // 화면 갱신을 먼저 한다. 저장은 다음 방문을 위한 부수 효과일 뿐이라, 그게 실패해도
+    // 이번 클릭은 반드시 반영돼야 한다 — 순서가 반대면 저장이 막힌 브라우저에서 토글이
+    // 통째로 죽고 auto 의 OS 추종까지 멈춘다.
+    // 해석은 여기서 한 번만 한다 — 이 값을 상태로 복제하지 않고 DOM 에만 반영한다.
+    const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = resolveTheme(pref, prefersLight);
+    set({ themePref: pref });
+    try {
+      localStorage.setItem(THEME_KEY, pref);
+    } catch {
+      // 저장 실패는 다음 방문에 auto 로 돌아간다는 뜻일 뿐 — 이번 세션은 정상 동작한다.
+    }
   },
   setConnected: (connected) => set({ connected }),
 

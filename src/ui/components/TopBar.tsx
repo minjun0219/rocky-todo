@@ -1,7 +1,26 @@
 import { useState } from 'react';
+import type { ThemePref } from '../lib';
 import { useUiStore } from '../store';
 import { ThermalStrip } from './ThermalStrip';
 
+/** 토글 순환 — auto 에서 시작해 명시 선택을 거쳐 다시 auto 로 돌아온다. */
+const THEME_CYCLE: Record<ThemePref, ThemePref> = {
+  auto: 'dark',
+  dark: 'light',
+  light: 'auto',
+};
+
+const THEME_GLYPH: Record<ThemePref, string> = {
+  auto: '◐',
+  dark: '●',
+  light: '○',
+};
+
+const THEME_LABEL: Record<ThemePref, string> = {
+  auto: '시스템 설정 따름',
+  dark: '어두운 테마',
+  light: '밝은 테마',
+};
 /** 상단 바 — 워드마크 + 링크(SSE) 상태 + 보관됨 표시 토글 + 호출자(actor) 설정. */
 export function TopBar() {
   const connected = useUiStore((s) => s.connected);
@@ -9,6 +28,8 @@ export function TopBar() {
   const setActor = useUiStore((s) => s.setActor);
   const showArchived = useUiStore((s) => s.showArchived);
   const setShowArchived = useUiStore((s) => s.setShowArchived);
+  const themePref = useUiStore((s) => s.themePref);
+  const setThemePref = useUiStore((s) => s.setThemePref);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(actor);
 
@@ -27,6 +48,15 @@ export function TopBar() {
       <div className="flex-1" />
       <ThermalStrip />
       <div className="flex-1" />
+      <button
+        type="button"
+        className="theme-toggle inline-flex items-center justify-center font-mono text-[13px] text-muted hover:text-text"
+        title={`테마 — ${THEME_LABEL[themePref]} (눌러서 ${THEME_LABEL[THEME_CYCLE[themePref]]})`}
+        aria-label={`테마 — 현재 ${THEME_LABEL[themePref]}. 눌러서 ${THEME_LABEL[THEME_CYCLE[themePref]]}`}
+        onClick={() => setThemePref(THEME_CYCLE[themePref])}
+      >
+        {THEME_GLYPH[themePref]}
+      </button>
       <label className="archived-toggle flex cursor-pointer items-center gap-1.5 text-xs text-muted">
         <input
           type="checkbox"
