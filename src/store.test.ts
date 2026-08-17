@@ -1328,3 +1328,53 @@ describe('handoffs', () => {
     });
   });
 });
+
+describe('moveTodo — 같은 보드 안 순서 이동', () => {
+  const setup = () => {
+    const board = 'rocky-todo';
+    const a = store.createTodo({ board, title: 'a' }, 't');
+    const b = store.createTodo({ board, title: 'b' }, 't');
+    const c = store.createTodo({ board, title: 'c' }, 't');
+    const titles = () => store.listTodos({ board }).map((t) => t.title);
+    return { a, b, c, titles };
+  };
+
+  test('before 로 지정한 항목 앞으로 온다', () => {
+    const { a, c, titles } = setup();
+    store.moveTodo(c.id, a.id, 't');
+    expect(titles()).toEqual(['c', 'a', 'b']);
+  });
+
+  test('보관 항목도 상대 순서를 유지한 채 재부여된다', () => {
+    const { a, b, c } = setup();
+    store.setTodoStatus(b.id, 'archive', 't');
+    store.moveTodo(c.id, a.id, 't');
+    const all = store.listTodos({ board: 'rocky-todo', includeArchived: true }).map((t) => t.title);
+    expect(all).toEqual(['c', 'a', 'b']);
+  });
+
+  test('before=null 은 맨 끝이다', () => {
+    const { a, titles } = setup();
+    store.moveTodo(a.id, null, 't');
+    expect(titles()).toEqual(['b', 'c', 'a']);
+  });
+
+  test('자기 자신 앞은 제자리다', () => {
+    const { b, titles } = setup();
+    store.moveTodo(b.id, b.id, 't');
+    expect(titles()).toEqual(['a', 'b', 'c']);
+  });
+
+  test('다른 보드의 기준은 거부한다', () => {
+    const { a } = setup();
+    const other = store.createTodo({ board: 'other', title: 'x' }, 't');
+    expect(() => store.moveTodo(a.id, other.id, 't')).toThrow();
+  });
+
+  test('히스토리에 reorder 가 남는다', () => {
+    const { c, a } = setup();
+    store.moveTodo(c.id, a.id, 't');
+    const entry = store.listHistory({ entityId: c.id })[0];
+    expect(entry?.action).toBe('reorder');
+  });
+});

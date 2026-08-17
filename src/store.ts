@@ -1165,6 +1165,63 @@ export class TodoStore {
     return todos;
   }
 
+  /**
+   * 같은 보드 안에서 todo 의 표시 순서를 옮긴다.
+   *
+   * 보드의 전체 행(보관 포함)을 position 순으로 다시 매긴다 — 보드당 항목이 수십 개
+   * 수준이라 부분 갱신보다 전체 재부여가 단순하고, 트랜잭션 안이라 부분 적용이 없다.
+   * 보관 항목도 상대 순서를 유지한 채 같이 재부여된다("보관됨 표시" 뷰의 순서 보존).
+   *
+   * @param beforeRef 이 항목 **앞**에 놓을 기준 todo. null 이면 맨 끝으로.
+   */
+  moveTodo(ref: string, beforeRef: string | null, actor: string, currentBoardId?: string): Todo {
+    const todo = this.mustGetTodo(ref, currentBoardId);
+    let beforeId: string | null = null;
+    if (beforeRef !== null) {
+      const before = this.mustGetTodo(beforeRef, todo.boardId);
+      if (before.boardId !== todo.boardId) {
+        throw new Error(`move target is in a different board: ${beforeRef}`);
+      }
+      if (before.id === todo.id) {
+        return todo; // 자기 앞으로 = 제자리
+      }
+      beforeId = before.id;
+    }
+    const moved = this.db.transaction(() => {
+      const ids = this.db
+        .query<{ id: string }, [string]>(
+          'SELECT id FROM todos WHERE board_id = ? ORDER BY position',
+        )
+        .all(todo.boardId)
+        .map((r) => r.id)
+        .filter((id) => id !== todo.id);
+      const at = beforeId === null ? ids.length : ids.indexOf(beforeId);
+      const oldIndex = this.db
+        .query<{ id: string }, [string]>(
+          'SELECT id FROM todos WHERE board_id = ? ORDER BY position',
+        )
+        .all(todo.boardId)
+        .findIndex((r) => r.id === todo.id);
+      ids.splice(at, 0, todo.id);
+      const update = this.db.query('UPDATE todos SET position = ? WHERE id = ?');
+      ids.forEach((id, index) => {
+        // 생성 경로(nextPosition = MAX+1)와 같은 1-based 로 재부여한다
+        update.run(index + 1, id);
+      });
+      // 옮긴 행만 updated_at 을 올린다 — 나머지는 내용이 변한 게 아니라 자리만 재부여됐다.
+      this.db.query('UPDATE todos SET updated_at = ? WHERE id = ?').run(nowIso(), todo.id);
+      this.recordHistory(
+        'todo',
+        todo.id,
+        actor,
+        'reorder',
+        { position: [oldIndex + 1, at + 1] },
+        todo.boardId,
+      );
+      return this.mustGetTodo(todo.id);
+    })();
+    return moved;
+  }
   getTodo(ref: string, currentBoardId?: string): Todo | undefined {
     const row = this.resolveRef<TodoRow>('todos', ref, currentBoardId);
     return row ? toTodo(row) : undefined;
