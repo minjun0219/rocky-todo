@@ -694,6 +694,16 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
       }
 
+      const todoBoardMove = /^\/api\/todos\/([^/]+)\/board$/.exec(path);
+      if (todoBoardMove?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoBoardMove[1]);
+        const body = await readBody(req);
+        if (typeof body.board !== 'string' || body.board === '') {
+          return errorResponse('board is required (target board key)', 400);
+        }
+        const currentBoardId = currentBoardIdOf(url, ref);
+        return json(withRef(store, store.moveTodoToBoard(ref, body.board, actor, currentBoardId)));
+      }
       const todoMove = /^\/api\/todos\/([^/]+)\/move$/.exec(path);
       if (todoMove?.[1] && method === 'POST') {
         const ref = decodeURIComponent(todoMove[1]);

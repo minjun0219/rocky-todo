@@ -25,7 +25,16 @@ import { DETAIL_HISTORY_EXCLUDED, linkLabel } from './ui/lib';
 
 // ── 인자 파싱 (순수) ─────────────────────────────────────────────────────────
 
-const BOOLEAN_FLAGS = new Set(['all', 'archived', 'json', 'global', 'cancel', 'help', 'note']);
+const BOOLEAN_FLAGS = new Set([
+  'all',
+  'archived',
+  'json',
+  'global',
+  'cancel',
+  'help',
+  'note',
+  'last',
+]);
 const VALUE_FLAGS = new Set([
   'board',
   'section',
@@ -40,6 +49,8 @@ const VALUE_FLAGS = new Set([
   'repo',
   'session',
   'message',
+  'to',
+  'before',
 ]);
 const LIST_FLAGS = new Set(['label', 'link']);
 
@@ -364,6 +375,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo handoff REF --cancel               대기 중인 요청 취소
   rocky-todo spawn REF [--message "본문"]        그 todo 전용 워크트리에 새 세션 띄우기
   rocky-todo sessions                           실행 중인 Claude Code 세션 (* = 이 보드)
+  rocky-todo move REF --to BOARD | --before REF2 | --last   보드 이동 / 순서 이동
   rocky-todo start|stop|done|reopen|archive|unarchive REF
   rocky-todo section add|archive "이름" [--board K] · section ls [--board K]
   rocky-todo note add "제목" [--board K|--global] [--content MD]
@@ -628,6 +640,31 @@ export async function runCli(): Promise<void> {
         comments: Comment[];
       }>(ctx, 'GET', todoRefPath(id, '', board));
       print(detail, () => formatTodoShow(detail));
+      return;
+    }
+
+    case 'move': {
+      const id = rest[0];
+      if (!id) {
+        throw new Error('usage: rocky-todo move REF --to BOARD | --before REF2 | --last');
+      }
+      const to = str(flags.to);
+      if (to) {
+        const moved = await request<TodoView>(ctx, 'POST', todoRefPath(id, '/board', board), {
+          board: to,
+        });
+        print(moved, () => `✓ ${id} → ${to} 보드로 이동 (새 참조 ${moved.ref})`);
+        return;
+      }
+      const before = str(flags.before);
+      if (!before && flags.last !== true) {
+        throw new Error('usage: rocky-todo move REF --to BOARD | --before REF2 | --last');
+      }
+      // --before 의 REF2 는 서버가 현재 보드 컨텍스트로 해석한다. --last 는 맨 끝.
+      const moved = await request<TodoView>(ctx, 'POST', todoRefPath(id, '/move', board), {
+        before: flags.last === true ? null : before,
+      });
+      print(moved, () => `✓ ${moved.ref} 순서 이동`);
       return;
     }
 

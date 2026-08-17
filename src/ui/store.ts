@@ -106,6 +106,8 @@ interface UiState {
   addTodo: (input: { board: string; title: string; section?: string }) => Promise<void>;
   /** 같은 보드 안 순서 이동 — before 앞으로, null 이면 맨 끝. */
   moveTodo: (id: string, before: string | null) => Promise<void>;
+  /** 다른 보드로 이동 — 번호는 대상 보드에서 새로 발급된다. */
+  moveTodoToBoard: (id: string, board: string) => Promise<void>;
   patchTodo: (id: string, patch: Record<string, unknown>) => Promise<void>;
   setTodoStatus: (id: string, action: StatusAction) => Promise<void>;
   addNote: (input: { board?: string; title: string }) => Promise<void>;
@@ -446,6 +448,26 @@ export const useUiStore = create<UiState>((set, get) => ({
   addTodo: async (input) => {
     const { actor } = get();
     await api('/api/todos', actor, { method: 'POST', body: JSON.stringify(input) });
+    await get().refetch();
+  },
+
+  moveTodoToBoard: async (id, board) => {
+    const { actor } = get();
+    const moved = await api<{ boardId: string; number: number }>(`/api/todos/${id}/board`, actor, {
+      method: 'POST',
+      body: JSON.stringify({ board }),
+    });
+    // 옛 주소(`/old/12`)는 비워진 번호라 새로고침·공유에서 깨진다. 드로어는 refetch 가
+    // 같은 id 로 되살리므로, 주소와 보드 선택도 todo 를 따라간다 — 히스토리 항목은
+    // 늘리지 않고 갈아끼운다(뒤로가기가 깨진 옛 주소로 돌아가지 않게, state 는 보존해
+    // 드로어 마커를 유지).
+    const route = routeForTodo(moved, get().boards);
+    if (route.board !== 'all' && isAddressableBoardKey(route.board)) {
+      replacePath(buildPath(route), window.history.state);
+      if (get().selected !== route.board) {
+        set({ selected: route.board });
+      }
+    }
     await get().refetch();
   },
 
