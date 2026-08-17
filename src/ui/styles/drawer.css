@@ -15,21 +15,25 @@
 
 .drawer {
   position: fixed;
-  top: 0;
-  right: 0;
+  /* PC 는 **중앙 모달**이다 — 이 상세는 설명·댓글·히스토리까지 있는 문서라, 오른쪽
+     가장자리보다 읽기 자연스러운 중앙이 맞다. 좁은 화면의 바텀시트(아래에서 올라오는
+     카드)와도 "보드 위에 뜨는 카드" 문법이 통일된다. 좁은 화면 배치는 responsive.css. */
+  inset: 0;
+  margin: auto;
+  width: min(680px, 92vw);
+  height: fit-content;
+  max-height: 86vh;
   z-index: 10;
-  width: min(440px, 92vw);
   background: var(--surface);
-  border-left: 1px solid var(--line);
-  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   overflow-y: auto;
-  /* 시트는 가로로 절대 스크롤하지 않는다 — 폭을 넘는 자식(긴 select·코드 스팬)이
-     생겨도 페이지 팬 대신 그 자식이 잘리거나 자체적으로 처리해야 한다. */
+  /* 긴 URL·코드 스팬이 폭을 넘어도 카드가 가로로 스크롤되지 않게 — 세로만 흐른다. */
   overflow-x: hidden;
   /* 드로어 안에서 끝까지 스크롤한 뒤 계속 스와이프하면 스크롤이 밖(backdrop 뒤 document)으로
      새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
   overscroll-behavior: contain;
-  padding: 20px 22px;
+  padding: 20px 28px;
 }
 
 .drawer-close {
