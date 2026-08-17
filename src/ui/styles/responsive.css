@@ -200,9 +200,10 @@
     justify-content: center;
     min-height: 44px;
   }
-  /* 버튼이 44px 로 커지면 8px 세로 간격이 붙어 보인다(실기기 피드백) — 줄 사이만 넓힌다. */
+  /* 버튼이 44px 로 커지면 8px 간격이 다닥다닥해 보인다(실기기 제보 2회) —
+     가로·세로 모두 12px 로 벌린다. 데스크톱(작은 버튼)은 8px 그대로. */
   .drawer-actions {
-    row-gap: 12px;
+    gap: 12px;
   }
   .notes-rail {
     border-left: none;
