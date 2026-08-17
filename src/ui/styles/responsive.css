@@ -120,7 +120,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    grid-column: 3 / -1;
+    grid-column: 4 / -1;
     grid-row: 2;
   }
   /* 메타 행을 아예 만들지 않아야 하는 두 경우.
