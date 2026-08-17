@@ -433,3 +433,36 @@ export function hasUnreadComments(
   const at = seen[todo.id];
   return at === undefined || at < todo.lastCommentAt;
 }
+
+/** 사용자가 고른 테마 의도. `auto` 는 OS 설정을 따른다는 뜻이다. */
+export type ThemePref = 'auto' | 'dark' | 'light';
+
+/** 실제로 화면에 적용되는 테마 — `auto` 가 해석된 결과. */
+export type ResolvedTheme = 'dark' | 'light';
+
+/** 테마 선호를 담는 localStorage 키. */
+export const THEME_KEY = 'rocky-todo:theme';
+
+/**
+ * localStorage 에서 읽은 원문을 테마 선호로 해석한다.
+ * 알 수 없는 값은 전부 `auto` 다 — 손으로 고쳤거나 옛 버전이 남긴 값이 화면을 깨뜨리면
+ * 안 된다.
+ */
+export function readThemePref(stored: string | null): ThemePref {
+  return stored === 'dark' || stored === 'light' || stored === 'auto' ? stored : 'auto';
+}
+
+/**
+ * 테마 선호와 OS 설정으로부터 실제 적용할 테마를 해석한다.
+ *
+ * **`src/ui/index.html` 의 인라인 스크립트가 같은 규칙을 손으로 복제하고 있다** — 그쪽은
+ * 번들 전에 첫 페인트를 막고 실행돼야 해서 이 모듈을 import 할 수 없다. 한쪽을 고치면
+ * 반드시 다른 쪽도 고쳐야 한다. `src/ui/inline-theme.test.ts` 가 그 스크립트를 실제로
+ * 실행해 두 경로의 결론이 갈라지는지 감시한다.
+ */
+export function resolveTheme(pref: ThemePref, prefersLight: boolean): ResolvedTheme {
+  if (pref === 'auto') {
+    return prefersLight ? 'light' : 'dark';
+  }
+  return pref;
+}
