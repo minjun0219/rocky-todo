@@ -1345,6 +1345,14 @@ describe('moveTodo — 같은 보드 안 순서 이동', () => {
     expect(titles()).toEqual(['c', 'a', 'b']);
   });
 
+  test('보관 항목도 상대 순서를 유지한 채 재부여된다', () => {
+    const { a, b, c } = setup();
+    store.setTodoStatus(b.id, 'archive', 't');
+    store.moveTodo(c.id, a.id, 't');
+    const all = store.listTodos({ board: 'rocky-todo', includeArchived: true }).map((t) => t.title);
+    expect(all).toEqual(['c', 'a', 'b']);
+  });
+
   test('before=null 은 맨 끝이다', () => {
     const { a, titles } = setup();
     store.moveTodo(a.id, null, 't');

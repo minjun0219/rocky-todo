@@ -1205,7 +1205,8 @@ export class TodoStore {
       ids.splice(at, 0, todo.id);
       const update = this.db.query('UPDATE todos SET position = ? WHERE id = ?');
       ids.forEach((id, index) => {
-        update.run(index, id);
+        // 생성 경로(nextPosition = MAX+1)와 같은 1-based 로 재부여한다
+        update.run(index + 1, id);
       });
       // 옮긴 행만 updated_at 을 올린다 — 나머지는 내용이 변한 게 아니라 자리만 재부여됐다.
       this.db.query('UPDATE todos SET updated_at = ? WHERE id = ?').run(nowIso(), todo.id);
@@ -1214,7 +1215,7 @@ export class TodoStore {
         todo.id,
         actor,
         'reorder',
-        { position: [oldIndex, at] },
+        { position: [oldIndex + 1, at + 1] },
         todo.boardId,
       );
       return this.mustGetTodo(todo.id);
