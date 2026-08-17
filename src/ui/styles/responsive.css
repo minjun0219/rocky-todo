@@ -234,7 +234,10 @@
     bottom: 0;
     left: 0;
     width: 100vw;
-    height: 88dvh;
+    /* 위에 남기는 틈은 "탭해서 닫기 + 레이어 맥락" 신호까지만 — 32px 스크림 띠.
+       12dvh 처럼 크게 남기면 그 틈으로 상단 바가 통째로 보이는데, 시트가 열린 동안
+       그 바는 아무 역할이 없다(실기기 제보). */
+    height: calc(100dvh - 32px);
     border-left: none;
     border-top: 1px solid var(--line);
     border-radius: 14px 14px 0 0;
