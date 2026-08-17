@@ -2366,3 +2366,28 @@ describe('CSRF 심층 방어', () => {
     expect(local.status).toBe(200);
   });
 });
+
+describe('POST /api/todos/:ref/move', () => {
+  test('before 를 명시해야 한다 — null(맨 끝)과 빠뜨림을 구분', async () => {
+    const t = store.createTodo({ board: 'rocky-todo', title: 'm1' }, 'tester');
+    const missing = await req(`/api/todos/${t.id}/move`, { method: 'POST', body: '{}' });
+    expect(missing.status).toBe(400);
+    const end = await req(`/api/todos/${t.id}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ before: null }),
+    });
+    expect(end.status).toBe(200);
+  });
+
+  test('기준 앞으로 이동해 순서가 바뀐다', async () => {
+    const x = store.createTodo({ board: 'move-b', title: 'x' }, 'tester');
+    store.createTodo({ board: 'move-b', title: 'y' }, 'tester');
+    const z = store.createTodo({ board: 'move-b', title: 'z' }, 'tester');
+    const res = await req(`/api/todos/${z.id}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ before: x.id }),
+    });
+    expect(res.status).toBe(200);
+    expect(store.listTodos({ board: 'move-b' }).map((t) => t.title)).toEqual(['z', 'x', 'y']);
+  });
+});

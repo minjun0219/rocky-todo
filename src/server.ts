@@ -694,6 +694,21 @@ export function buildTodoServer(options: TodoServerOptions): TodoServer {
         }
       }
 
+      const todoMove = /^\/api\/todos\/([^/]+)\/move$/.exec(path);
+      if (todoMove?.[1] && method === 'POST') {
+        const ref = decodeURIComponent(todoMove[1]);
+        const body = await readBody(req);
+        // before 키는 **명시**해야 한다 — null(맨 끝)과 "빠뜨림"을 구분해, 빠진 요청이
+        // 조용히 맨 끝 이동으로 해석되는 사고를 막는다.
+        if (!('before' in body)) {
+          return errorResponse('before is required (todo ref, or null for end)', 400);
+        }
+        if (body.before !== null && typeof body.before !== 'string') {
+          return errorResponse('before must be a todo ref or null', 400);
+        }
+        const currentBoardId = currentBoardIdOf(url, ref);
+        return json(withRef(store, store.moveTodo(ref, body.before, actor, currentBoardId)));
+      }
       const todoHandoff = /^\/api\/todos\/([^/]+)\/handoff$/.exec(path);
       if (todoHandoff?.[1] && method === 'POST') {
         const ref = decodeURIComponent(todoHandoff[1]);
