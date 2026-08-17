@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TodoView } from '../../server';
+import { resolveDropBefore } from '../lib';
 import { useUiStore } from '../store';
 import { BoardHeader } from './BoardHeader';
 import { TodoItem } from './TodoItem';
@@ -14,7 +15,64 @@ export function TodoPane() {
   const sections = useUiStore((s) => s.sections);
   const selected = useUiStore((s) => s.selected);
   const addTodo = useUiStore((s) => s.addTodo);
+  const moveTodo = useUiStore((s) => s.moveTodo);
   const [draft, setDraft] = useState('');
+  /** 드래그 중인 todo id — 핸들 pointerdown 에서 세팅, 전역 pointerup 에서 해제. */
+  const [dragId, setDragId] = useState<string | null>(null);
+  /** 포인터가 올라간 행과 절반 위치 — 삽입선 표시용. */
+  const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
+  const overRef = useRef(over);
+  overRef.current = over;
+
+  const handleDown = (e: React.PointerEvent, todo: TodoView) => {
+    e.preventDefault(); // 핸들에서의 텍스트 선택·스크롤 개시를 막는다 (touch-none 과 한 쌍)
+    setDragId(todo.id);
+  };
+
+  useEffect(() => {
+    if (!dragId) {
+      return;
+    }
+    const onMove = (e: PointerEvent) => {
+      const row = document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest<HTMLElement>('[data-todo-id]');
+      if (!row?.dataset.todoId) {
+        setOver(null);
+        return;
+      }
+      const rect = row.getBoundingClientRect();
+      setOver({ id: row.dataset.todoId, after: e.clientY > rect.top + rect.height / 2 });
+    };
+    const finish = (commit: boolean) => {
+      const dropped = overRef.current;
+      setDragId(null);
+      setOver(null);
+      if (!commit || !dropped) {
+        return;
+      }
+      const siblings = todos.map((t) => ({
+        id: t.id,
+        boardId: t.boardId,
+        sectionId: t.sectionId,
+        parentId: t.parentId,
+      }));
+      const target = resolveDropBefore(siblings, dragId, dropped.id, dropped.after);
+      if (target) {
+        void moveTodo(dragId, target.before);
+      }
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+    };
+  }, [dragId, moveTodo, todos]);
 
   const byId = new Map(todos.map((t) => [t.id, t]));
   const childrenOf = new Map<string, TodoView[]>();
@@ -31,8 +89,18 @@ export function TodoPane() {
 
   const renderTree = (items: TodoView[], depth: number): React.ReactNode =>
     items.map((todo) => (
-      <div key={todo.id}>
-        <TodoItem todo={todo} depth={depth} />
+      <div
+        key={todo.id}
+        // 삽입선 — 드래그 중 포인터가 올라간 행의 위(before) 또는 아래(after)에 표시
+        className={
+          over?.id === todo.id && dragId
+            ? over.after
+              ? 'border-b-2 border-warm'
+              : 'border-t-2 border-warm'
+            : ''
+        }
+      >
+        <TodoItem todo={todo} depth={depth} onHandleDown={handleDown} />
         {renderTree(childrenOf.get(todo.id) ?? [], depth + 1)}
       </div>
     ));

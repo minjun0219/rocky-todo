@@ -73,7 +73,8 @@
      padding 으로 확보한다. 그래서 칩이 없는 항목은 한 줄(~52px)로 끝난다. */
   .todo-row {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    /* 핸들 · 체크 · 번호 · 제목 — 핸들이 없으면(콜백 미전달) 첫 auto 열이 0 으로 접힌다 */
+    grid-template-columns: auto auto auto minmax(0, 1fr);
     column-gap: 8px;
     row-gap: 2px;
     align-items: start;
@@ -84,6 +85,15 @@
   .todo-check-hit {
     grid-row: 1;
     align-self: center;
+  }
+  /* 핸들 — 좁은 화면에선 hover 가 없으니 늘 흐리게 보이고, 탭 타깃을 세로로 채운다 */
+  .drag-handle {
+    grid-row: 1;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    min-width: 24px;
+    opacity: 0.35;
   }
   /* 손가락 기준의 시각 크기 — 데스크톱 15px 는 폰에서 소심하다(실기기 피드백).
      히트 영역(44px)은 그대로다. */
