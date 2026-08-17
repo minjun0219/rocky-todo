@@ -28,6 +28,8 @@
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow-y: auto;
+  /* 긴 URL·코드 스팬이 폭을 넘어도 카드가 가로로 스크롤되지 않게 — 세로만 흐른다. */
+  overflow-x: hidden;
   /* 드로어 안에서 끝까지 스크롤한 뒤 계속 스와이프하면 스크롤이 밖(backdrop 뒤 document)으로
      새는 것을 막는다 — 실제로 체이닝을 끊는 건 이 규칙이다. */
   overscroll-behavior: contain;
