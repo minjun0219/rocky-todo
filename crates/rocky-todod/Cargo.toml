@@ -1,0 +1,28 @@
+[package]
+name = "rocky-todod"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rocky-todo-core = { path = "../rocky-todo-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+rmcp.workspace = true
+schemars.workspace = true
+ureq.workspace = true
+tokio-stream.workspace = true
+tower = "0.5"
+
+[dev-dependencies]
+tempfile.workspace = true
+rusqlite.workspace = true
+
+[[bin]]
+name = "rocky-todod"
+path = "src/main.rs"
