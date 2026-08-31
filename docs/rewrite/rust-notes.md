@@ -5,7 +5,8 @@
 
 ## Phase 0
 
-- rustup stable = 1.98.0 (2026-08). `rust-toolchain.toml` 로 고정, components 에
+- `rust-toolchain.toml` 은 **채널만** 고정한다(`channel = "stable"`) — 특정 버전이
+  아니라 그때의 stable 을 따라간다. 현재 실측 stable 은 1.98.0 (2026-08). components 에
   rustfmt/clippy 를 명시해야 CI 러너에서도 같이 설치된다.
 
 ## Phase 1

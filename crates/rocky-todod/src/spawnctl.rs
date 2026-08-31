@@ -22,6 +22,8 @@ pub const RECENT_SPAWN_TTL: Duration = Duration::from_secs(60);
 /// 직접 자식이 끝난 뒤 파이프 잔여 출력을 긁는 유예 — 이 유예가 지나도 닫히지 않는
 /// 파이프는 자손(detach 된 세션)이 물고 있는 것이다.
 const EXIT_DRAIN_GRACE: Duration = Duration::from_millis(250);
+/// 마감 초과로 SIGKILL 을 보낸 뒤 자식을 회수(reap)하기까지 기다리는 시간.
+const KILL_REAP_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
 pub struct SpawnRunResult {
@@ -185,7 +187,14 @@ pub async fn run_in_dir(cmd: &[String], cwd: &str, timeout: Duration) -> SpawnRu
             }
             _ = &mut deadline => {
                 timed_out = true;
+                // SIGKILL 을 보내고 **회수까지 여기서 끝낸다.** wait 없이 드롭하면
+                // tokio 가 orphan queue 에 넣어 다음 SIGCHLD 때 거두는데, 그 신호는
+                // 데몬이 다음 자식을 띄울 때까지 안 올 수 있어 그동안 좀비로 남는다.
+                // 유예를 거는 이유는 wait 이 매달릴 수 있어서다 — kill 은 직접 자식
+                // 에게만 가므로 파이프를 문 손자가 있으면 종료가 늦어진다. 못 거두면
+                // 포기하고 orphan queue 에 맡긴다(여기서 데몬이 멎으면 안 된다).
                 let _ = child.start_kill();
+                let _ = tokio::time::timeout(KILL_REAP_GRACE, child.wait()).await;
                 break;
             }
             read = async { stdout_pipe.as_mut().unwrap().read(&mut out_chunk).await }, if out_open => {

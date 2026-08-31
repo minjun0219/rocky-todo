@@ -158,6 +158,37 @@ async fn deadline_overrun_is_marked_timed_out() {
     assert!(result.stderr.contains("끝나지 않았다"));
 }
 
+/// 마감 초과로 죽인 자식을 **회수까지 하는지**. wait 없이 드롭하면 tokio 의
+/// orphan queue 로 넘어가 다음 SIGCHLD 까지 좀비로 남는데, 데몬은 오래 살면서
+/// 다음 자식을 안 띄울 수 있어 그 시점이 안 온다.
+#[tokio::test]
+async fn timed_out_child_is_reaped_not_left_zombie() {
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("pid");
+    let cmd: Vec<String> = vec![
+        "sh".into(),
+        "-c".into(),
+        format!("echo $$ > {}; sleep 10", pidfile.display()),
+    ];
+    let result = run_in_dir(&cmd, "/tmp", Duration::from_millis(300)).await;
+    assert!(result.timed_out);
+
+    let pid = std::fs::read_to_string(&pidfile)
+        .unwrap()
+        .trim()
+        .to_string();
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid])
+        .output()
+        .unwrap();
+    let stat = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    // 사라졌으면 빈 출력, 살아 있는데 Z 면 회수 실패다.
+    assert!(
+        !stat.starts_with('Z'),
+        "자식이 좀비로 남았다 (pid {pid}, stat {stat})"
+    );
+}
+
 #[tokio::test]
 async fn output_before_deadline_survives_timeout() {
     let cmd: Vec<String> = vec![
