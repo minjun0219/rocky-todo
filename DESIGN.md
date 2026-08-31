@@ -67,8 +67,14 @@ tone-* 동적 마커, keyframes, dvh 블록)다.
 
 ## 2. Colors
 
-원본은 `src/ui/styles/tokens.css` 의 두 토큰 블록(`:root[data-theme="dark"]` /
-`[data-theme="light"]`)이다. 이 표는 그 사본이므로 토큰을 고치면 여기도 같이 고친다.
+원본은 `src/ui/styles/tokens.css` 의 두 토큰 블록이다. 이 표는 그 사본이므로 토큰을
+고치면 여기도 같이 고친다.
+
+- 다크: `:root, :root[data-theme="dark"]` — **맨 `:root` 를 함께 거는 게 중요하다.**
+  `index.html` 의 인라인 스크립트가 어떤 이유로든(스크립트 차단 등) 실행되지 못하면
+  `data-theme` 이 안 붙는데, 속성 선택자만 두면 토큰이 하나도 적용되지 않아 페이지가
+  무스타일로 뜬다. 다크가 기본이므로 폴백도 다크다.
+- 라이트: `:root[data-theme="light"]`
 
 ### 가드 방식 — 현상 고정 (규약, 테스트 아님)
 
@@ -141,7 +147,7 @@ WCAG 대비 기준을 계산해 잠그는 방식을 검토했다 폐기했다(20
 | 역할 | 스택 | 쓰는 곳 |
 | --- | --- | --- |
 | `--mono` | `ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace` | 워드마크, `#N`, 칩, 뱃지, 타임스탬프, 섹션 라벨, 인라인 코드 |
-| `--sans` | `-apple-system, …, "Pretendard", sans-serif` | todo 제목, 노트 본문, 댓글 — **사용자가 쓴 글** |
+| `--sans` | `-apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif` | todo 제목, 노트 본문, 댓글 — **사용자가 쓴 글** |
 
 **웹폰트를 함부로 들이지 않는다.** 오프라인 제약 + 한글 콘텐츠 때문이다.
 
