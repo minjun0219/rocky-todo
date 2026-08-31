@@ -4,7 +4,9 @@ AI 코딩 에이전트(Claude Code, opencode, codex 등)를 위한 rocky-todo �
 
 > **Single sources of truth.** 사람은 [`docs/rocky-todo.md`](./docs/rocky-todo.md)(설치·데몬·표면
 > ·CLI·설정 — 한국어), 에이전트는 이 파일(레이아웃/코딩 규칙/변경 체크리스트)을 읽는다.
-> [`README.md`](./README.md) 는 둘로 잇는 한 페이지 진입점 — 무엇인지와 링크만 둔다.
+> 웹 UI 의 **시각** 계약만 [`DESIGN.md`](./DESIGN.md) 로 따로 있다 — `src/ui/` 를 만들거나
+> 고치기 전에 읽는다. [`README.md`](./README.md) 는 이들을 잇는 한 페이지 진입점 —
+> 무엇인지와 링크만 둔다.
 
 ## Project in one line
 
@@ -71,6 +73,7 @@ rocky-todo/
 ├── commands/next.md                # /rocky-todo:next — 후보 랭킹 → 선택 → 착수 (규칙은 board 스킬)
 ├── skills/board/SKILL.md           # 보드 활용 에티켓 + 설치 안내 (rocky-todo:board 스킬)
 ├── docs/rocky-todo.md              # 사용자용 설치/운영 문서
+├── DESIGN.md                       # 웹 UI 시각 계약 (팔레트·타이포·컴포넌트 어법)
 └── .github/workflows/ + .husky/    # CI/release + git hooks (rocky 미러)
 ```
 
@@ -312,6 +315,7 @@ bunx changeset      # user-facing 변경의 버전 의도 선언 (패키지 이�
 3. `bun run test` 통과 (unit + dom 양쪽)
 4. 사용자 표면(도구/env/CLI/커맨드)이 바뀌면 문서 셋을 동기화 — `docs/rocky-todo.md`(사람용
    설치·운영·표면 단일 출처) + 이 `AGENTS.md`(에이전트) + 진입 페이지 `README.md`.
+   웹 UI 의 **시각**(토큰·타이포·컴포넌트 어법)이 바뀌면 `DESIGN.md` 도 함께 고친다.
 5. 새 env var 추가 시 소비 지점(`src/config.ts` / `src/rocky-config.ts`) 갱신 +
    `docs/rocky-todo.md` 의 env 표 갱신.
 6. MCP 도구 계약이 바뀌면 `src/mcp.ts`(등록) + `src/server.ts`/`src/store.ts`(구현) 갱신.
