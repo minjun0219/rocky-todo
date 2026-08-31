@@ -108,9 +108,8 @@ async fn mcp_handler(
                 .unwrap();
         }
     }
-    let local = is_local_request(Some(&peer.ip().to_string()), |name| {
-        req.headers().contains_key(name)
-    });
+    let peer_ip = peer.ip().to_string();
+    let local = is_local_request(Some(&peer_ip), |name| req.headers().contains_key(name));
     let mut service = if local {
         state.mcp_local.clone()
     } else {

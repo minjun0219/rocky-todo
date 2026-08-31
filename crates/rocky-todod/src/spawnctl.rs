@@ -298,6 +298,14 @@ pub fn default_spawn_fn() -> SpawnFn {
 
 /// "방금 띄운 워크트리" 예약 창 — 실행 **전에** remember, 실패 시에만 forget.
 /// 상태는 데몬 수명 클로저(재기동하면 비워진다).
+/// 방금 띄운 워크트리를 기억해 겹친 spawn 요청을 막는 예약대.
+///
+/// 락이 `std::sync::Mutex` 인 것은 의도다 — `tokio::sync::Mutex` 로 바꾸지 마라.
+/// 임계 구간이 HashMap 조회/삽입뿐이라 await 를 걸치지 않고, 그 경우 블로킹 락이
+/// tokio 에서도 권장되는 선택이다. 더 중요한 건 `remember` 가 **동기여야 한다**는
+/// 것이다: 이 예약은 `spawn` await 앞의 동기 구간에서 끝나야 겹쳐 들어온 두 요청이
+/// 게이트를 나란히 통과하지 못한다. async 락으로 바꾸면 그 자리가 await 지점이 되어
+/// 막으려던 경쟁이 되살아난다.
 pub struct RecentSpawns {
     spawned_at: Mutex<HashMap<String, Instant>>,
     ttl: Duration,
