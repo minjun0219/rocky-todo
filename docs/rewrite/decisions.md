@@ -162,3 +162,34 @@ phase 마다 `rust/phase-N` 브랜치를 따서 `rust-rewrite` 로 PR·스쿼시
 - 동결 부작용: `target/` 무시가 Rust 커밋에 들어 있어 main 계열 브랜치에서
   `bun run check` 를 돌리면 cargo 산출물을 훑고 실패한다. main 에서 개발하지
   않으므로 실害는 없지만 브랜치를 오갈 때 놀라지 말 것.
+
+## Rust 데몬을 기본 포트에 띄우면 TS 훅이 죽인다 (2026-08-31)
+
+개발 중 Rust 데몬을 **기본 포트(8636)에 그대로 띄우면 안 된다.** `hooks/ensure-daemon.ts`
+는 SessionStart 마다 `/api/health` 의 `version` 을 자기 `package.json` 버전과
+**정확히 문자열 비교**하고(`running.version === deps.version`), 다르면 stale 로 보고
+SIGTERM → 현재 설치본으로 재기동한다. Rust 데몬은 `0.15.0-dev`, TS 설치본은 `0.14.0`
+이라 **항상 불일치**다 — 새 세션을 열 때마다 Rust 데몬이 내려가고 TS 데몬이 그 자리를
+차지한다. launchd 상주 중이면 더 나쁘다: `replaceManaged()` 가 job 을 TS 설치 경로로
+교체해버린다.
+
+이건 버그가 아니라 "버전 인식 재기동"이 설계대로 도는 것이다 — 재작성이 끝나 두
+데몬의 버전 체계가 합쳐질 때(Phase 5) 자연히 풀린다. 그때까지 개발용 Rust 데몬은
+전용 포트로 띄운다:
+
+```bash
+ROCKY_CONFIG=./demo.rocky.json ROCKY_TODO_UI_DIST=$PWD/dist target/debug/rocky-todod
+```
+
+`ROCKY_CONFIG` 를 거는 게 핵심이다 — 포트만 env 로 갈라놔도 `expose` 는 전역 설정에서
+딸려와 데모가 노출을 물려받는다(AGENTS.md 의 사고 기록).
+
+### 이 경로로 확인한 것 (2026-08-31)
+
+`publicPath` 회귀를 실물로 잡았다. 퍼머링크 `/rocky/12` 는 SPA fallback 으로
+index.html 을 돌려주는데, 번들 기본값인 상대 경로(`./chunk-*.js`)면 브라우저가
+`/rocky/chunk-*.js` 를 찾고 그 요청도 fallback 에 걸려 **JS 자리에 HTML 이
+200 으로** 온다(실측: `content-type: text/html`). 앱이 조용히 안 뜬다.
+`publicPath: '/'` 로 루트 절대 경로를 내보내 해결했고, 같은 데몬에서 REST 왕복 ·
+SSE(`: connected`) · cross-site 403(REST/`/mcp` 양쪽) · 프록시 헤더가 붙으면
+`issueCreateAllowed: false` 까지 함께 확인했다.
