@@ -137,7 +137,12 @@ pub async fn run_in_dir(cmd: &[String], cwd: &str, timeout: Duration) -> SpawnRu
         .args(args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // 마감 분기는 아래에서 명시적으로 kill+회수하지만, 그건 이 future 가 끝까지
+        // 도는 경우다. 호출자가 중간에 future 를 버리면(클라이언트 연결이 끊겨 axum 이
+        // 핸들러를 취소하는 등) 그 코드가 아예 실행되지 않아 자식이 그대로 남는다.
+        // `runner::default_runner` 와 같은 안전망을 여기도 둔다.
+        .kill_on_drop(true);
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
