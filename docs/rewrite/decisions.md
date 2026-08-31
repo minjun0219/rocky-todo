@@ -141,3 +141,24 @@ config 21). fmt/clippy(-D warnings) 클린.
 
 TS 테스트 중 데몬 쪽 잔여: `sessions.test.ts` 의 TTL 캐시 2건(시간 의존)과
 `notify.test.ts`/`client.test.ts`/훅 테스트는 Phase 3(CLI+훅)에서 함께 포팅한다.
+
+## 브랜치 전략 — 통합 브랜치 + main 동결 (사용자 결정, 2026-08-31)
+
+재작성은 `rust-rewrite` 통합 브랜치 위에서만 진행하고, **main 은 동결한다**.
+phase 마다 `rust/phase-N` 브랜치를 따서 `rust-rewrite` 로 PR·스쿼시 머지하고,
+전체가 끝나면 `rust-rewrite` 를 main 에 올린다.
+
+- **phase 브랜치를 겹쳐 쌓지 않는다.** 스쿼시 머지는 커밋 SHA 계보를 끊으므로,
+  phase N+1 을 phase N 브랜치 **위에** 두면 N 이 스쿼시된 순간 N+1 PR 이 N 의 변경을
+  다시 새 것으로 들고 온다(diff 오염 + 그 줄마다 충돌). 피하려면 매번
+  `rebase --onto <통합브랜치> <N의-옛-tip>` 로 버릴 구간을 손으로 지정해야 한다.
+  그런데 phase 는 본래 순차라(3은 2가 끝나야 시작) 스택이 필요 없다 — N 을 머지한
+  **뒤** 갱신된 `rust-rewrite` 에서 N+1 을 딴다. 그러면 이 문제가 아예 안 생긴다.
+- **통합 브랜치를 두는 이유는 철회 가능성이다.** phase 별로 main 에 넣으면 재작성이
+  중간에 멎었을 때 마켓플레이스가 서빙하는 레포에 죽은 Rust 가 남아 누가 걷어내야
+  한다. 브랜치면 버리는 비용이 0이다.
+- **동결 예외는 핫픽스 하나** — 쉬핑 중인 TS 데몬에 버그가 나면 main 에 고치고
+  `rust-rewrite` 를 그 위로 한 번 리베이스한다.
+- 동결 부작용: `target/` 무시가 Rust 커밋에 들어 있어 main 계열 브랜치에서
+  `bun run check` 를 돌리면 cargo 산출물을 훑고 실패한다. main 에서 개발하지
+  않으므로 실害는 없지만 브랜치를 오갈 때 놀라지 말 것.
