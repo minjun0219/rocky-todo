@@ -1,16 +1,51 @@
 //! 시스템 연동 — tailscale serve 수동 제어, 접속 주소 나열, MCP 등록 안내.
 //! TS 원본 `src/tailscale.ts` 의 CLI 부분 + `src/cli.ts` 의 `printAddresses`/`mcpSetupGuide`.
 
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-/// `tailscale` CLI 한 번 실행 — stdout+stderr 를 합쳐 trim 한다.
+/// 자식을 마감 안에서 돌리고 넘기면 kill 한다 — `Command::output()` 에는 타임아웃이
+/// 없어서, tailscale 이 멈추거나 입력을 기다리면 CLI/훅이 무기한 매달린다.
+///
+/// stdin 은 `/dev/null` 이다 — 프롬프트를 띄우는 명령이 즉시 EOF 를 받게 한다.
+/// try_wait 폴링 동안 파이프를 읽지 않으므로 출력이 파이프 버퍼(64KB)를 넘치면
+/// 자식이 write 에서 막히는데, 여기서 부르는 명령들(tailscale)의 출력은 그보다 훨씬
+/// 작다. kill 뒤 `wait_with_output` 이 회수까지 겸한다.
+fn run_with_deadline(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<std::process::Output> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(_) => break,
+        }
+    }
+    child.wait_with_output().ok()
+}
+
+/// `tailscale` CLI 한 번 실행 — stdout+stderr 를 합쳐 trim 한다. 마감을 넘기면
+/// kill 되어 실패로 떨어진다(TS 의 `Bun.spawnSync({ timeout })` 대응).
 ///
 /// 미설치면 에러 메시지로 떨어진다. 기본 off 정책이라, tailscale 을 쓰면 안 되는
 /// 환경에서는 이 함수 자체가 불리지 않는다.
-fn tailscale_cmd(args: &[&str], _timeout: Duration) -> (bool, String) {
-    match Command::new("tailscale").args(args).output() {
-        Ok(out) => (
+fn tailscale_cmd(args: &[&str], timeout: Duration) -> (bool, String) {
+    match run_with_deadline("tailscale", args, timeout) {
+        Some(out) => (
             out.status.success(),
             format!(
                 "{}{}",
@@ -20,7 +55,7 @@ fn tailscale_cmd(args: &[&str], _timeout: Duration) -> (bool, String) {
             .trim()
             .to_string(),
         ),
-        Err(_) => (
+        None => (
             false,
             "tailscale CLI 를 찾을 수 없다 (미설치 환경에서는 이 기능을 쓰지 않는다)".to_string(),
         ),
@@ -144,4 +179,32 @@ Codex (~/.codex/config.toml — streamable HTTP 지원 버전):
   [mcp_servers.rocky-todo]
   url = "{base_url}/mcp""#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 마감을 넘긴 자식이 실제로 죽는지 — 수정 전(`Command::output()` 직행)에는 이
+    /// 테스트가 60초를 통째로 기다렸다.
+    #[test]
+    fn run_with_deadline_kills_an_overrunning_child() {
+        let started = Instant::now();
+        let out = run_with_deadline("sleep", &["60"], Duration::from_millis(200))
+            .expect("spawn 은 성공해야 한다");
+        assert!(!out.status.success(), "kill 된 자식은 실패로 떨어진다");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "마감이 안 듣는다: {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// 마감 안에 끝나는 자식은 출력째 돌아온다.
+    #[test]
+    fn run_with_deadline_returns_output_within_the_deadline() {
+        let out = run_with_deadline("echo", &["hello"], Duration::from_secs(5)).unwrap();
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
+    }
 }

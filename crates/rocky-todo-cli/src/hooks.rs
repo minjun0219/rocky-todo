@@ -146,11 +146,15 @@ pub fn hook_notify_todo(ctx: &CliContext, watch_config: Option<bool>) {
     let cursor_file = ctx.dir.join("hook-cursors.json");
     let cursor = read_cursor(&cursor_file, session_id);
 
-    // TS 는 claim 과 changes 를 Promise.all 로 병렬화했다. 여기는 동기 클라이언트라
-    // 순차인데, 타임아웃 1.5s 두 개가 겹치는 최악 경로는 데몬이 안 떠 있을 때뿐이고
-    // 그때는 첫 요청이 즉시 connection refused 로 떨어져 실측 지연이 없다.
-    let claimed = claim_handoff(&ctx.base_url, session_id, "prompt");
-    let handoff_context = claimed.as_ref().map(build_handoff_prompt);
+    // claim 과 changes 조회는 서로 독립이라 순차로 기다리면 최악(연결은 되는데
+    // 응답이 늦는 데몬)에 1.5s 타임아웃이 두 번 더해져 프롬프트 지연이 배가된다 —
+    // TS 의 Promise.all 대응으로 claim 을 스레드에 띄워 둘을 겹친다. 커서 읽기/쓰기
+    // 순서와 "첫 프롬프트엔 과거 히스토리를 주입하지 않는다"는 동작은 그대로다.
+    let claim_thread = {
+        let base_url = ctx.base_url.clone();
+        let session_id = session_id.to_string();
+        std::thread::spawn(move || claim_handoff(&base_url, &session_id, "prompt"))
+    };
 
     let mut change_context: Option<String> = None;
     match cursor {
@@ -169,6 +173,10 @@ pub fn hook_notify_todo(ctx: &CliContext, watch_config: Option<bool>) {
             }
         }
     }
+
+    // 패닉한 스레드는 "요청 없음"과 같게 본다 — fail-open.
+    let claimed = claim_thread.join().unwrap_or(None);
+    let handoff_context = claimed.as_ref().map(build_handoff_prompt);
 
     let Some(context) = merge_context(&[change_context, handoff_context]) else {
         return;

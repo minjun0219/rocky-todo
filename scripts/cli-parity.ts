@@ -81,6 +81,8 @@ function run(cmd: string[], env: Record<string, string>): string {
     env: { ...process.env, ...env },
     stdout: 'pipe',
     stderr: 'pipe',
+    // 케이스당 상한 — 데몬/CLI 가 어떤 이유로든 응답을 못 하면 CI 가 무기한 매달린다.
+    timeout: 30_000,
   });
   return `${proc.stdout.toString()}${proc.stderr.toString()}`;
 }
