@@ -193,3 +193,47 @@ index.html 을 돌려주는데, 번들 기본값인 상대 경로(`./chunk-*.js`
 `publicPath: '/'` 로 루트 절대 경로를 내보내 해결했고, 같은 데몬에서 REST 왕복 ·
 SSE(`: connected`) · cross-site 403(REST/`/mcp` 양쪽) · 프록시 헤더가 붙으면
 `issueCreateAllowed: false` 까지 함께 확인했다.
+
+## 프리릴리즈 — Phase 4 이후에 붙인다 (사용자 결정, 2026-09-01)
+
+Tauri 앱이 실제로 뜨는 시점(Phase 4)부터 `rust-rewrite` 에서 프리릴리즈를 낸다.
+지금 걸면 올릴 바이너리가 없어 파이프라인만 늘어난다.
+
+현재 파이프라인으로는 `rust-rewrite` 에서 아무것도 안 나온다 — 붙일 것 셋:
+
+- **트리거**: `release.yml` 이 `push: branches: [main]` 이고 changesets 도
+  `baseBranch: main` 이라 통합 브랜치는 아예 안 탄다.
+- **버전**: changesets 의 pre 모드(`changeset pre enter next`)를 쓴다 —
+  `0.15.0-next.0` 으로 찍히고 나갈 때 `pre exit` 로 정식 번호가 된다. 이게
+  Cargo(`0.15.0-dev`) ↔ package.json(`0.14.0`) 이원화를 푸는 Phase 5 와 같은
+  자리라 함께 정한다.
+- **산출물**: `scripts/release-github.ts` 는 `v<version>` 릴리스를 만들지만
+  `--prerelease` 를 안 붙이고, Tauri 바이너리를 올리는 job 자체가 없다. macOS
+  러너에서 빌드하고, 자기 머신 밖으로 배포할 거면 서명/노터라이즈가 필요하다.
+
+## Phase 3 — CLI + 훅 (2026-09-01)
+
+`rocky-todo-cli` 가 lib+bin 이 됐고 41개 서브커맨드 전부와 훅 3종(`hook
+ensure-daemon|notify-todo|handoff-stop`)이 넘어왔다. hooks.json 이 bun 스크립트
+대신 이 바이너리를 부르게 되는 건 컷오버(Phase 5) 몫 — 그때까지 TS 훅이 계속 돈다.
+
+- **clap 을 쓰지 않았다.** TS 의 손파서 동작(불리언/값/리스트 플래그, 모르는 플래그
+  에러)이 곧 사용자 표면이다. clap 은 `--name=value`·단축 플래그·`--` 를 자동으로
+  받아들여 계약이 조용히 넓어진다. Phase 2 때 main.rs 스텁 주석에 "clap 34
+  서브커맨드"라 적었던 건 이 결정으로 뒤집혔다.
+- **parity 게이트** (`bun run check:cli-parity`, CI 스텝): 데모 데몬 하나에 두 CLI
+  를 붙여 stdout 을 바이트 비교한다. 41개 케이스(텍스트·JSON·에러 경로). 자기
+  테스트만 통과하고 원본과 갈라지는 포팅을 막는 장치 — TS 표면이 사라지면 지운다.
+  이걸 위해 serde_json 에 `preserve_order` 를 켰다(Value 키 정렬 → 순서 유지).
+- **코어로 옮긴 것**: `config`(CLI 가 데몬 크레이트를 의존하면 tokio·axum 이 딸려
+  온다), `github` 의 순수 slug/remote 파싱, `notify`(훅 순수 로직).
+- **`encode_uri_component` 자작** — percent-encoding 크레이트들은 보존 집합이
+  조금씩 달라(`!'()`) ref 문자열이 TS 시절과 갈릴 수 있다. TS 오라클 출력을
+  테스트에 박았다.
+- 새 직접 의존은 `libc` 하나(SIGTERM/getuid) — 이미 tokio 가 끌어오던 크레이트라
+  빌드에 더해지는 코드가 없다.
+- TS 잔여 테스트(notify/client/ensure-daemon)까지 전부 포팅 — Rust 639 통과.
+
+launchd plist 는 ProgramArguments 가 `rocky-todod` 바이너리 하나가 됐고
+WorkingDirectory 고정이 빠졌다(bunfig.toml 제약 소멸). **기존 TS 로 install 한
+plist 는 컷오버 때 `daemon install` 재실행으로 교체해야 한다** — Phase 5 체크리스트.

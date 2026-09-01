@@ -1,7 +1,7 @@
 //! "이 doing 이 살아 있나" / "이 핸드오프가 어디까지 갔나" 판정 — 순수 함수.
 //! TS 원본 `src/doing.ts`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::actors::is_agent_actor;
 use crate::sessions::{match_board, AgentSession, SessionsResult};
@@ -13,7 +13,7 @@ use crate::types::{Handoff, HandoffStatus, Todo, TodoStatus};
 /// - `Idle` — 세션은 살아 있는데 턴이 끝났고 done 이 안 왔다. **방치**다.
 /// - `Gone` — 그 세션이 사라졌다.
 /// - `Unknown` — 판별할 수 없다. 모르는 것과 없는 것은 다르므로 경고하지 않는다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DoingState {
     Live,

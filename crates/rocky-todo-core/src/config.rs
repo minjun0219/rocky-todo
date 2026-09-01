@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rocky_todo_core::statusline::DEFAULT_STATUSLINE_TEMPLATE;
+use crate::statusline::DEFAULT_STATUSLINE_TEMPLATE;
 
 /// 기본 포트 — 키패드로 "todo" (8636).
 pub const DEFAULT_TODO_PORT: u16 = 8636;

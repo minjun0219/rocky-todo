@@ -69,3 +69,18 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+      # Rust CLI 가 TS 판과 **같은 출력**을 내는지 — 포팅이 자기 테스트만 통과하고
+      # 원본과 갈라지는 것을 막는 게이트다. 재작성이 끝나 TS 표면이 사라지면 지운다.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI + daemon
+        run: cargo build --workspace
+
+      - name: CLI parity (Rust vs TS)
+        run: bun run check:cli-parity

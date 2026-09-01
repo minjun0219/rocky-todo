@@ -16,7 +16,9 @@ license = "MIT"
 [workspace.dependencies]
 rusqlite = { version = "0.34", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order`: Value 가 키를 정렬하지 않고 파싱 순서를 유지한다. CLI 의 `--json`
+# 이 서버가 낸 필드 순서를 그대로 내보내야 TS 판과 출력이 같다(정렬하면 달라진다).
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.9"
@@ -27,4 +29,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 rmcp = { version = "3", features = ["server", "transport-streamable-http-server"] }
 schemars = "1"
 ureq = { version = "3", features = ["json"] }
+# 이미 의존 그래프에 있던 크레이트다(tokio 등이 끌어온다) — 직접 선언해도 빌드에
+# 새로 더해지는 코드가 없다. CLI 가 데몬에 SIGTERM 을 보내는 데만 쓴다.
+libc = "0.2"
 tokio-stream = { version = "0.1", features = ["sync"] }

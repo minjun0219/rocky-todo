@@ -4,12 +4,15 @@
 
 pub mod actor;
 pub mod actors;
+pub mod config;
 pub mod doing;
+pub mod github;
 pub mod handoff;
 pub mod ids;
 pub mod local_request;
 pub mod migrations;
 pub mod next;
+pub mod notify;
 pub mod refs;
 pub mod sessions;
 pub mod statusline;

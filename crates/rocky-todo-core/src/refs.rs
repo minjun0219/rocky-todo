@@ -3,7 +3,7 @@
 //! 해석(resolve)은 `store` 쪽에 있다(테이블 조회가 필요해서). 여기는 내보내기(`ref_of`)와
 //! 순수 판별들, 그리고 REST·MCP 가 공유하는 응답 view(`TodoView`/`NoteView`)를 둔다.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ids::ID_LENGTH;
 use crate::store::{StoreResult, TodoStore};
@@ -16,7 +16,7 @@ pub const GLOBAL_NOTE_PREFIX: &str = "note";
 pub use crate::doing::DoingState;
 
 /// 응답 전용 todo — 저장 모델에 사람이 쓰는 참조(ref)와 댓글 집계를 얹은 형태.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TodoView {
     #[serde(flatten)]
@@ -34,7 +34,7 @@ pub struct TodoView {
 }
 
 /// 응답 전용 note. 글로벌 메모는 보드 대신 예약 접두사가 붙어 `note-3` 이 된다.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteView {
     #[serde(flatten)]
