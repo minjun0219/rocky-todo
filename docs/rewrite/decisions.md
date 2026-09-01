@@ -193,3 +193,20 @@ index.html 을 돌려주는데, 번들 기본값인 상대 경로(`./chunk-*.js`
 `publicPath: '/'` 로 루트 절대 경로를 내보내 해결했고, 같은 데몬에서 REST 왕복 ·
 SSE(`: connected`) · cross-site 403(REST/`/mcp` 양쪽) · 프록시 헤더가 붙으면
 `issueCreateAllowed: false` 까지 함께 확인했다.
+
+## 프리릴리즈 — Phase 4 이후에 붙인다 (사용자 결정, 2026-09-01)
+
+Tauri 앱이 실제로 뜨는 시점(Phase 4)부터 `rust-rewrite` 에서 프리릴리즈를 낸다.
+지금 걸면 올릴 바이너리가 없어 파이프라인만 늘어난다.
+
+현재 파이프라인으로는 `rust-rewrite` 에서 아무것도 안 나온다 — 붙일 것 셋:
+
+- **트리거**: `release.yml` 이 `push: branches: [main]` 이고 changesets 도
+  `baseBranch: main` 이라 통합 브랜치는 아예 안 탄다.
+- **버전**: changesets 의 pre 모드(`changeset pre enter next`)를 쓴다 —
+  `0.15.0-next.0` 으로 찍히고 나갈 때 `pre exit` 로 정식 번호가 된다. 이게
+  Cargo(`0.15.0-dev`) ↔ package.json(`0.14.0`) 이원화를 푸는 Phase 5 와 같은
+  자리라 함께 정한다.
+- **산출물**: `scripts/release-github.ts` 는 `v<version>` 릴리스를 만들지만
+  `--prerelease` 를 안 붙이고, Tauri 바이너리를 올리는 job 자체가 없다. macOS
+  러너에서 빌드하고, 자기 머신 밖으로 배포할 거면 서명/노터라이즈가 필요하다.
