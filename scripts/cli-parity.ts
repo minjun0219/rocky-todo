@@ -75,7 +75,12 @@ const SEED: string[][] = [
   ['note', 'add', '전역 메모', '--global', '--content', '전역 본문'],
 ];
 
-function run(cmd: string[], env: Record<string, string>): string {
+interface RunResult {
+  text: string;
+  exitCode: number | null;
+}
+
+function run(cmd: string[], env: Record<string, string>): RunResult {
   const proc = Bun.spawnSync({
     cmd,
     env: { ...process.env, ...env },
@@ -84,7 +89,10 @@ function run(cmd: string[], env: Record<string, string>): string {
     // 케이스당 상한 — 데몬/CLI 가 어떤 이유로든 응답을 못 하면 CI 가 무기한 매달린다.
     timeout: 30_000,
   });
-  return `${proc.stdout.toString()}${proc.stderr.toString()}`;
+  return {
+    text: `${proc.stdout.toString()}${proc.stderr.toString()}`,
+    exitCode: proc.exitCode,
+  };
 }
 
 const dir = mkdtempSync(join(tmpdir(), 'rt-parity-'));
@@ -119,23 +127,31 @@ try {
   }
 
   for (const args of SEED) {
-    run([RUST_CLI, ...args], env);
+    // 시드가 실패하면 이후 비교가 빈 보드 위에서 공허하게 통과한다 — 즉시 끊는다.
+    const seeded = run([RUST_CLI, ...args], env);
+    if (seeded.exitCode !== 0) {
+      throw new Error(`시드 실패 (${args.join(' ')}):\n${seeded.text}`);
+    }
   }
 
   for (const args of CASES) {
     const rust = run([RUST_CLI, ...args], env);
     const ts = run([process.execPath, join(ROOT, 'src/cli.ts'), ...args], env);
     const label = args.join(' ');
-    if (rust === ts) {
+    // 출력이 같아도 종료 코드가 다르면(성공/실패 판정 회귀) 게이트가 잡아야 한다.
+    if (rust.text === ts.text && rust.exitCode === ts.exitCode) {
       console.log(`✓ ${label}`);
       continue;
     }
     failures++;
-    console.log(`✗ ${label}`);
-    console.log(`--- TS ---\n${ts}--- Rust ---\n${rust}`);
+    console.log(`✗ ${label}  (exit TS=${ts.exitCode} Rust=${rust.exitCode})`);
+    console.log(`--- TS ---\n${ts.text}--- Rust ---\n${rust.text}`);
   }
 } finally {
+  // kill 만 하고 떠나면 데몬이 내려가기 전에 임시 디렉터리 삭제/포트 재사용과
+  // 레이스가 된다 — 종료를 기다린 뒤 정리한다.
   daemon.kill();
+  await daemon.exited;
   rmSync(dir, { recursive: true, force: true });
 }
 
