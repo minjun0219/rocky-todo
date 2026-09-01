@@ -28,6 +28,13 @@ const CASES: string[][] = [
   ['show', 'parity-1', '--board', 'parity', '--json'],
   ['section', 'ls', '--board', 'parity'],
   ['sessions', '--board', 'parity'],
+  ['next', '--board', 'parity'],
+  ['next', '--board', 'parity', '--json'],
+  ['next', '--board', 'parity', '--limit', '2'],
+  ['board', 'ls'],
+  ['board', 'show', 'parity'],
+  ['history', 'parity-1', '--board', 'parity'],
+  ['history', 'parity-1', '--board', 'parity', '--limit', '3'],
   // 에러 경로 — 메시지가 사용자 표면이라 함께 고정한다.
   ['show', '999', '--board', 'parity'],
   ['show', '--board', 'parity'],
@@ -35,6 +42,9 @@ const CASES: string[][] = [
   ['comment', 'parity-1', '--board', 'parity'],
   ['section', 'archive', '없는섹션', '--board', 'parity'],
   ['move', 'parity-1', '--board', 'parity'],
+  ['board', 'show', '없는보드'],
+  ['history', '--board', 'parity'],
+  ['board', 'nonsense'],
   ['nonsense-command'],
 ];
 

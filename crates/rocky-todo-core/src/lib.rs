@@ -6,6 +6,7 @@ pub mod actor;
 pub mod actors;
 pub mod config;
 pub mod doing;
+pub mod github;
 pub mod handoff;
 pub mod ids;
 pub mod local_request;
