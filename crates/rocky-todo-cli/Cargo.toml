@@ -1,0 +1,9 @@
+[package]
+name = "rocky-todo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rocky-todo"
+path = "src/main.rs"

@@ -16,3 +16,5 @@ bin/rocky-todo-*
 rocky.json
 # Claude Code 로컬 오버라이드
 .claude/settings.local.json
+# Rust
+target/
