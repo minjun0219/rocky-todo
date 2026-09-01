@@ -60,30 +60,60 @@ fn fetch_changes(base_url: &str, since_id: i64, limit: i64) -> Option<ChangesSin
     response.body_mut().read_json().ok()
 }
 
+/// `hook_ensure_daemon` 의 주입점 — TS 의 `EnsureDeps` 대응. 테스트가 실제 spawn/
+/// SIGTERM/launchd 없이 stale 분기들을 검증할 수 있게 한다.
+pub struct EnsureDeps<'a> {
+    /// 이 설치본의 버전 — 데몬이 보고한 값과 다르면 stale 로 본다.
+    pub version: &'a str,
+    pub check_health: &'a dyn Fn(&str) -> Option<crate::client::DaemonHealth>,
+    pub spawn: &'a dyn Fn(&CliContext),
+    /// 구버전 데몬 종료. 성공 여부를 돌려준다.
+    pub stop: &'a dyn Fn(&CliContext, Option<u32>) -> bool,
+    /// launchd(KeepAlive) 상주 등록 여부.
+    pub is_managed: &'a dyn Fn() -> bool,
+    /// 상주 job 을 현재 설치 경로로 교체 (bootout→plist 갱신→bootstrap).
+    pub replace_managed: &'a dyn Fn(),
+}
+
 /// SessionStart(startup): 데몬이 없으면 띄우고, **구버전이면** 내리고 현재 버전으로
-/// 재기동한다.
-///
+/// 재기동한다. 실제 배선 — 판정은 `ensure_daemon_with` 에 있다.
+pub fn hook_ensure_daemon(ctx: &CliContext) {
+    ensure_daemon_with(
+        ctx,
+        &EnsureDeps {
+            version: env!("CARGO_PKG_VERSION"),
+            check_health: &daemon_health,
+            spawn: &|ctx| {
+                let _ = ensure_daemon(ctx);
+            },
+            stop: &stop_daemon,
+            is_managed: &is_launchd_registered,
+            replace_managed: &|| {
+                install_launchd();
+            },
+        },
+    );
+}
+
 /// 버전 비교는 정확 문자열 일치다 — 데몬 프로세스는 자기를 띄운 설치본보다 오래 살아,
 /// 플러그인이 갱신돼도 옛 코드가 계속 돈다. version 미보고(≤0.1.0)도 stale 취급.
 /// launchd(KeepAlive) 상주면 PID kill 은 무의미하다(즉시 되살아난다) — job 자체를 현재
 /// 설치 경로로 교체한다. 못 내리면 재기동하지 않는다: 보드가 없는 것보다 구버전이라도
 /// 있는 게 낫다.
-pub fn hook_ensure_daemon(ctx: &CliContext) {
-    let running = daemon_health(&ctx.base_url);
-    let Some(running) = running else {
-        let _ = ensure_daemon(ctx);
+pub fn ensure_daemon_with(ctx: &CliContext, deps: &EnsureDeps) {
+    let Some(running) = (deps.check_health)(&ctx.base_url) else {
+        (deps.spawn)(ctx);
         return;
     };
-    let own_version = env!("CARGO_PKG_VERSION");
-    if running.version.as_deref() == Some(own_version) {
+    if running.version.as_deref() == Some(deps.version) {
         return;
     }
-    if is_launchd_registered() {
-        install_launchd();
+    if (deps.is_managed)() {
+        (deps.replace_managed)();
         return;
     }
-    if stop_daemon(ctx, running.pid) {
-        let _ = ensure_daemon(ctx);
+    if (deps.stop)(ctx, running.pid) {
+        (deps.spawn)(ctx);
     }
 }
 
