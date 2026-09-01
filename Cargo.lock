@@ -1053,6 +1053,12 @@ dependencies = [
 [[package]]
 name = "rocky-todo-cli"
 version = "0.15.0-dev"
+dependencies = [
+ "chrono",
+ "rocky-todo-core",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "rocky-todo-core"

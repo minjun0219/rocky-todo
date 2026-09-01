@@ -4,6 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[lib]
+name = "rocky_todo_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rocky-todo"
 path = "src/main.rs"
+
+[dependencies]
+rocky-todo-core = { path = "../rocky-todo-core" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
