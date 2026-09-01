@@ -1055,9 +1055,11 @@ name = "rocky-todo-cli"
 version = "0.15.0-dev"
 dependencies = [
  "chrono",
+ "libc",
  "rocky-todo-core",
  "serde",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]

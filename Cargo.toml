@@ -27,4 +27,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 rmcp = { version = "3", features = ["server", "transport-streamable-http-server"] }
 schemars = "1"
 ureq = { version = "3", features = ["json"] }
+# 이미 의존 그래프에 있던 크레이트다(tokio 등이 끌어온다) — 직접 선언해도 빌드에
+# 새로 더해지는 코드가 없다. CLI 가 데몬에 SIGTERM 을 보내는 데만 쓴다.
+libc = "0.2"
 tokio-stream = { version = "0.1", features = ["sync"] }
