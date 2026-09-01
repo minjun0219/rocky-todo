@@ -4,6 +4,7 @@
 
 pub mod actor;
 pub mod actors;
+pub mod config;
 pub mod doing;
 pub mod handoff;
 pub mod ids;

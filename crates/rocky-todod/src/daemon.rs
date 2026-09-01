@@ -20,10 +20,10 @@ use rocky_todo_core::TodoStore;
 use tower::Service;
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::config::{resolve_runtime_config, ExposeChannel, TodoRuntimeConfig};
 use crate::mcp::{mcp_service, TodoMcp};
 use crate::runner::default_runner;
 use crate::server::{build_server, handle_api, ServerOptions, ServerState};
+use rocky_todo_core::config::{resolve_runtime_config, ExposeChannel, TodoRuntimeConfig};
 
 type McpSvc = rmcp::transport::streamable_http_server::StreamableHttpService<
     TodoMcp,
@@ -209,9 +209,9 @@ async fn shutdown_signal() {
 
 /// 설정 로드까지 포함한 진입 — main.rs 와 Tauri 가 공유.
 pub async fn start_daemon(ui_dist: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = crate::config::user_config_path();
-    let todo = crate::config::load_todo_config(&config_path);
-    let env = crate::config::env_snapshot();
+    let config_path = rocky_todo_core::config::user_config_path();
+    let todo = rocky_todo_core::config::load_todo_config(&config_path);
+    let env = rocky_todo_core::config::env_snapshot();
     let runtime = resolve_runtime_config(&env, &todo);
     run_daemon(runtime, ui_dist).await
 }

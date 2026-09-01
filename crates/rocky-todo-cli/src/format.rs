@@ -282,6 +282,9 @@ pub struct SessionsView {
 #[serde(rename_all = "camelCase")]
 pub struct MatchedSession {
     pub name: String,
+    /// handoff 대상 지정에 쓴다 — `--session` 은 이름으로 받고 id 로 보낸다.
+    #[serde(default)]
+    pub session_id: String,
     pub status: String,
     pub cwd: String,
     #[serde(default)]
@@ -420,4 +423,92 @@ pub fn render_board(board: &Board) -> String {
         ));
     }
     lines.join("\n")
+}
+
+// ── 목록 렌더 (계층 + 섹션/보드 묶음) ───────────────────────────────────────
+
+use rocky_todo_core::types::Section;
+use std::collections::HashMap;
+
+/// 자식을 재귀로 들여쓰며 펼친다.
+fn render_tree(
+    todos: &[&TodoView],
+    out: &mut Vec<String>,
+    depth: usize,
+    children: &HashMap<String, Vec<usize>>,
+    all: &[TodoView],
+    now_ms: i64,
+) {
+    for todo in todos {
+        out.push(format_todo_line(todo, depth, now_ms));
+        if let Some(kids) = children.get(&todo.todo.id) {
+            let kid_refs: Vec<&TodoView> = kids.iter().map(|i| &all[*i]).collect();
+            render_tree(&kid_refs, out, depth + 1, children, all, now_ms);
+        }
+    }
+}
+
+/// 목록을 계층 + 섹션(또는 `--all` 이면 보드)으로 묶어 렌더한다.
+///
+/// **부모가 목록 안에 있을 때만** 자식으로 접는다 — 필터(보관/보드 등)로 부모가 빠지면
+/// 자식이 통째로 사라지지 않고 루트로 올라온다.
+pub fn group_and_render(
+    todos: &[TodoView],
+    sections: &[Section],
+    boards: &[Board],
+    all_view: bool,
+    now_ms: i64,
+) -> String {
+    let present: std::collections::HashSet<&str> =
+        todos.iter().map(|t| t.todo.id.as_str()).collect();
+    let mut children: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut roots: Vec<usize> = Vec::new();
+    for (index, todo) in todos.iter().enumerate() {
+        match todo.todo.parent_id.as_deref() {
+            Some(parent) if present.contains(parent) => {
+                children.entry(parent.to_string()).or_default().push(index);
+            }
+            _ => roots.push(index),
+        }
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    if all_view {
+        for board in boards {
+            let items: Vec<&TodoView> = roots
+                .iter()
+                .map(|i| &todos[*i])
+                .filter(|t| t.todo.board_id == board.id)
+                .collect();
+            if items.is_empty() {
+                continue;
+            }
+            out.push(format!("# {}", board.key));
+            render_tree(&items, &mut out, 1, &children, todos, now_ms);
+        }
+    } else {
+        let no_section: Vec<&TodoView> = roots
+            .iter()
+            .map(|i| &todos[*i])
+            .filter(|t| t.todo.section_id.is_none())
+            .collect();
+        render_tree(&no_section, &mut out, 0, &children, todos, now_ms);
+        for section in sections {
+            let items: Vec<&TodoView> = roots
+                .iter()
+                .map(|i| &todos[*i])
+                .filter(|t| t.todo.section_id.as_deref() == Some(section.id.as_str()))
+                .collect();
+            if items.is_empty() {
+                continue;
+            }
+            out.push(format!("# {}", section.title));
+            render_tree(&items, &mut out, 1, &children, todos, now_ms);
+        }
+    }
+    if out.is_empty() {
+        "(비어 있음)".to_string()
+    } else {
+        out.join("\n")
+    }
 }

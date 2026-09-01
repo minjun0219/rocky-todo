@@ -1,7 +1,7 @@
 //! TS `src/config.test.ts` + `src/rocky-config.test.ts` 포팅.
 
+use rocky_todo_core::config::*;
 use rocky_todo_core::statusline::DEFAULT_STATUSLINE_TEMPLATE;
-use rocky_todod::config::*;
 
 fn env(pairs: &[(&str, &str)]) -> EnvMap {
     pairs

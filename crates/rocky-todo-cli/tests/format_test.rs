@@ -292,6 +292,7 @@ fn sessions_view(available: bool, sessions: Vec<MatchedSession>) -> SessionsView
 fn session(name: &str, cwd: &str, matched: bool) -> MatchedSession {
     MatchedSession {
         name: name.into(),
+        session_id: format!("sess-{name}"),
         status: "idle".into(),
         cwd: cwd.into(),
         matched,
@@ -430,4 +431,119 @@ fn encode_uri_component_matches_the_ts_oracle() {
     for (input, expected) in cases {
         assert_eq!(encode_uri_component(input), expected, "{input}");
     }
+}
+
+// ── groupAndRender ──────────────────────────────────────────────────────────
+//
+// TS 에는 이 함수의 테스트가 없었다. 계층·섹션 묶음은 `ls` 의 전부라 포팅하면서 붙인다.
+
+use rocky_todo_core::refs::TodoView;
+use rocky_todo_core::types::Section;
+
+fn child_of(parent: &str, id: &str, number: i64, title: &str) -> TodoView {
+    let mut todo = todo_fixture();
+    todo.todo.id = id.into();
+    todo.todo.number = number;
+    todo.todo.title = title.into();
+    todo.todo.parent_id = Some(parent.into());
+    todo
+}
+
+fn section(id: &str, title: &str) -> Section {
+    Section {
+        id: id.into(),
+        board_id: "b".into(),
+        title: title.into(),
+        position: 1,
+        archived_at: None,
+    }
+}
+
+#[test]
+fn empty_list_says_so() {
+    assert_eq!(group_and_render(&[], &[], &[], false, NOW), "(비어 있음)");
+}
+
+#[test]
+fn children_are_indented_under_their_parent() {
+    let parent = todo_fixture();
+    let child = child_of("a1b2c3d4", "kid", 2, "자식");
+    let out = group_and_render(&[parent, child], &[], &[], false, NOW);
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(lines[0].starts_with('○'), "{out}");
+    assert!(
+        lines[1].starts_with("  "),
+        "자식이 들여쓰이지 않았다:\n{out}"
+    );
+    assert!(lines[1].contains("자식"), "{out}");
+}
+
+/// **부모가 목록에 없으면** 자식은 사라지지 않고 루트로 올라온다 — 필터(보관/보드)로
+/// 부모가 빠졌을 때 자식이 통째로 안 보이는 사고를 막는다.
+#[test]
+fn orphaned_child_is_promoted_to_root() {
+    let orphan = child_of("없는-부모", "kid", 2, "자식");
+    let out = group_and_render(&[orphan], &[], &[], false, NOW);
+    assert!(out.contains("자식"), "{out}");
+    assert!(!out.starts_with("  "), "루트로 올라와야 한다:\n{out}");
+}
+
+#[test]
+fn sections_become_headings_and_empty_ones_are_skipped() {
+    let mut in_section = todo_fixture();
+    in_section.todo.section_id = Some("s1".into());
+    in_section.todo.title = "섹션 안".into();
+    let loose = {
+        let mut t = todo_fixture();
+        t.todo.id = "loose".into();
+        t.todo.title = "섹션 밖".into();
+        t
+    };
+    let out = group_and_render(
+        &[loose, in_section],
+        &[section("s1", "진행중"), section("s2", "빈 섹션")],
+        &[],
+        false,
+        NOW,
+    );
+    assert!(out.contains("# 진행중"), "{out}");
+    assert!(
+        !out.contains("# 빈 섹션"),
+        "빈 섹션은 제목을 만들지 않는다:\n{out}"
+    );
+    // 섹션 없는 항목이 먼저, 그다음 섹션 제목.
+    assert!(
+        out.find("섹션 밖").unwrap() < out.find("# 진행중").unwrap(),
+        "{out}"
+    );
+}
+
+/// `--all` 이면 섹션 대신 보드로 묶는다.
+#[test]
+fn all_view_groups_by_board() {
+    let mut a = todo_fixture();
+    a.todo.board_id = "b1".into();
+    a.todo.title = "A 보드 항목".into();
+    let mut b = todo_fixture();
+    b.todo.id = "second".into();
+    b.todo.board_id = "b2".into();
+    b.todo.title = "B 보드 항목".into();
+
+    let mut board_a = board_fixture();
+    board_a.id = "b1".into();
+    board_a.key = "alpha".into();
+    let mut board_b = board_fixture();
+    board_b.id = "b2".into();
+    board_b.key = "beta".into();
+    let mut board_empty = board_fixture();
+    board_empty.id = "b3".into();
+    board_empty.key = "gamma".into();
+
+    let out = group_and_render(&[a, b], &[], &[board_a, board_b, board_empty], true, NOW);
+    assert!(out.contains("# alpha"), "{out}");
+    assert!(out.contains("# beta"), "{out}");
+    assert!(
+        !out.contains("# gamma"),
+        "빈 보드는 제목을 만들지 않는다:\n{out}"
+    );
 }
