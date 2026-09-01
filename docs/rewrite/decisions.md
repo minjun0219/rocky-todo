@@ -258,3 +258,12 @@ plist 는 컷오버 때 `daemon install` 재실행으로 교체해야 한다** �
   프리릴리즈 몫이다.
 - 개발 실행: `ROCKY_CONFIG=... ROCKY_TODO_UI_DIST=$PWD/dist cargo run -p rocky-todo-app`.
   기본 포트로 열면 설치본 데몬을 재사용하므로 안전하다(위 첫 항목).
+- **`ROCKY_TODO_UI_DIST` 는 컷오버 전까지 개발 전용이다** — 쉬핑 중인 TS 표면에는
+  없는 변수라 `docs/rocky-todo.md` 의 env 표에 지금 넣으면 거짓 문서가 된다.
+  컷오버(Phase 5)에서 표면이 바뀔 때 env 표와 함께 반영한다(체크리스트 5번).
+- **백엔드 확보 실패는 GUI 앞에서 끝낸다** — setup 안에서 Err 를 내면 tauri 내부를
+  거치며 abort 트레이스로 죽는다(실측). main 에서 확보하고, 실패하면 osascript
+  다이얼로그 + 정상 종료(Dock 실행의 stderr 는 아무도 못 본다). 무관한 서비스가
+  포트를 점유한 경우 health 의 신원 검증이 걸러 "확보 실패"로 떨어진다 — 그 서비스를
+  창에 로드하는 사고가 없다. macOS 의 Dock 재열기(RunEvent::Reopen)도 처리한다 —
+  안 하면 마지막 창을 닫은 뒤 창 없는 유령 프로세스가 된다.
