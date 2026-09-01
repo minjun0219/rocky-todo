@@ -12,7 +12,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const PORT = 8994;
+// 포트 고정은 로컬/CI 에서 점유 충돌로 플래키해질 수 있다 — env 로 오버라이드 가능.
+const PORT = Number.parseInt(process.env.ROCKY_TODO_PARITY_PORT ?? '', 10) || 8994;
 const ROOT = join(import.meta.dir, '..');
 const RUST_CLI = join(ROOT, 'target/debug/rocky-todo');
 const RUST_DAEMON = join(ROOT, 'target/debug/rocky-todod');

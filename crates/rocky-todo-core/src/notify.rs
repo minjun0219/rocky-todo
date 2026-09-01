@@ -55,15 +55,24 @@ fn is_comment_action(action: &str) -> bool {
 const COMMENT_MAX_CHARS: usize = 200;
 
 /// 댓글 본문을 한 줄로 접고 길면 자른다.
+///
+/// 길이는 JS 원본(`String#slice`)과 같은 **UTF-16 코드유닛** 기준이다 — char 로 세면
+/// 서로게이트 페어(이모지 등)가 섞인 본문에서 자르는 위치가 달라진다. 딱 하나 다른
+/// 점: JS 는 페어 한가운데를 갈라 깨진 서로게이트를 남길 수 있는데 Rust 문자열은
+/// 그걸 표현할 수 없어, 경계에 걸린 문자는 통째로 앞에서 끊는다(최대 한 글자 차이).
 fn condense_body(body: &str) -> String {
     let one_line = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    let chars: Vec<char> = one_line.chars().collect();
-    if chars.len() > COMMENT_MAX_CHARS {
-        let head: String = chars[..COMMENT_MAX_CHARS].iter().collect();
-        format!("{head}…")
-    } else {
-        one_line
+    let mut units = 0usize;
+    let mut head = String::new();
+    for ch in one_line.chars() {
+        units += ch.len_utf16();
+        if units > COMMENT_MAX_CHARS {
+            head.push('…');
+            return head;
+        }
+        head.push(ch);
     }
+    one_line
 }
 
 /// JS `String(value)` 대응 — 문자열은 따옴표 없이, 나머지는 JSON 표기로.
