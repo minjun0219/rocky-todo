@@ -10,6 +10,7 @@ pub mod commands;
 pub mod context;
 pub mod flags;
 pub mod format;
+pub mod hooks;
 pub mod launchd;
 pub mod system;
 

@@ -357,7 +357,7 @@ pub struct CreateSpawnedHandoffInput {
     pub current_board_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimedHandoff {
     pub handoff: Handoff,
@@ -393,7 +393,7 @@ pub struct ChangeEvent {
 }
 
 /// `/api/changes` 피드 항목 — 히스토리에 엔티티 제목/보드 키를 붙인 형태.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeFeedEntry {
     #[serde(flatten)]
@@ -403,7 +403,7 @@ pub struct ChangeFeedEntry {
     pub board_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangesSince {
     pub last_id: i64,

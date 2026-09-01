@@ -24,7 +24,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
-    let (ctx, runtime) = build_cli_context(parsed.str_flag("actor"));
+    let (ctx, runtime, todo_config) = build_cli_context(parsed.str_flag("actor"));
     let expose_lan = runtime
         .expose
         .contains(&rocky_todo_core::config::ExposeChannel::Lan);
@@ -59,6 +59,21 @@ fn run(argv: &[String]) -> Result<(), String> {
         "daemon" => commands::cmd_daemon(&ctx, &rest, expose_lan, expose_ts),
         "mcp" => commands::cmd_mcp(&ctx, &rest),
         "tailscale" => commands::cmd_tailscale(&ctx, &rest),
+        // 훅 엔트리 — hooks.json 이 부른다. 셋 다 fail-open 이라 항상 Ok.
+        "hook" => {
+            use rocky_todo_cli::hooks;
+            match rest.first().map(String::as_str) {
+                Some("ensure-daemon") => hooks::hook_ensure_daemon(&ctx),
+                Some("notify-todo") => hooks::hook_notify_todo(&ctx, todo_config.watch),
+                Some("handoff-stop") => hooks::hook_handoff_stop(&ctx),
+                _ => {
+                    return Err(
+                        "usage: rocky-todo hook ensure-daemon|notify-todo|handoff-stop".into(),
+                    )
+                }
+            }
+            Ok(())
+        }
         "start" | "stop" | "done" | "reopen" | "archive" | "unarchive" => {
             commands::cmd_status(&ctx, command, &rest, &board, &printer)
         }

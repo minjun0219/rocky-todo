@@ -4,7 +4,8 @@ use std::process::Command;
 
 use rocky_todo_core::actor::{board_key_from, detect_actor, BoardKeySources};
 use rocky_todo_core::config::{
-    env_snapshot, load_todo_config, resolve_runtime_config, user_config_path, TodoRuntimeConfig,
+    env_snapshot, load_todo_config, resolve_runtime_config, user_config_path, TodoConfig,
+    TodoRuntimeConfig,
 };
 
 use crate::client::{build_context, CliContext};
@@ -40,7 +41,9 @@ pub fn infer_board_key() -> String {
 /// 설정을 읽어 컨텍스트와 런타임 설정을 만든다.
 ///
 /// `actor_override` 는 `--actor` 플래그 — 없으면 env/호스트에서 감지한다.
-pub fn build_cli_context(actor_override: Option<&str>) -> (CliContext, TodoRuntimeConfig) {
+pub fn build_cli_context(
+    actor_override: Option<&str>,
+) -> (CliContext, TodoRuntimeConfig, TodoConfig) {
     let todo = load_todo_config(&user_config_path());
     let env = env_snapshot();
     let runtime = resolve_runtime_config(&env, &todo);
@@ -48,7 +51,7 @@ pub fn build_cli_context(actor_override: Option<&str>) -> (CliContext, TodoRunti
         .map(str::to_string)
         .unwrap_or_else(|| detect_actor(&env_pairs()));
     let ctx = build_context(runtime.port, runtime.dir.clone(), actor);
-    (ctx, runtime)
+    (ctx, runtime, todo)
 }
 
 /// `detect_actor` 가 받는 형태로 환경변수를 펼친다.
