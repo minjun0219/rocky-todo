@@ -10,6 +10,8 @@ pub mod commands;
 pub mod context;
 pub mod flags;
 pub mod format;
+pub mod launchd;
+pub mod system;
 
 /// `help` 출력 — TS `src/cli.ts` 의 HELP 를 그대로 옮겼다.
 pub const HELP: &str = r#"rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹 UI + MCP 의 CLI 표면)

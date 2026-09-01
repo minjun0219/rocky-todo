@@ -54,6 +54,12 @@ const CASES: string[][] = [
   ['note', 'show', '--board', 'parity'],
   ['note', 'edit', 'parity-1', '--board', 'parity'],
   ['note', 'append', 'parity-1', '--board', 'parity'],
+  ['mcp', 'setup'],
+  ['mcp', 'nonsense'],
+  ['tailscale', 'nonsense'],
+  ['daemon', 'nonsense'],
+  ['issue'],
+  ['issue', 'parity-1', '--repo', '이상한모양', '--board', 'parity'],
   ['nonsense-command'],
 ];
 

@@ -921,3 +921,196 @@ pub fn cmd_note(
         _ => Err("usage: rocky-todo note add|ls|show|edit|append|archive".into()),
     }
 }
+
+// ── issue / open / daemon / mcp / tailscale ────────────────────────────────
+
+/// 서버의 repo 미설정 에러인지 — **접두어만 정확히 맞춘다.** `includes` 로 느슨하게 잡으면
+/// `gh` 의 `repo` 스코프 인증 실패까지 걸려, 보드 repo 를 조용히 덮어쓰고 진짜 원인을
+/// 가린다.
+pub fn is_missing_repo_error(message: &str) -> bool {
+    message.starts_with("board has no GitHub repo")
+}
+
+/// `board has no GitHub repo: <key> — …` 에서 보드 key 를 꺼낸다.
+///
+/// cwd 에서 유추한 레포를 그 보드에 써도 되는지 판단하는 데 쓴다 — 다른 보드의 todo
+/// 였다면 cwd 는 아무 관계가 없고, 그대로 진행하면 **엉뚱한 레포에 이슈가 올라간다**.
+pub fn board_key_from_missing_repo_error(message: &str) -> Option<String> {
+    let rest = message.strip_prefix("board has no GitHub repo: ")?;
+    let (key, _) = rest.split_once(" — ")?;
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// `issue REF [--repo OWNER/NAME]` — todo 를 GitHub 이슈로.
+pub fn cmd_issue(
+    ctx: &CliContext,
+    rest: &[String],
+    flags: &ParsedFlags,
+    board: &str,
+    printer: &Printer,
+) -> Result<(), String> {
+    let Some(id) = rest.first() else {
+        return Err("usage: rocky-todo issue REF [--repo OWNER/NAME]".into());
+    };
+    let path = todo_ref_path(id, "/issue", board);
+
+    // repo 를 미리 PATCH 하지 않는다 — 서버가 ref 로 todo 의 진짜 보드를 알아서 그 위에
+    // 저장한다. `--board` 로 유추한 board 는 cwd 기준이라 ref 가 다른 보드를 가리키면
+    // 엉뚱한 보드가 조용히 바뀐다.
+    if let Some(explicit) = flags.str_flag("repo") {
+        if !is_repo_slug(explicit) {
+            return Err(format!("--repo 는 OWNER/NAME 모양이어야 한다: {explicit}"));
+        }
+        let raw = request_value(ctx, "POST", &path, Some(&json!({ "repo": explicit })))?;
+        let url = raw.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        printer.emit(&raw, || format!("✓ {url}"));
+        return Ok(());
+    }
+
+    match request_value(ctx, "POST", &path, None) {
+        Ok(raw) => {
+            let url = raw.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            printer.emit(&raw, || format!("✓ {url}"));
+            Ok(())
+        }
+        Err(message) => {
+            // 보드에 repo 가 없을 때만 cwd 에서 유추해 한 번 더 POST 한다. cwd 유추는
+            // cwd 보드와 todo 의 실제 보드가 같을 때만 안전하다 — 서버 메시지가 실토한
+            // 보드 key 가 이 CLI 의 board 와 다르면 유추하지 않고 원래 에러를 그대로 던진다.
+            let error_board = if is_missing_repo_error(&message) {
+                board_key_from_missing_repo_error(&message)
+            } else {
+                None
+            };
+            let inferred = if error_board.as_deref() == Some(board) {
+                crate::context::git(&["remote", "get-url", "origin"])
+                    .and_then(|url| parse_repo_from_remote(&url))
+            } else {
+                None
+            };
+            let Some(repo) = inferred else {
+                return Err(message);
+            };
+            let raw = request_value(ctx, "POST", &path, Some(&json!({ "repo": repo })))?;
+            let url = raw.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            printer.emit(&raw, || {
+                format!("✓ {url} (보드 repo 를 {repo} 로 설정했다)")
+            });
+            Ok(())
+        }
+    }
+}
+
+/// `open` — 접속 주소 출력. 링크를 눌러 여는 용도라 자동 실행은 없다.
+pub fn cmd_open(ctx: &CliContext, expose_lan: bool, expose_tailscale: bool) -> Result<(), String> {
+    crate::client::ensure_daemon(ctx)?;
+    crate::system::print_addresses(&ctx.base_url, ctx.port, expose_lan, expose_tailscale);
+    Ok(())
+}
+
+/// `daemon run|start|stop|status|install|uninstall`.
+pub fn cmd_daemon(
+    ctx: &CliContext,
+    rest: &[String],
+    expose_lan: bool,
+    expose_tailscale: bool,
+) -> Result<(), String> {
+    use crate::launchd::{install_launchd, launchd_status, uninstall_launchd};
+
+    match rest.first().map(String::as_str) {
+        // 포그라운드 실행 — TS 는 daemon.ts 를 in-process import 했고, 여기서는 데몬
+        // 바이너리로 프로세스를 교체한다(exec). 반환하면 그 자체가 실패다.
+        Some("run") => {
+            use std::os::unix::process::CommandExt;
+            let error = std::process::Command::new(crate::client::daemon_binary()).exec();
+            Err(format!("rocky-todod 를 실행하지 못했다: {error}"))
+        }
+        Some("start") => {
+            crate::client::ensure_daemon(ctx)?;
+            println!("✓ daemon on {}", ctx.base_url);
+            Ok(())
+        }
+        Some("stop") => {
+            // health 를 묻지 않고 pid 파일만 본다 — TS 와 같은 동작. 파일이 없으면
+            // 이미 꺼져 있거나 다른 dir 로 뜬 것이다.
+            let pid_file = ctx.dir.join("daemon.pid");
+            match std::fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<i32>().ok())
+            {
+                Some(pid) => {
+                    // SAFETY: kill(2) 는 pid 와 시그널 번호만 받는다.
+                    unsafe { libc::kill(pid, libc::SIGTERM) };
+                    println!("✓ daemon(pid {pid}) 종료 — launchd install 상태면 곧 재기동된다");
+                }
+                None => println!(
+                    "daemon pid 파일 없음 — 이미 꺼져 있거나 포트만 확인해 보자: daemon status"
+                ),
+            }
+            Ok(())
+        }
+        Some("status") => {
+            let alive = crate::client::health(&ctx.base_url);
+            if alive {
+                println!("✓ running on {}", ctx.base_url);
+            } else {
+                println!("✗ not running (port {})", ctx.port);
+            }
+            println!("{}", launchd_status());
+            if alive {
+                println!("접속 주소:");
+                crate::system::print_addresses(
+                    &ctx.base_url,
+                    ctx.port,
+                    expose_lan,
+                    expose_tailscale,
+                );
+            }
+            Ok(())
+        }
+        Some("install") => {
+            println!("{}", install_launchd());
+            Ok(())
+        }
+        Some("uninstall") => {
+            println!("{}", uninstall_launchd());
+            Ok(())
+        }
+        _ => Err("usage: rocky-todo daemon run|start|stop|status|install|uninstall".into()),
+    }
+}
+
+/// `mcp setup`.
+pub fn cmd_mcp(ctx: &CliContext, rest: &[String]) -> Result<(), String> {
+    if rest.first().map(String::as_str) == Some("setup") {
+        println!("{}", crate::system::mcp_setup_guide(&ctx.base_url));
+        return Ok(());
+    }
+    Err("usage: rocky-todo mcp setup".into())
+}
+
+/// `tailscale on|off|status` — 옵션 기능, 기본 off. 이 커맨드를 쓰지 않으면 rocky-todo
+/// 는 tailscale 을 일절 건드리지 않는다.
+pub fn cmd_tailscale(ctx: &CliContext, rest: &[String]) -> Result<(), String> {
+    use crate::system::{tailscale_serve_off, tailscale_serve_on, tailscale_serve_status};
+    match rest.first().map(String::as_str) {
+        Some("on") => {
+            println!("{}", tailscale_serve_on(ctx.port));
+            Ok(())
+        }
+        Some("off") => {
+            println!("{}", tailscale_serve_off());
+            Ok(())
+        }
+        Some("status") | None => {
+            println!("{}", tailscale_serve_status());
+            Ok(())
+        }
+        Some(_) => Err("usage: rocky-todo tailscale on|off|status".into()),
+    }
+}
