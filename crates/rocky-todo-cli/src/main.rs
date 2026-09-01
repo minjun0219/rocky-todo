@@ -47,12 +47,13 @@ fn run(argv: &[String]) -> Result<(), String> {
         "board" => commands::cmd_board(&ctx, &rest, &board, &printer),
         "history" => commands::cmd_history(&ctx, &rest, &parsed, &board, &printer),
         "next" => commands::cmd_next(&ctx, &parsed, &board, &printer),
+        "note" => commands::cmd_note(&ctx, &rest, &parsed, &board, &printer),
         "start" | "stop" | "done" | "reopen" | "archive" | "unarchive" => {
             commands::cmd_status(&ctx, command, &rest, &board, &printer)
         }
         // 아직 안 옮긴 것들은 조용히 성공하지 않는다 — 없는 기능을 있는 척하면
         // 스크립트가 실패를 못 알아챈다.
-        "issue" | "note" | "open" | "daemon" | "mcp" | "tailscale" => Err(format!(
+        "issue" | "open" | "daemon" | "mcp" | "tailscale" => Err(format!(
             "`{command}` 는 아직 Rust CLI 로 안 옮겼다 (Phase 3 진행 중) — 그동안은 bun 판을 쓴다"
         )),
         // 문구를 한국어로 바꾸지 않는다 — TS 판과 같은 문자열이어야 parity 게이트가

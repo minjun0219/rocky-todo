@@ -35,6 +35,11 @@ const CASES: string[][] = [
   ['board', 'show', 'parity'],
   ['history', 'parity-1', '--board', 'parity'],
   ['history', 'parity-1', '--board', 'parity', '--limit', '3'],
+  ['note', 'ls', '--board', 'parity'],
+  ['note', 'ls', '--global'],
+  ['note', 'ls', '--board', 'parity', '--json'],
+  ['note', 'show', 'parity-1', '--board', 'parity'],
+  ['note', 'show', 'note-1', '--global'],
   // 에러 경로 — 메시지가 사용자 표면이라 함께 고정한다.
   ['show', '999', '--board', 'parity'],
   ['show', '--board', 'parity'],
@@ -45,6 +50,10 @@ const CASES: string[][] = [
   ['board', 'show', '없는보드'],
   ['history', '--board', 'parity'],
   ['board', 'nonsense'],
+  ['note', 'nonsense'],
+  ['note', 'show', '--board', 'parity'],
+  ['note', 'edit', 'parity-1', '--board', 'parity'],
+  ['note', 'append', 'parity-1', '--board', 'parity'],
   ['nonsense-command'],
 ];
 
@@ -56,6 +65,8 @@ const SEED: string[][] = [
   ['start', 'parity-1', '--board', 'parity'],
   ['comment', 'parity-1', '진행 보고', '--board', 'parity'],
   ['section', 'add', '진행중', '--board', 'parity'],
+  ['note', 'add', '보드 메모', '--board', 'parity', '--content', '본문 한 줄'],
+  ['note', 'add', '전역 메모', '--global', '--content', '전역 본문'],
 ];
 
 function run(cmd: string[], env: Record<string, string>): string {

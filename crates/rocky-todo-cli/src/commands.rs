@@ -5,7 +5,7 @@
 //! 둘을 같은 형태로 억지로 맞추지 않는다.
 
 use rocky_todo_core::github::{is_repo_slug, parse_repo_from_remote};
-use rocky_todo_core::refs::TodoView;
+use rocky_todo_core::refs::{NoteView, TodoView};
 use rocky_todo_core::types::{Board, Comment, HistoryEntry, Section};
 use serde_json::{json, Value};
 
@@ -780,4 +780,144 @@ pub fn cmd_next(
     }
     println!("{}", format_next_candidates(&candidates));
     Ok(())
+}
+
+/// `note add|ls|show|edit|append|archive` — 스크래치패드 메모.
+///
+/// `--global` 이 서면 board 컨텍스트를 아예 안 보낸다(`note_ref_path` 참고). 맨 번호를
+/// 전역 메모로 풀려면 그 플래그가 필요하다 — 안 그러면 같은 번호의 보드 메모가 잡힌다.
+pub fn cmd_note(
+    ctx: &CliContext,
+    rest: &[String],
+    flags: &ParsedFlags,
+    board: &str,
+    printer: &Printer,
+) -> Result<(), String> {
+    let sub = rest.first().map(String::as_str).unwrap_or("");
+    let global = flags.bool_flag("global");
+    let arg = rest.get(1).map(String::as_str);
+
+    match sub {
+        "add" => {
+            let Some(title) = arg.filter(|t| !t.is_empty()) else {
+                return Err("usage: rocky-todo note add \"제목\" [--content MD] [--global]".into());
+            };
+            let body = compact(vec![
+                // `--global` 이면 board 키 자체를 안 실어 전역 메모가 된다.
+                ("board", (!global).then(|| json!(board))),
+                ("title", Some(json!(title))),
+                ("content", s(flags.str_flag("content"))),
+            ]);
+            let raw = request_value(ctx, "POST", "/api/notes", Some(&body))?;
+            let note: NoteView = serde_json::from_value(raw.clone())
+                .map_err(|e| format!("응답을 읽지 못했다: {e}"))?;
+            printer.emit(&raw, || format!("✓ 메모 {}", note.r#ref));
+            Ok(())
+        }
+        "ls" => {
+            let mut query: Vec<String> = Vec::new();
+            if global {
+                query.push("global=true".to_string());
+            } else if !flags.bool_flag("all") {
+                query.push(format!("board={}", encode_uri_component(board)));
+            }
+            if flags.bool_flag("archived") {
+                query.push("includeArchived=true".to_string());
+            }
+            let qs = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", query.join("&"))
+            };
+            let raw = request_value(ctx, "GET", &format!("/api/notes{qs}"), None)?;
+            let notes: Vec<NoteView> = serde_json::from_value(raw.clone()).unwrap_or_default();
+            printer.emit(&raw, || {
+                if notes.is_empty() {
+                    "(메모 없음)".to_string()
+                } else {
+                    notes
+                        .iter()
+                        .map(|n| {
+                            let archived = if n.note.archived_at.is_some() {
+                                " (보관됨)"
+                            } else {
+                                ""
+                            };
+                            format!("▤ {}  {}{archived}", n.r#ref, n.note.title)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            });
+            Ok(())
+        }
+        "show" => {
+            let Some(id) = arg else {
+                return Err("usage: rocky-todo note show REF [--global]".into());
+            };
+            let raw = request_value(ctx, "GET", &note_ref_path(id, "", board, global), None)?;
+            let note: NoteView =
+                serde_json::from_value(raw.get("note").cloned().unwrap_or(Value::Null))
+                    .map_err(|e| format!("응답을 읽지 못했다: {e}"))?;
+            printer.emit(&raw, || {
+                format!(
+                    "▤ {}  {}\n\n{}\n\nid: {}",
+                    note.r#ref, note.note.title, note.note.content, note.note.id
+                )
+            });
+            Ok(())
+        }
+        "edit" => {
+            let (Some(id), Some(content)) = (arg, flags.str_flag("content")) else {
+                return Err(
+                    "usage: rocky-todo note edit REF --content MD [--title 제목] [--global]".into(),
+                );
+            };
+            let body = compact(vec![
+                ("title", s(flags.str_flag("title"))),
+                ("content", Some(json!(content))),
+            ]);
+            let raw = request_value(
+                ctx,
+                "PATCH",
+                &note_ref_path(id, "", board, global),
+                Some(&body),
+            )?;
+            let note: NoteView = serde_json::from_value(raw.clone())
+                .map_err(|e| format!("응답을 읽지 못했다: {e}"))?;
+            printer.emit(&raw, || format!("✓ 메모 {} 수정", note.r#ref));
+            Ok(())
+        }
+        "append" => {
+            let (Some(id), Some(text)) = (arg, rest.get(2)) else {
+                return Err("usage: rocky-todo note append REF \"텍스트\" [--global]".into());
+            };
+            let raw = request_value(
+                ctx,
+                "PATCH",
+                &note_ref_path(id, "", board, global),
+                Some(&json!({ "content": text, "mode": "append" })),
+            )?;
+            let note: NoteView = serde_json::from_value(raw.clone())
+                .map_err(|e| format!("응답을 읽지 못했다: {e}"))?;
+            printer.emit(&raw, || format!("✓ 메모 {} append", note.r#ref));
+            Ok(())
+        }
+        "archive" => {
+            let Some(id) = arg else {
+                return Err("usage: rocky-todo note archive REF [--global]".into());
+            };
+            let raw = request_value(
+                ctx,
+                "POST",
+                &note_ref_path(id, "/archive", board, global),
+                None,
+            )?;
+            let note: NoteView = serde_json::from_value(raw.clone())
+                .map_err(|e| format!("응답을 읽지 못했다: {e}"))?;
+            printer.emit(&raw, || format!("✓ 메모 {} 보관", note.r#ref));
+            Ok(())
+        }
+        _ => Err("usage: rocky-todo note add|ls|show|edit|append|archive".into()),
+    }
 }
