@@ -5,7 +5,12 @@
  * Rust 데몬에는 그 기능이 없어 이 스크립트가 그 자리를 대신한다. bun 은 이제
  * **UI 빌드 시에만** 필요하다.
  */
+import { rmSync } from 'node:fs';
 import tailwind from 'bun-plugin-tailwind';
+
+// 청크 이름이 내용 해시라 이전 빌드의 청크가 남는다 — 앱 번들의 resources 에 그대로
+// 실리므로 매번 비우고 시작한다.
+rmSync('./dist', { recursive: true, force: true });
 
 const result = await Bun.build({
   entrypoints: ['./src/ui/index.html'],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { assertTagMatchesTarget, resolveTargetSha } from './release-target';
+import { assertTagMatchesTarget, isPrerelease, resolveTargetSha } from './release-target';
 
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const OTHER = 'fdbf9dd0000000000000000000000000000000ff';
@@ -61,5 +61,18 @@ describe('assertTagMatchesTarget', () => {
     expect(() => assertTagMatchesTarget({ tag: 'v0.8.0', tagSha: OTHER, targetSha: SHA })).toThrow(
       /git push origin :refs\/tags\/v0\.8\.0/,
     );
+  });
+});
+
+describe('isPrerelease', () => {
+  it('changesets pre 모드의 next 버전은 프리릴리즈다', () => {
+    expect(isPrerelease('0.15.0-next.0')).toBe(true);
+    expect(isPrerelease('1.0.0-rc.1')).toBe(true);
+  });
+
+  it('정식 버전과 빌드 메타만 붙은 버전은 아니다', () => {
+    expect(isPrerelease('0.15.0')).toBe(false);
+    expect(isPrerelease('0.15.0+abc123')).toBe(false);
+    expect(isPrerelease(' 0.14.0 ')).toBe(false);
   });
 });

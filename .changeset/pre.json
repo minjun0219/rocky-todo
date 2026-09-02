@@ -1,0 +1,8 @@
+{
+  "mode": "pre",
+  "tag": "next",
+  "initialVersions": {
+    "@minjun0219/rocky-todo": "0.14.0"
+  },
+  "changesets": []
+}

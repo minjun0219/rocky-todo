@@ -18,3 +18,6 @@ rocky.json
 .claude/settings.local.json
 # Rust
 target/
+
+# tauri 가 빌드마다 재생성하는 스키마 (레포에 두면 8천 줄 노이즈)
+app/gen/schemas/

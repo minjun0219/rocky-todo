@@ -66,6 +66,32 @@ rocky-todo daemon uninstall
 > `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
 > 재설치해야 launchd 데몬이 `claude` CLI(핸드오프 기능이 쓴다)를 PATH 에서 찾는다.
 
+## 데스크톱 앱 + 네이티브 바이너리 (프리릴리즈 `next` 채널)
+
+Rust 재작성분은 `rust-rewrite` 브랜치에서 **프리릴리즈**(`v0.15.0-next.N`)로 먼저 나간다 —
+[Releases](https://github.com/minjun0219/rocky-todo/releases) 에서 `Pre-release` 표시가 붙은
+항목이다. 첨부물은 둘(+ `SHA256SUMS`), 지금은 Apple Silicon(`aarch64-apple-darwin`)만:
+
+| 첨부 | 내용 |
+|---|---|
+| `rocky-todo-v…-aarch64-apple-darwin.app.zip` | `rocky-todo.app` — 보드를 여는 창. 살아 있는 데몬이 있으면 그 URL 을 열고, 없으면 앱 안에서 데몬을 띄운다(앱을 닫으면 그 데몬도 내려간다). |
+| `rocky-todo-v…-aarch64-apple-darwin.tar.gz` | `rocky-todo`(CLI) + `rocky-todod`(헤드리스 데몬). bun 없이 돈다. |
+
+```bash
+# 앱 — ad-hoc 서명이라 Gatekeeper 가 "손상됨/확인 불가" 로 막는다. 격리 속성을 벗겨 연다.
+ditto -x -k rocky-todo-v*-aarch64-apple-darwin.app.zip /Applications
+xattr -dr com.apple.quarantine /Applications/rocky-todo.app
+
+# CLI/데몬 — 같은 디렉터리에 두면 CLI 가 옆의 rocky-todod 를 먼저 찾는다.
+tar -xzf rocky-todo-v*-aarch64-apple-darwin.tar.gz -C ~/.local/bin
+```
+
+플러그인(훅·MCP 등록)은 아직 TS 판이 그대로 돈다 — 보통은 그 데몬이 이미 떠 있으므로 앱은
+창만 얹는다. 앱이 **자기 데몬을 띄운 경우**(떠 있는 데몬이 없을 때)는 버전이 플러그인과
+다르면 다음 세션의 SessionStart 훅이 구버전 데몬으로 보고 앱을 내린다(훅은 그 자리에 자기
+데몬을 다시 띄운다). 상시 상주(`daemon install`)를 걸어두면 이 경우가 생기지 않는다. 훅까지
+네이티브로 넘기는 컷오버는 정식 `0.15.0` 몫이다.
+
 ## MCP 도구 5개 (에이전트)
 
 | 도구 | 하는 일 |

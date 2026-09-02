@@ -267,3 +267,35 @@ plist 는 컷오버 때 `daemon install` 재실행으로 교체해야 한다** �
   포트를 점유한 경우 health 의 신원 검증이 걸러 "확보 실패"로 떨어진다 — 그 서비스를
   창에 로드하는 사고가 없다. macOS 의 Dock 재열기(RunEvent::Reopen)도 처리한다 —
   안 하면 마지막 창을 닫은 뒤 창 없는 유령 프로세스가 된다.
+
+## Phase 5a — 프리릴리즈 파이프라인 (2026-09-03)
+
+Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱 번들이 릴리스로 나오게
+하는 것, **5b** 는 컷오버(플러그인 훅 → 네이티브 바이너리, TS 표면 제거, 문서). 5b 는 내려받을
+바이너리가 있어야 성립하므로 5a 가 먼저다.
+
+- **버전은 package.json 하나가 진실**이고 changesets pre 모드(`.changeset/pre.json`,
+  태그 `next`)로 `0.15.0-next.N` 을 찍는다. `sync-plugin-version.ts` 가 plugin.json 에 더해
+  `Cargo.toml`(workspace.package) 과 `Cargo.lock`(멤버 4개 항목)까지 텍스트 치환한다 —
+  version job 은 ubuntu 라 cargo 가 없고, lock 을 안 고치면 `--locked` 릴리스 빌드가 죽는다.
+  이로써 `0.15.0-dev` ↔ `0.14.0` 이원화가 풀렸다: Rust 데몬도 `0.14.0` 을 보고하므로 "TS 훅이
+  Rust 데몬을 죽인다" 함정이 기본 포트에서 사라진다(같은 버전 = 갈아치우지 않음).
+- **release.yml 이 `rust-rewrite` 도 탄다.** Version PR → 머지 → `release-github.ts` 가
+  `-` 가 붙은 버전이면 `--prerelease` 로 릴리스를 만들고 `GITHUB_OUTPUT` 으로 `created`/`tag`
+  를 넘긴다 → `assets` job(macos-latest)이 `bun run build:app`(UI 번들 → tauri build) +
+  `cargo build --release --locked` 로 `.app.zip`(ditto, 서명 보존) 과 `.tar.gz`(CLI+데몬),
+  `SHA256SUMS` 를 첨부한다. 릴리스가 새로 생긴 push 에서만 돈다.
+- **서명은 ad-hoc(`APPLE_SIGNING_IDENTITY=-`)**, 노터라이즈 없음 — Apple Developer 계정이
+  없다. 내려받은 앱은 `xattr -dr com.apple.quarantine` 로 연다(docs 에 적음). 정식 서명은
+  계정이 생기면 env 세 개만 더 얹으면 된다(tauri 가 알아서 노터라이즈한다).
+- **웹 UI 는 앱 리소스 `Contents/Resources/dist/` 로 실린다**(`bundle.resources`).
+  실측: 번들 바이너리를 `ROCKY_TODO_UI_DIST` 없이 띄우면 `/` 가 실제 index.html, 청크가
+  `text/javascript` 로 온다. `build-ui.ts` 는 이제 `dist/` 를 비우고 시작한다 — 청크 이름이
+  내용 해시라 옛 청크가 남아 리소스에 딸려 들어갔다.
+- 아이콘은 여전히 자리 표시자(앰버 둥근 사각 + 체크)지만 `tauri icon` 으로 icns 까지 만들어
+  번들 요건을 채웠다. `source.png`(1024) 를 레포에 두어 진짜 아이콘으로 바꿀 때 같은 명령
+  한 번이면 된다. `app/gen/schemas/` 는 tauri 가 빌드마다 재생성하는 파일이라 추적을 끊었다
+  (#72 에 8천 줄이 섞여 들어갔었다).
+- `@tauri-apps/cli` 는 devDep — `cargo install tauri-cli` 는 러너에서 수 분이 걸리고,
+  npm 판은 프리빌트라 즉시 뜬다. tauri CLI 가 `app/Cargo.toml` 의 의존 표기를
+  `{ version = "2", features = [] }` 로 정규화하는데, 매 빌드 다시 하므로 그 형태로 둔다.

@@ -1,8 +1,11 @@
 name: Release
 
+# rust-rewrite 는 프리릴리즈 채널이다 — changesets pre 모드(`.changeset/pre.json`)라
+# Version PR 이 `0.15.0-next.N` 을 찍고, release job 이 `--prerelease` 로 낸다.
+# 통합이 끝나 main 으로 들어가면 `changeset pre exit` 로 정식 번호가 된다.
 on:
   push:
-    branches: [main]
+    branches: [main, rust-rewrite]
 
 # changesets/action 이 Version PR 브랜치를 push 하고 PR 을 열 수 있어야 함
 permissions:
@@ -52,6 +55,9 @@ jobs:
     name: tag + GitHub Release
     needs: version
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.created }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,7 +69,59 @@ jobs:
 
       # release-github.ts 는 로컬 모듈만 import 하므로 bun install 이 필요 없다.
       - name: Tag + GitHub Release on version bump
+        id: release
         run: bun scripts/release-github.ts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
+
+  # 릴리스가 새로 생긴 push 에서만 돈다 — macOS 러너에서 CLI/데몬 바이너리와 Tauri 앱
+  # 번들을 만들어 그 릴리스에 첨부한다. 서명은 ad-hoc(`-`) — Apple Developer 인증서가
+  # 없어 노터라이즈는 안 한다. 내려받은 앱은 Gatekeeper 가 막으므로 사용자가
+  # `xattr -dr com.apple.quarantine` 로 풀어야 한다(docs/rocky-todo.md 참고).
+  assets:
+    name: macOS binaries + app bundle
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # 웹 UI 번들(dist/) → 앱 리소스로 실린다. in-process 데몬이 그 dist 를 서빙한다.
+      - name: Build app bundle
+        run: bun run build:app
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+
+      - name: Build CLI + daemon
+        run: cargo build --release --locked -p rocky-todo-cli -p rocky-todod
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          TAG='${{ needs.release.outputs.tag }}'
+          TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+          mkdir -p out
+          # AppleDouble(`._*`) 항목이 tar 에 섞이지 않게
+          COPYFILE_DISABLE=1 tar -C target/release -czf "out/rocky-todo-${TAG}-${TARGET}.tar.gz" rocky-todo rocky-todod
+          # ditto 가 서명·리소스 포크를 보존한다 — .app 은 zip 으로 이렇게 싼다
+          ditto -c -k --keepParent target/release/bundle/macos/rocky-todo.app "out/rocky-todo-${TAG}-${TARGET}.app.zip"
+          (cd out && shasum -a 256 -- * > SHA256SUMS)
+          ls -la out
+
+      - name: Upload to release
+        run: gh release upload '${{ needs.release.outputs.tag }}' out/* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
