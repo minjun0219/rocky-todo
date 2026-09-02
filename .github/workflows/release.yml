@@ -118,7 +118,7 @@ jobs:
           COPYFILE_DISABLE=1 tar -C target/release -czf "out/rocky-todo-${TAG}-${TARGET}.tar.gz" rocky-todo rocky-todod
           # ditto 가 서명·리소스 포크를 보존한다 — .app 은 zip 으로 이렇게 싼다
           ditto -c -k --keepParent target/release/bundle/macos/rocky-todo.app "out/rocky-todo-${TAG}-${TARGET}.app.zip"
-          (cd out && shasum -a 256 -- * > SHA256SUMS)
+          (cd out && shasum -a 256 -- *.tar.gz *.zip > SHA256SUMS && shasum -c SHA256SUMS)
           ls -la out
 
       - name: Upload to release

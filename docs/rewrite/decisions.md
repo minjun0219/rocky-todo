@@ -288,8 +288,10 @@ Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱
 - **서명은 ad-hoc(`APPLE_SIGNING_IDENTITY=-`)**, 노터라이즈 없음 — Apple Developer 계정이
   없다. 내려받은 앱은 `xattr -dr com.apple.quarantine` 로 연다(docs 에 적음). 정식 서명은
   계정이 생기면 env 세 개만 더 얹으면 된다(tauri 가 알아서 노터라이즈한다).
-- **웹 UI 는 앱 리소스 `Contents/Resources/dist/` 로 실린다**(`bundle.resources`).
-  실측: 번들 바이너리를 `ROCKY_TODO_UI_DIST` 없이 띄우면 `/` 가 실제 index.html, 청크가
+- **웹 UI 는 앱 리소스 `Contents/Resources/dist/` 로 실린다** — 단 `bundle.resources` 는
+  기본 `tauri.conf.json` 이 아니라 `app/tauri.release.conf.json`(`tauri build --config`)에만
+  있다. tauri-build 가 build.rs 에서 리소스 경로 존재를 검사하므로 기본 설정에 두면
+  `dist/` 없는 `cargo clippy/build`(CI 의 rust 잡)가 죽는다(실제로 죽었다). 실측: 번들 바이너리를 `ROCKY_TODO_UI_DIST` 없이 띄우면 `/` 가 실제 index.html, 청크가
   `text/javascript` 로 온다. `build-ui.ts` 는 이제 `dist/` 를 비우고 시작한다 — 청크 이름이
   내용 해시라 옛 청크가 남아 리소스에 딸려 들어갔다.
 - 아이콘은 여전히 자리 표시자(앰버 둥근 사각 + 체크)지만 `tauri icon` 으로 icns 까지 만들어

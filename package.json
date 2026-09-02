@@ -36,7 +36,7 @@
   "scripts": {
     "demo": "ROCKY_CONFIG=./demo.rocky.json bun run src/daemon.ts",
     "build:ui": "bun scripts/build-ui.ts",
-    "build:app": "bun run build:ui && tauri build",
+    "build:app": "bun run build:ui && tauri build --config app/tauri.release.conf.json",
     "tauri": "tauri",
     "check": "biome check .",
     "fix": "biome check --write .",
