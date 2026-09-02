@@ -237,3 +237,33 @@ ensure-daemon|notify-todo|handoff-stop`)이 넘어왔다. hooks.json 이 bun 스
 launchd plist 는 ProgramArguments 가 `rocky-todod` 바이너리 하나가 됐고
 WorkingDirectory 고정이 빠졌다(bunfig.toml 제약 소멸). **기존 TS 로 install 한
 plist 는 컷오버 때 `daemon install` 재실행으로 교체해야 한다** — Phase 5 체크리스트.
+
+## Phase 4 — Tauri 앱 (2026-09-02)
+
+`app/` 이 워크스페이스에 합류했다. 구조는 **"데몬 위의 창"** — 앱은 얇은 셸이고
+보드의 실체는 계속 데몬이다.
+
+- **살아 있는 데몬이 있으면 그 URL 로 창을 연다.** 전역 단일 인스턴스(포트 락)를
+  존중한다 — 앱이 데몬을 갈아치우지 않는다. 버전 인식 교체는 SessionStart 훅 몫이고
+  여기서 겹치면 앱을 열 때마다 상주 데몬이 죽는다. 실측: 헤드리스 데몬을 먼저 띄우고
+  앱을 열면 pid 가 유지되고, 앱을 닫아도 데몬이 산다.
+- **없을 때만 in-process 마운트** — `rocky-todod` 가 lib 인 이유. 실측: 앱 프로세스가
+  health/UI/REST 를 직접 서빙하고 앱 종료와 함께 내려간다(다음 CLI/훅이 headless 를
+  다시 띄운다).
+- **창은 데몬 URL 을 직접 로드한다** (`WebviewUrl::External`) — 기존 웹 UI + SSE 를
+  그대로 얻고 자산 임베드 경로를 안 만든다. tauri 의 `frontendDist` 는 CI 가 bun 빌드
+  없이 cargo build 를 통과하도록 레포에 둔 자리 표시자 한 장이다.
+- in-process 의 ui_dist 는 env `ROCKY_TODO_UI_DIST` > 앱 리소스 `dist/`(프리릴리즈에서
+  채운다) > 없음(API 만). 아이콘도 단색 자리 표시자 — 진짜 아이콘·서명·번들은
+  프리릴리즈 몫이다.
+- 개발 실행: `ROCKY_CONFIG=... ROCKY_TODO_UI_DIST=$PWD/dist cargo run -p rocky-todo-app`.
+  기본 포트로 열면 설치본 데몬을 재사용하므로 안전하다(위 첫 항목).
+- **`ROCKY_TODO_UI_DIST` 는 컷오버 전까지 개발 전용이다** — 쉬핑 중인 TS 표면에는
+  없는 변수라 `docs/rocky-todo.md` 의 env 표에 지금 넣으면 거짓 문서가 된다.
+  컷오버(Phase 5)에서 표면이 바뀔 때 env 표와 함께 반영한다(체크리스트 5번).
+- **백엔드 확보 실패는 GUI 앞에서 끝낸다** — setup 안에서 Err 를 내면 tauri 내부를
+  거치며 abort 트레이스로 죽는다(실측). main 에서 확보하고, 실패하면 osascript
+  다이얼로그 + 정상 종료(Dock 실행의 stderr 는 아무도 못 본다). 무관한 서비스가
+  포트를 점유한 경우 health 의 신원 검증이 걸러 "확보 실패"로 떨어진다 — 그 서비스를
+  창에 로드하는 사고가 없다. macOS 의 Dock 재열기(RunEvent::Reopen)도 처리한다 —
+  안 하면 마지막 창을 닫은 뒤 창 없는 유령 프로세스가 된다.

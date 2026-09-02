@@ -1,0 +1,18 @@
+[package]
+name = "rocky-todo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rocky-todo-app"
+path = "src/main.rs"
+
+[dependencies]
+tauri = "2"
+rocky-todod = { path = "../crates/rocky-todod" }
+rocky-todo-core = { path = "../crates/rocky-todo-core" }
+tokio.workspace = true
+
+[build-dependencies]
+tauri-build = "2"

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "rocky-todo",
+  "identifier": "com.rocky.todo.app",
+  "build": {
+    "frontendDist": "placeholder"
+  },
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.png"]
+  }
+}

@@ -1,11 +1,11 @@
 # rocky-todo Rust workspace — 재작성 계획은 docs/rewrite/ 참고.
-# app/ (Tauri) 는 Phase 4 에서 멤버로 합류한다.
 [workspace]
 resolver = "2"
 members = [
   "crates/rocky-todo-core",
   "crates/rocky-todod",
   "crates/rocky-todo-cli",
+  "app",
 ]
 
 [workspace.package]
