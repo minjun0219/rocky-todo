@@ -282,9 +282,16 @@ Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱
   Rust 데몬을 죽인다" 함정이 기본 포트에서 사라진다(같은 버전 = 갈아치우지 않음).
 - **release.yml 이 `rust-rewrite` 도 탄다.** Version PR → 머지 → `release-github.ts` 가
   `-` 가 붙은 버전이면 `--prerelease` 로 릴리스를 만들고 `GITHUB_OUTPUT` 으로 `created`/`tag`
-  를 넘긴다 → `assets` job(macos-latest)이 `bun run build:app`(UI 번들 → tauri build) +
-  `cargo build --release --locked` 로 `.app.zip`(ditto, 서명 보존) 과 `.tar.gz`(CLI+데몬),
-  `SHA256SUMS` 를 첨부한다. 릴리스가 새로 생긴 push 에서만 돈다.
+  를 넘긴다 → `assets` job(`macos-15`, Apple Silicon)이 `bun run build:app`(UI 번들 →
+  tauri build) + `cargo build --release --locked` 로 `.app.zip`(ditto, 서명 보존) 과
+  `.tar.gz`(CLI+데몬), `SHA256SUMS` 를 첨부한다. 릴리스가 새로 생긴 push 에서만 돈다.
+  러너는 `macos-latest` 별칭 대신 이미지를 못 박고 Package 스텝이 host triple 이
+  `aarch64-apple-darwin` 인지 확인한다 — 문서와 산출물 이름이 그 하나를 약속하기 때문.
+- **assets 실패 복구는 `workflow_dispatch`(태그 입력).** 릴리스는 생겼는데 빌드/업로드가
+  죽으면 같은 push 재실행은 `created=false` 라 assets 가 안 돈다. 수동 실행이 그 태그의
+  커밋을 체크아웃해 산출물만 다시 붙인다(`--clobber`). "릴리스에 자산이 없으면 자동으로
+  붙인다" 식 자가 치유는 두지 않았다 — main 의 TS 시절 릴리스(v0.14.0 등)도 자산이 없어
+  엉뚱한 릴리스에 바이너리를 붙일 위험이 있다.
 - **서명은 ad-hoc(`APPLE_SIGNING_IDENTITY=-`)**, 노터라이즈 없음 — Apple Developer 계정이
   없다. 내려받은 앱은 `xattr -dr com.apple.quarantine` 로 연다(docs 에 적음). 정식 서명은
   계정이 생기면 env 세 개만 더 얹으면 된다(tauri 가 알아서 노터라이즈한다).

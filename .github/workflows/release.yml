@@ -6,6 +6,15 @@ name: Release
 on:
   push:
     branches: [main, rust-rewrite]
+  # 릴리스는 생겼는데 assets job 이 실패한 경우의 복구 경로 — 같은 push 를 재실행하면
+  # release job 이 "이미 있음" 으로 created=false 를 내서 assets 가 영영 안 돈다.
+  # 태그를 지정해 그 커밋에서 산출물만 다시 만들어 붙인다.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "산출물을 다시 붙일 릴리스 태그 (예: v0.15.0-next.0)"
+        required: true
+        type: string
 
 # changesets/action 이 Version PR 브랜치를 push 하고 PR 을 열 수 있어야 함
 permissions:
@@ -19,6 +28,7 @@ concurrency:
 jobs:
   version:
     name: version packages PR
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +64,7 @@ jobs:
   release:
     name: tag + GitHub Release
     needs: version
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       created: ${{ steps.release.outputs.created }}
@@ -75,17 +86,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_SHA: ${{ github.sha }}
 
-  # 릴리스가 새로 생긴 push 에서만 돈다 — macOS 러너에서 CLI/데몬 바이너리와 Tauri 앱
-  # 번들을 만들어 그 릴리스에 첨부한다. 서명은 ad-hoc(`-`) — Apple Developer 인증서가
-  # 없어 노터라이즈는 안 한다. 내려받은 앱은 Gatekeeper 가 막으므로 사용자가
-  # `xattr -dr com.apple.quarantine` 로 풀어야 한다(docs/rocky-todo.md 참고).
+  # 릴리스가 새로 생긴 push(또는 태그를 지정한 수동 실행)에서만 돈다 — macOS 러너에서
+  # CLI/데몬 바이너리와 Tauri 앱 번들을 만들어 그 릴리스에 첨부한다. 서명은 ad-hoc(`-`)
+  # — Apple Developer 인증서가 없어 노터라이즈는 안 한다. 내려받은 앱은 Gatekeeper 가
+  # 막으므로 사용자가 `xattr -dr com.apple.quarantine` 로 풀어야 한다(docs/rocky-todo.md 참고).
+  #
+  # 러너는 Apple Silicon 이미지를 명시한다 — 산출물 이름·문서가 aarch64-apple-darwin 하나를
+  # 약속하므로 `macos-latest` 의 별칭이 옮겨가도 타깃이 바뀌면 안 된다. Package 스텝이
+  # 실제 host triple 을 한 번 더 확인한다.
   assets:
     name: macOS binaries + app bundle
     needs: release
-    if: needs.release.outputs.created == 'true'
-    runs-on: macos-latest
+    # 수동 실행이면 release job 은 skip 이라 needs 만으로는 안 돈다 — !cancelled() 로 평가시킨다
+    if: >-
+      !cancelled() &&
+      (needs.release.outputs.created == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: macos-15
+    env:
+      TAG: ${{ inputs.tag || needs.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 수동 실행은 그 태그의 커밋에서 빌드한다 — 브랜치 HEAD 가 아니라
+          ref: ${{ inputs.tag || github.sha }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -111,8 +134,12 @@ jobs:
         id: package
         run: |
           set -euo pipefail
-          TAG='${{ needs.release.outputs.tag }}'
+          [ -n "$TAG" ] || { echo "TAG 가 비어 있다"; exit 1; }
           TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+          if [ "$TARGET" != "aarch64-apple-darwin" ]; then
+            echo "러너 타깃이 aarch64-apple-darwin 이 아니다: $TARGET — 문서와 산출물 이름이 어긋난다"
+            exit 1
+          fi
           mkdir -p out
           # AppleDouble(`._*`) 항목이 tar 에 섞이지 않게
           COPYFILE_DISABLE=1 tar -C target/release -czf "out/rocky-todo-${TAG}-${TARGET}.tar.gz" rocky-todo rocky-todod
@@ -122,6 +149,6 @@ jobs:
           ls -la out
 
       - name: Upload to release
-        run: gh release upload '${{ needs.release.outputs.tag }}' out/* --clobber
+        run: gh release upload "$TAG" out/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
