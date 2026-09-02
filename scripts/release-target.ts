@@ -76,3 +76,13 @@ export function assertTagMatchesTarget({
       `의도한 커밋이 맞다면 태그를 먼저 지우고(git push origin :refs/tags/${tag}) 다시 실행하라.`,
   );
 }
+
+/**
+ * semver 프리릴리즈 판정 — `-` 이 붙은 버전(`0.15.0-next.0`). changesets pre 모드가 내는
+ * 형태가 이것이고, GitHub Release 의 `--prerelease` 와 "latest" 표시가 여기서 갈린다.
+ * 빌드 메타(`+sha`)만 붙은 버전은 정식이다.
+ */
+export function isPrerelease(version: string): boolean {
+  const core = version.trim().split('+')[0] ?? '';
+  return core.includes('-');
+}

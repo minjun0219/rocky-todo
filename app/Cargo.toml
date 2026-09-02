@@ -9,10 +9,10 @@ name = "rocky-todo-app"
 path = "src/main.rs"
 
 [dependencies]
-tauri = "2"
+tauri = { version = "2", features = [] }
 rocky-todod = { path = "../crates/rocky-todod" }
 rocky-todo-core = { path = "../crates/rocky-todo-core" }
 tokio.workspace = true
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }

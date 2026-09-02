@@ -5,11 +5,21 @@
  * Rust 데몬에는 그 기능이 없어 이 스크립트가 그 자리를 대신한다. bun 은 이제
  * **UI 빌드 시에만** 필요하다.
  */
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import tailwind from 'bun-plugin-tailwind';
 
+// 경로는 레포 루트 기준 절대 경로 — cwd 에 기대면 다른 위치에서 부를 때 엉뚱한 dist/ 를 지운다.
+const root = join(import.meta.dir, '..');
+const outdir = join(root, 'dist');
+
+// 청크 이름이 내용 해시라 이전 빌드의 청크가 남는다 — 앱 번들의 resources 에 그대로
+// 실리므로 매번 비우고 시작한다.
+rmSync(outdir, { recursive: true, force: true });
+
 const result = await Bun.build({
-  entrypoints: ['./src/ui/index.html'],
-  outdir: './dist',
+  entrypoints: [join(root, 'src/ui/index.html')],
+  outdir,
   plugins: [tailwind],
   minify: true,
   // 자산 참조를 루트 절대 경로로 — 기본값은 `./chunk-*.js` 라 퍼머링크(`/rocky/12`)
