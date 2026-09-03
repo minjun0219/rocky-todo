@@ -1,5 +1,13 @@
 # @minjun0219/rocky-todo
 
+## 0.15.0-next.1
+
+### Minor Changes
+
+- [#75](https://github.com/minjun0219/rocky-todo/pull/75) [`035298c`](https://github.com/minjun0219/rocky-todo/commit/035298c7f30c0ff272536bc78d72fb8eeb7fa646) Thanks [@minjun0219](https://github.com/minjun0219)! - 플러그인 훅·CLI 가 네이티브 바이너리로 돈다 — `bin/rocky-todo` 부트스트랩이 플러그인 버전에
+  맞는 릴리스 tarball(CLI + 데몬 + 웹 UI)을 `~/.local/share/rocky-todo/v<version>/` 에 한 번
+  받아 실행한다. bun 이 더는 필요 없다. 데몬은 실행 파일 옆 `dist/` 를 서빙한다.
+
 ## 0.15.0-next.0
 
 ### Minor Changes
