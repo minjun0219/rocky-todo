@@ -29,7 +29,7 @@ claude plugin install rocky-todo@rocky-marketplace    # rocky 는 dependencies �
 - 세션에 `todo_list` / `todo_write` / `todo_status` / `note_list` / `note_write` MCP 도구가
   연결되어 있으면 그것을 쓴다 (rocky-todo 데몬의 `/mcp`).
 - MCP 도구가 없으면 CLI 로 폴백: `rocky-todo <cmd>` (Bash). CLI 는 데몬이 죽어 있으면
-  자동 기동한다. 레포에서 직접 실행할 땐 `bun run <rocky-todo-repo>/src/cli.ts <cmd>` 도 동일.
+  자동 기동한다. 레포에서 직접 실행할 땐 `cargo run -p rocky-todo-cli -- <cmd>` 도 동일.
 - 도구도 CLI 도 없으면 위 "설치 = 활성화" 를 안내하고 멈춘다.
 - 데몬 기동이 실패하면 중단하고 `rocky-todo daemon status` 를 안내. 가짜 진행을 만들지 않는다.
 

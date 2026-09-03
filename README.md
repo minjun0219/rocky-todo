@@ -55,6 +55,11 @@ bun install
 bun run check       # Biome
 bun run typecheck   # tsc --noEmit
 bun run test        # 모든 테스트 (unit + dom) — 맨손 `bun test` 는 두 갈래가 섞여 깨진다
+cargo build         # 네이티브 CLI/데몬 (target/debug/rocky-todo, rocky-todod)
 ```
+
+플러그인 훅과 CLI 는 네이티브 바이너리(Rust)로 돈다 — 설치본은 `bin/rocky-todo` 부트스트랩이
+릴리스 tarball 을 받아 쓰고, 레포에서 개발할 땐 `ROCKY_TODO_BIN=target/debug/rocky-todo` 로
+그 다운로드를 건너뛴다.
 
 rocky 본체는 별도 레포 [minjun0219/rocky](https://github.com/minjun0219/rocky).

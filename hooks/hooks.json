@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/ensure-daemon.ts\""
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/rocky-todo\" hook ensure-daemon"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/notify-todo.ts\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/rocky-todo\" hook notify-todo",
             "timeout": 5
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/hooks/handoff-stop.ts\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/rocky-todo\" hook handoff-stop",
             "timeout": 3
           }
         ]

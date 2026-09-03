@@ -7,7 +7,7 @@
     "name": "Minjun Kim"
   },
   "license": "MIT",
-  "keywords": ["todo", "scratchpad", "daemon", "mcp", "rocky", "bun"],
+  "keywords": ["todo", "scratchpad", "daemon", "mcp", "rocky", "rust"],
   "dependencies": ["rocky"],
   "mcpServers": {
     "rocky-todo": {
