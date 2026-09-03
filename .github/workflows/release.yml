@@ -141,8 +141,12 @@ jobs:
             exit 1
           fi
           mkdir -p out
-          # AppleDouble(`._*`) 항목이 tar 에 섞이지 않게
-          COPYFILE_DISABLE=1 tar -C target/release -czf "out/rocky-todo-${TAG}-${TARGET}.tar.gz" rocky-todo rocky-todod
+          # tarball = CLI + 데몬 + 웹 UI(dist/). 데몬이 실행 파일 옆 dist/ 를 서빙하고,
+          # 플러그인 부트스트랩(bin/rocky-todo)이 이 레이아웃 그대로 설치한다.
+          # AppleDouble(`._*`) 항목이 tar 에 섞이지 않게 COPYFILE_DISABLE.
+          COPYFILE_DISABLE=1 tar -czf "out/rocky-todo-${TAG}-${TARGET}.tar.gz" \
+            -C target/release rocky-todo rocky-todod \
+            -C "$GITHUB_WORKSPACE" dist
           # ditto 가 서명·리소스 포크를 보존한다 — .app 은 zip 으로 이렇게 싼다
           ditto -c -k --keepParent target/release/bundle/macos/rocky-todo.app "out/rocky-todo-${TAG}-${TARGET}.app.zip"
           (cd out && shasum -a 256 -- *.tar.gz *.zip > SHA256SUMS && shasum -c SHA256SUMS)

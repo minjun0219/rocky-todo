@@ -31,6 +31,15 @@ GitHub 이슈 생성(웹 UI 버튼/CLI `issue`/MCP `todo_write.createIssue` — 
 rocky 마켓플레이스가 이 레포를 github source 로 서빙한다 — 자체 marketplace.json 은 없다.
 `dependencies:["rocky"]` 명목 선언(같은 마켓 안이라 자동 해석).
 
+> **Rust 컷오버 진행 중 (rust-rewrite 브랜치).** 플러그인이 실제로 실행하는 것은 이제
+> `crates/`(`rocky-todo-core` / `rocky-todod` 데몬 / `rocky-todo-cli` CLI+훅)와 `app/`(Tauri)
+> 이다. `hooks/hooks.json` 은 `bin/rocky-todo`(셸 부트스트랩)를 부르고, 그 스크립트가
+> `.claude-plugin/plugin.json` 버전에 맞는 릴리스 tarball 을 `~/.local/share/rocky-todo/v<v>/`
+> 에 받아 `rocky-todo hook <name>` 을 exec 한다. 개발 중엔 `ROCKY_TODO_BIN=target/debug/rocky-todo`.
+> 아래 Layout 의 `src/*.ts`(웹 UI 제외)와 `hooks/*.ts` 는 **참조 구현**으로 남아 있고
+> `scripts/cli-parity.ts` 가 Rust CLI 와의 출력 동일성을 지키고 있다 — TS 표면 제거와 이
+> 문서의 전면 개정은 다음 단계 몫이다. 경위는 `docs/rewrite/decisions.md`.
+
 ## Layout
 
 ```

@@ -308,3 +308,30 @@ Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱
 - `@tauri-apps/cli` 는 devDep — `cargo install tauri-cli` 는 러너에서 수 분이 걸리고,
   npm 판은 프리빌트라 즉시 뜬다. tauri CLI 가 `app/Cargo.toml` 의 의존 표기를
   `{ version = "2", features = [] }` 로 정규화하는데, 매 빌드 다시 하므로 그 형태로 둔다.
+
+## Phase 5b — 컷오버: 훅 → 네이티브 바이너리 (2026-09-04)
+
+- **배포 방식은 셸 부트스트랩(`bin/rocky-todo`)이 릴리스 tarball 을 받는 것.** 대안 둘을
+  버렸다 — "앱 번들 안의 CLI 를 참조"는 앱을 안 깐 사용자에게 플러그인이 죽고, "bun 유지 +
+  cargo install 안내"는 컷오버가 반쪽이다. 부트스트랩은 `.claude-plugin/plugin.json` 의
+  버전을 읽어 `~/.local/share/rocky-todo/v<version>/` 에 한 번 풀고(`SHA256SUMS` 검증,
+  tmp 디렉터리 rename 으로 동시 세션 경쟁 무해화) exec 한다. 훅과 CLI(`package.json` `bin`)가
+  같은 입구다. 지난 버전 디렉터리는 지우지 않는다 — 설치본 둘(마켓 + 로컬 레포)이 번갈아
+  뜨면 버전마다 한 번만 받고 끝나야 한다.
+- **훅은 fail-open 을 부트스트랩 층에서도 지킨다.** 다운로드 실패·미지원 플랫폼은 stderr 한
+  줄 + exit 0. 바이너리가 없을 때 다운로드는 SessionStart(`hook ensure-daemon`)만 한다 —
+  UserPromptSubmit/Stop 은 timeout 이 5s/3s 라 받다가 죽고, 어차피 세션당 SessionStart 가 먼저다.
+- **tarball 에 `dist/` 가 들어간다**(CLI + 데몬 + UI 한 디렉터리). 데몬이 UI 를 임베드하는
+  안(`include_dir`)은 dist 없는 `cargo clippy` 가 죽는 tauri-build 와 같은 함정을 다시 판다
+  — 앱 번들이 이미 쓰는 "실행 파일 옆 리소스" 레이아웃을 tarball 도 그대로 따르고
+  `rocky-todod` 가 `exe/../dist` 를 보게 했다(env > exe 옆 > cwd). 실측: 부트스트랩이 받은
+  데몬이 `/` 와 퍼머링크 `/rocky/12` 를 200 으로 낸다.
+- **개발 우회는 `ROCKY_TODO_BIN`**(부트스트랩이 그 바이너리를 바로 exec), 미러/테스트는
+  `ROCKY_TODO_RELEASE_BASE`. 로컬 http.server 미러로 다운로드·체크섬 불일치·404·심볼릭 링크
+  경로를 전부 돌려봤다.
+- **launchd 전환은 자동이다** — Rust `ensure-daemon` 이 버전 불일치 + plist 존재를 보면
+  `install_launchd()` 로 plist 를 현재 바이너리 경로로 다시 쓴다(라벨 `com.rocky.todo` 는
+  TS 판과 같다). plist 가 버전 디렉터리 경로를 박으므로 업그레이드마다 같은 경로로 갱신된다.
+- TS 표면(`src/*.ts`, `hooks/*.ts`, parity 게이트)은 이 PR 에서 지우지 않았다 — 훅 전환과
+  코드 삭제를 한 diff 에 섞으면 리뷰가 안 된다. 다음 단계(5c)가 지우면서 AGENTS.md 를 전면
+  개정하고, main 머지 시점에 `changeset pre exit` 로 `0.15.0` 을 찍는다.

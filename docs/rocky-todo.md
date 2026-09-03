@@ -10,7 +10,7 @@ rocky 마켓플레이스가 함께 서빙한다.
 에이전트/CLI ───────►│─ /api/*       REST                       ← CLI / 웹 UI
 (MCP or CLI)         │─ /api/events  SSE 변경 브로드캐스트
                      └─ /mcp         MCP streamable HTTP        ← Claude Code / opencode / Codex
-        데몬 (Bun, 127.0.0.1:8636) → SQLite ~/.config/rocky/todo/todo.db
+        데몬 (rocky-todod, 127.0.0.1:8636) → SQLite ~/.config/rocky/todo/todo.db
 ```
 
 - 계층(todo/subtask) + 섹션 + 보드(프로젝트) 단위, 우선순위(p1–p4)/라벨/마감일/링크 첨부.
@@ -41,6 +41,20 @@ claude plugin install rocky-todo@rocky-marketplace     # 공유 보드 데몬 (�
   주입하며, `Stop` 훅이 그 세션 앞으로 온 핸드오프 요청을 자동 착수시킨다(아래 "보드→세션
   핸드오프" 참고). 셋 다 플러그인 업데이트 후 **첫 세션부터** 적용된다.
 
+훅과 CLI 는 전부 **네이티브 바이너리**(Rust)다 — bun 이 필요 없다. 플러그인 설치본에는
+바이너리가 들어 있지 않고, 진입점 `bin/rocky-todo`(셸 부트스트랩)가 플러그인 버전에 맞는
+[GitHub Release](https://github.com/minjun0219/rocky-todo/releases) tarball(`rocky-todo` +
+`rocky-todod` + 웹 UI `dist/`)을 `~/.local/share/rocky-todo/v<version>/` 에 **한 번** 받아
+풀고(`SHA256SUMS` 검증) 이후로는 그대로 실행한다. 첫 SessionStart 가 그 다운로드를 맡는다 —
+실패하면(오프라인 등) 그 세션은 보드 없이 지나가고 다음 세션이 다시 시도한다. 지원 플랫폼은
+지금 Apple Silicon macOS 뿐이다.
+
+| 환경변수 (부트스트랩) | 의미 |
+|---|---|
+| `ROCKY_TODO_BIN` | 설정되면 다운로드 없이 이 바이너리를 실행한다 — 레포에서 개발할 때 `target/debug/rocky-todo` |
+| `ROCKY_TODO_RELEASE_BASE` | tarball 을 받을 기준 URL (기본 `https://github.com/minjun0219/rocky-todo/releases/download`) |
+| `XDG_DATA_HOME` | 설치 위치의 상위 (기본 `~/.local/share`) |
+
 > **첫 세션 순서 주의**: SessionStart 훅의 데몬 기동과 http MCP 초기화 순서는 보장되지 않는다.
 > 첫 세션에서 MCP 가 `failed` 로 뜨면 `/mcp` 패널에서 retry 하거나 다음 세션이면 붙는다.
 > 상시 상주(`daemon install`)면 이 창이 사라진다.
@@ -60,7 +74,12 @@ rocky-todo daemon uninstall
 > 기능(`gh` PATH 인식)을 쓰려면 `rocky-todo daemon uninstall && rocky-todo daemon install`
 > 로 한 번 다시 깐다.
 
-레포에서 직접 실행: `bun run src/daemon.ts` (포그라운드는 `rocky-todo daemon run`).
+레포에서 직접 실행: `bun run build:ui && cargo run -p rocky-todod` (레포 루트의 `dist/` 를
+서빙한다). 설치본 포그라운드는 `rocky-todo daemon run`.
+
+> **TS 판에서 올라온 환경**: 이전 `daemon install` 의 plist 는 bun 으로 TS 데몬을 띄운다.
+> 첫 SessionStart 훅이 버전 차이를 보고 plist 를 네이티브 바이너리로 다시 써서 재기동하므로
+> 보통은 손댈 게 없다 — 안 되면 `rocky-todo daemon install` 을 한 번 다시 실행한다.
 
 > **PATH 회귀 수정 (재설치 필요)**: 이전 버전으로 `daemon install` 을 이미 해뒀다면
 > `rocky-todo daemon install` 을 다시 실행하라 — plist 에 설치 시점 PATH 를 굽는 수정이라,
@@ -75,22 +94,22 @@ Rust 재작성분은 `rust-rewrite` 브랜치에서 **프리릴리즈**(`v0.15.0
 | 첨부 | 내용 |
 |---|---|
 | `rocky-todo-v…-aarch64-apple-darwin.app.zip` | `rocky-todo.app` — 보드를 여는 창. 살아 있는 데몬이 있으면 그 URL 을 열고, 없으면 앱 안에서 데몬을 띄운다(앱을 닫으면 그 데몬도 내려간다). |
-| `rocky-todo-v…-aarch64-apple-darwin.tar.gz` | `rocky-todo`(CLI) + `rocky-todod`(헤드리스 데몬). bun 없이 돈다. |
+| `rocky-todo-v…-aarch64-apple-darwin.tar.gz` | `rocky-todo`(CLI) + `rocky-todod`(헤드리스 데몬) + `dist/`(웹 UI). 플러그인 부트스트랩이 받는 것과 같은 파일. |
 
 ```bash
 # 앱 — ad-hoc 서명이라 Gatekeeper 가 "손상됨/확인 불가" 로 막는다. 격리 속성을 벗겨 연다.
 ditto -x -k rocky-todo-v*-aarch64-apple-darwin.app.zip /Applications
 xattr -dr com.apple.quarantine /Applications/rocky-todo.app
-
-# CLI/데몬 — 같은 디렉터리에 두면 CLI 가 옆의 rocky-todod 를 먼저 찾는다.
-tar -xzf rocky-todo-v*-aarch64-apple-darwin.tar.gz -C ~/.local/bin
 ```
 
-플러그인(훅·MCP 등록)은 아직 TS 판이 그대로 돈다 — 보통은 그 데몬이 이미 떠 있으므로 앱은
-창만 얹는다. 앱이 **자기 데몬을 띄운 경우**(떠 있는 데몬이 없을 때)는 버전이 플러그인과
-다르면 다음 세션의 SessionStart 훅이 구버전 데몬으로 보고 앱을 내린다(훅은 그 자리에 자기
-데몬을 다시 띄운다). 상시 상주(`daemon install`)를 걸어두면 이 경우가 생기지 않는다. 훅까지
-네이티브로 넘기는 컷오버는 정식 `0.15.0` 몫이다.
+CLI 는 따로 받을 필요가 없다 — 플러그인이 받아둔 `~/.local/share/rocky-todo/v<version>/rocky-todo`
+를 PATH 에 두거나 심볼릭 링크하면 된다. 셋(`rocky-todo`/`rocky-todod`/`dist/`)은 **한
+디렉터리에** 있어야 한다: CLI 는 옆의 `rocky-todod` 를 먼저 찾고, 데몬은 옆의 `dist/` 를 서빙한다.
+
+앱은 보통 창만 얹는다 — 플러그인 훅이 띄운 데몬이 이미 있기 때문이다. 떠 있는 데몬이 없어
+앱이 **자기 데몬을 띄운 경우**, 버전이 플러그인과 다르면 다음 세션의 SessionStart 훅이 구버전
+데몬으로 보고 앱을 내린다(훅은 그 자리에 자기 데몬을 다시 띄운다). 상시 상주(`daemon install`)를
+걸어두면 이 경우가 생기지 않는다.
 
 ## MCP 도구 5개 (에이전트)
 
@@ -495,6 +514,7 @@ REF 는 id 대신 사람이 읽을 수 있는 참조를 받는다: `rocky-12`(�
 | `ROCKY_TODO_EXPOSE` | 노출 채널 강제 (`lan,tailscale-serve` / `off`) — 설정 시 config 무시 |
 | `ROCKY_TODO_STATUSLINE` | statusline 템플릿 강제 (아래 "statusline 에 얹기") |
 | `ROCKY_CONFIG` | user rocky.json 경로 override (기본 `~/.config/rocky/rocky.json`) |
+| `ROCKY_TODO_UI_DIST` | 데몬이 서빙할 웹 UI 디렉터리 강제 (기본: 실행 파일 옆 `dist/` → cwd 의 `dist/`) |
 
 ## statusline 에 얹기
 
@@ -503,7 +523,7 @@ statusline 에 세그먼트 하나로 붙인다. **보여줄 게 없으면 아�
 
 `GET /api/statusline?cwd=<경로>&session=<세션 id>` 가 완성된 한 줄을 `text/plain` 으로
 돌려준다 — 렌더까지 데몬이 하므로 소비자 쪽은 `curl` 한 줄이면 된다. 이 자리는 1초마다 ×
-열어둔 세션 수만큼 도는 곳이라, 여기서 `bun` 을 띄우지 않는 것이 설계 목적이다.
+열어둔 세션 수만큼 도는 곳이라, 여기서 프로세스를 하나 더 띄우지 않는 것이 설계 목적이다.
 
 `~/.claude/statusline-command.sh` 끝에 (또는 `settings.json` 의 `statusLine.command` 에)
 이어 붙인다 — 입력 JSON 에서 두 값을 꺼내 쓴다:
