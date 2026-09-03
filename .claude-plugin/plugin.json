@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "rocky-todo",
-  "version": "0.14.0",
+  "version": "0.15.0-next.0",
   "description": "공유 todo/스크래치패드 상주 데몬 + 웹 UI + MCP + CLI. rocky 생태계의 동반 플러그인. 시스템 유일 데몬(127.0.0.1:8636, SQLite)이 계층(parentId)+섹션+보드 todo 와 스크래치패드 note 를 들고, 표면은 넷: / React 웹 UI(SSE 실시간), /api/* REST, /mcp streamable HTTP MCP(5 도구: todo_list / todo_write / todo_status / note_list / note_write), rocky-todo CLI. 삭제 없음(아카이브만) + 전 mutation 히스토리 자동 기록. 이 플러그인 설치가 곧 활성화 — SessionStart 훅이 데몬을 기동하고, UserPromptSubmit 훅이 보드의 사람 변경을 세션에 주입한다. rocky 를 먼저 설치하는 것을 권장(dependencies).",
   "author": {
     "name": "Minjun Kim"

@@ -1,5 +1,11 @@
 # @minjun0219/rocky-todo
 
+## 0.15.0-next.0
+
+### Minor Changes
+
+- [#73](https://github.com/minjun0219/rocky-todo/pull/73) [`c6be5b1`](https://github.com/minjun0219/rocky-todo/commit/c6be5b162d18c793b45ae50f512f3119ca36e76c) Thanks [@minjun0219](https://github.com/minjun0219)! - Rust 재작성 — 데몬(`rocky-todod`)·CLI(`rocky-todo`)·훅 3종을 Rust 로 옮기고, 보드를 여는 데스크톱 앱(`rocky-todo.app`)을 추가했다. 프리릴리즈 채널(`next`)로 먼저 나간다.
+
 ## 0.14.0
 
 ### Minor Changes
