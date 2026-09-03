@@ -27,6 +27,11 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
   root="$CLAUDE_PLUGIN_ROOT"
 else
   self="$0"
+  # 슬래시 없는 이름(PATH 로 찾은 경우의 일부 셸)은 실제 경로로 바꾼다
+  case "$self" in
+    */*) ;;
+    *) self="$(command -v "$self" 2>/dev/null || echo "$self")" ;;
+  esac
   while [ -L "$self" ]; do
     target="$(readlink "$self")"
     case "$target" in
@@ -38,6 +43,10 @@ else
 fi
 
 # jq 없이 읽는다 — 한 줄 JSON 도 잡히게 쉼표로 쪼갠 뒤 첫 "version" 을 취한다
+if [ ! -f "$root/.claude-plugin/plugin.json" ]; then
+  echo "rocky-todo: $root 는 플러그인 디렉터리가 아니다 — 이 스크립트는 복사하지 말고 심볼릭 링크로 PATH 에 둔다" >&2
+  exit 1
+fi
 version="$(tr ',' '\n' < "$root/.claude-plugin/plugin.json" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 if [ -z "$version" ]; then
   echo "rocky-todo: $root/.claude-plugin/plugin.json 에서 version 을 못 읽었다" >&2
@@ -91,6 +100,7 @@ grep -- " $asset\$" "$tmp/SHA256SUMS" > "$tmp/SHA256SUMS.one" || fail "SHA256SUM
 mkdir -p "$tmp/unpack"
 tar -xzf "$tmp/$asset" -C "$tmp/unpack" || fail "압축 해제 실패: $asset"
 [ -x "$tmp/unpack/rocky-todo" ] && [ -x "$tmp/unpack/rocky-todod" ] || fail "tarball 에 바이너리가 없다"
+[ -f "$tmp/unpack/dist/index.html" ] || fail "tarball 에 웹 UI(dist/)가 없다"
 
 mkdir -p "$data_home/rocky-todo"
 # 동시에 뜬 세션들이 같은 버전을 받아도 디렉터리 rename 은 원자적이다 —
