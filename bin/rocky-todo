@@ -78,8 +78,12 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/rocky-todo.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 echo "rocky-todo: v$version 바이너리를 내려받는다 ($asset)" >&2
-curl -fsSL --retry 2 -o "$tmp/$asset" "$base/$asset" || fail "다운로드 실패: $base/$asset"
-curl -fsSL --retry 2 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail "다운로드 실패: $base/SHA256SUMS"
+# 시간 상한을 둔다 — 블랙홀 네트워크에서 훅이 세션 시작을 붙들면 안 된다. SessionStart 훅의
+# 기본 timeout(60s) 안에서 끝나도록 tarball 45s / 체크섬 15s (연결 5s, 재시도 1회 포함).
+curl -fsSL --connect-timeout 5 --max-time 45 --retry 1 --retry-max-time 45 \
+  -o "$tmp/$asset" "$base/$asset" || fail "다운로드 실패: $base/$asset"
+curl -fsSL --connect-timeout 5 --max-time 15 --retry 1 --retry-max-time 15 \
+  -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail "다운로드 실패: $base/SHA256SUMS"
 # 체크섬 파일에서 이 tarball 줄만 골라 검증한다
 grep -- " $asset\$" "$tmp/SHA256SUMS" > "$tmp/SHA256SUMS.one" || fail "SHA256SUMS 에 $asset 이 없다"
 (cd "$tmp" && shasum -a 256 -c --status SHA256SUMS.one) || fail "체크섬 불일치: $asset"
