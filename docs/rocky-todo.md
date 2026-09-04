@@ -96,11 +96,18 @@ Rust 재작성분은 `rust-rewrite` 브랜치에서 **프리릴리즈**(`v0.15.0
 | `rocky-todo-v…-aarch64-apple-darwin.app.zip` | `rocky-todo.app` — 보드를 여는 창. 살아 있는 데몬이 있으면 그 URL 을 열고, 없으면 앱 안에서 데몬을 띄운다(앱을 닫으면 그 데몬도 내려간다). |
 | `rocky-todo-v…-aarch64-apple-darwin.tar.gz` | `rocky-todo`(CLI) + `rocky-todod`(헤드리스 데몬) + `dist/`(웹 UI). 플러그인 부트스트랩이 받는 것과 같은 파일. |
 
+앱은 **브라우저로 받지 말고 CLI 로 설치한다**:
+
 ```bash
-# 앱 — ad-hoc 서명이라 Gatekeeper 가 "손상됨/확인 불가" 로 막는다. 격리 속성을 벗겨 연다.
-ditto -x -k rocky-todo-v*-aarch64-apple-darwin.app.zip /Applications
-xattr -dr com.apple.quarantine /Applications/rocky-todo.app
+rocky-todo app            # 없거나 버전이 다르면 CLI 와 같은 버전을 ~/Applications 에 받고 연다
+rocky-todo app install    # 설치만 (--force 로 같은 버전도 다시 받는다) · app status 로 확인
 ```
+
+앱은 ad-hoc 서명이라(Developer ID 없음) 브라우저로 받으면 격리 속성(`com.apple.quarantine`)이
+붙어 Gatekeeper 가 "손상됨/확인 불가" 로 막는다. 격리는 내려받은 프로그램이 붙이는 것이지
+파일의 성질이 아니라, CLI 가 직접 받아 `ditto` 로 풀면 속성 없이 설치되어 그냥 열린다.
+(`SHA256SUMS` 검증, 옛 번들은 새 것이 자리 잡은 뒤 제거, 미러는 `ROCKY_TODO_RELEASE_BASE`.)
+그래도 브라우저로 받았다면 풀어 둔 번들에 `xattr -dr com.apple.quarantine <경로>/rocky-todo.app`.
 
 CLI 는 따로 받을 필요가 없다 — 플러그인이 받아둔 `~/.local/share/rocky-todo/v<version>/rocky-todo`
 를 PATH 에 두거나 심볼릭 링크하면 된다. 셋(`rocky-todo`/`rocky-todod`/`dist/`)은 **한
@@ -465,6 +472,7 @@ rocky-todo handoff REF [--session NAME] [--message "본문"] · handoff REF --ca
 rocky-todo spawn REF [--message "본문"]            # todo 전용 워크트리에 새 세션 띄우기 (로컬 전용)
 rocky-todo sessions
 rocky-todo daemon run|start|stop|status|install|uninstall · mcp setup
+rocky-todo app [open|install|status] [--force]    # 데스크톱 앱 — 같은 버전을 ~/Applications 에 받아 연다
 rocky-todo tailscale on|off|status
 ```
 

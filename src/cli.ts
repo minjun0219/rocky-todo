@@ -385,6 +385,7 @@ const HELP = `rocky-todo — 공유 todo/스크래치패드 보드 (데몬 + 웹
   rocky-todo history REF [--limit N] [--global|--note] · section ls
   rocky-todo board ls|show|add|rename|title|desc|repo|path   보드 메타 (이름·slug·설명·GitHub)
   rocky-todo open                              접속 주소 출력 (로컬/내부망/테일넷 — 링크 클릭으로 열기)
+  rocky-todo app [open|install|status] [--force]  데스크톱 앱 — 없으면 이 버전을 받아 ~/Applications 에 두고 연다
   rocky-todo daemon run|start|stop|status|install|uninstall
   rocky-todo mcp setup                         호스트별 MCP 등록 안내
   rocky-todo tailscale on|off|status           테일넷 한정 HTTPS 노출 (옵션, 기본 off)
