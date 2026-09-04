@@ -341,9 +341,9 @@ Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱
 - **`rocky-todo app [open|install|status]`.** next.1 의 `.app.zip` 을 브라우저로 받으니 Gatekeeper
   가 막혔다(ad-hoc 서명). 사용자에게 Developer ID 계정은 있지만 개인용 앱에 서명·공증까지는
   과하다고 판단 — 대신 **격리 속성이 붙는 경로를 없앴다.** 격리는 브라우저/Archive Utility 가
-  붙이는 것이라 CLI 가 `ureq` 로 받아 `ditto -x -k` 로 풀면 속성이 없고(실측: `com.apple.
-  provenance` 만 남고 `open` 이 프롬프트 없이 뜬다), 부트스트랩이 curl 로 받는 tarball 이
-  문제없던 것과 같은 원리다. 서명 인프라(6개 시크릿 + notarytool 대기)는 필요해지면 그때.
+  붙이는 것이라 CLI 가 `ureq` 로 받아 `ditto -x -k` 로 풀면 속성이 없고(실측:
+  `com.apple.provenance` 만 남고 `open` 이 프롬프트 없이 뜬다), 부트스트랩이 curl 로 받는
+  tarball 이 문제없던 것과 같은 원리다. 서명 인프라(6개 시크릿 + notarytool 대기)는 필요해지면 그때.
 - 버전은 CLI 의 `CARGO_PKG_VERSION` — plugin.json 과 동기화되므로 "플러그인이 쓰는 버전의
   앱" 이 자동으로 골라지고, 같은 버전이 이미 있으면 받지 않는다(`Info.plist` 의
   `CFBundleShortVersionString` 비교). 설치 위치는 `~/Applications`(sudo 불필요). 교체는

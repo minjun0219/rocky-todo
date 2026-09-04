@@ -272,19 +272,22 @@ pub fn cmd_app(rest: &[String], force: bool) -> Result<(), String> {
     // status 도 막는다 — 다른 플랫폼에서 "미설치" 는 틀린 답이다
     check_platform()?;
     let plan = AppInstall::from_env()?;
-    let mut log = std::io::stderr();
+    // --force 는 open/install 공통 — 같은 버전이어도 다시 받는다(망가진 번들 복구용)
+    let ensure = |force: bool| {
+        let mut log = std::io::stderr();
+        if force {
+            install(&plan, &mut log)
+        } else {
+            ensure_installed(&plan, &mut log)
+        }
+    };
     match rest.first().map(String::as_str) {
         None | Some("open") => {
-            let bundle = ensure_installed(&plan, &mut log)?;
+            let bundle = ensure(force)?;
             open_bundle(&bundle)
         }
         Some("install") => {
-            let bundle = if force {
-                install(&plan, &mut log)?
-            } else {
-                ensure_installed(&plan, &mut log)?
-            };
-            println!("{}", bundle.display());
+            println!("{}", ensure(force)?.display());
             Ok(())
         }
         Some("status") => {
