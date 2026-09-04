@@ -32,4 +32,7 @@ ureq = { version = "3", features = ["json"] }
 # 이미 의존 그래프에 있던 크레이트다(tokio 등이 끌어온다) — 직접 선언해도 빌드에
 # 새로 더해지는 코드가 없다. CLI 가 데몬에 SIGTERM 을 보내는 데만 쓴다.
 libc = "0.2"
+# rustls 가 이미 끌어오는 크레이트다 — `app install` 의 SHA-256 검증에만 쓴다.
+# 이걸로 sha2 를 새로 들이지 않는다.
+ring = "0.17"
 tokio-stream = { version = "0.1", features = ["sync"] }

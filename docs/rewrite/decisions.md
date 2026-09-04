@@ -335,3 +335,22 @@ Phase 5 는 둘로 쪼갰다: **5a** 는 `rust-rewrite` 에서 바이너리·앱
 - TS 표면(`src/*.ts`, `hooks/*.ts`, parity 게이트)은 이 PR 에서 지우지 않았다 — 훅 전환과
   코드 삭제를 한 diff 에 섞으면 리뷰가 안 된다. 다음 단계(5c)가 지우면서 AGENTS.md 를 전면
   개정하고, main 머지 시점에 `changeset pre exit` 로 `0.15.0` 을 찍는다.
+
+## 5b 후속 — 앱은 CLI 가 설치한다 (2026-09-04)
+
+- **`rocky-todo app [open|install|status]`.** next.1 의 `.app.zip` 을 브라우저로 받으니 Gatekeeper
+  가 막혔다(ad-hoc 서명). 사용자에게 Developer ID 계정은 있지만 개인용 앱에 서명·공증까지는
+  과하다고 판단 — 대신 **격리 속성이 붙는 경로를 없앴다.** 격리는 브라우저/Archive Utility 가
+  붙이는 것이라 CLI 가 `ureq` 로 받아 `ditto -x -k` 로 풀면 속성이 없고(실측: `com.apple.
+  provenance` 만 남고 `open` 이 프롬프트 없이 뜬다), 부트스트랩이 curl 로 받는 tarball 이
+  문제없던 것과 같은 원리다. 서명 인프라(6개 시크릿 + notarytool 대기)는 필요해지면 그때.
+- 버전은 CLI 의 `CARGO_PKG_VERSION` — plugin.json 과 동기화되므로 "플러그인이 쓰는 버전의
+  앱" 이 자동으로 골라지고, 같은 버전이 이미 있으면 받지 않는다(`Info.plist` 의
+  `CFBundleShortVersionString` 비교). 설치 위치는 `~/Applications`(sudo 불필요). 교체는
+  같은 디렉터리 안 임시 스테이지에서 `rename` 두 번 — 반쯤 풀린 번들이 그 이름을 차지하는
+  순간이 없고, 실패 시 옛 번들이 제자리로 돌아온다.
+- SHA-256 은 `ring`(rustls 가 이미 끌어옴)으로 — `sha2` 를 새로 들이지 않는다. 풀기는 zip
+  크레이트 대신 `ditto`(번들 권한·심볼릭 링크·서명 리소스를 macOS 규약대로 복원, 앱은
+  어차피 macOS 전용). 테스트는 로컬 TcpListener 미러 + ditto 로 만든 가짜 번들로 설치·교체·
+  체크섬 불일치·버전 불일치·404 를 돈다(macOS 러너 전용).
+

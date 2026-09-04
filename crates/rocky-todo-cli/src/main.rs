@@ -56,6 +56,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         "note" => commands::cmd_note(&ctx, &rest, &parsed, &board, &printer),
         "issue" => commands::cmd_issue(&ctx, &rest, &parsed, &board, &printer),
         "open" => commands::cmd_open(&ctx, expose_lan, expose_ts),
+        "app" => rocky_todo_cli::app::cmd_app(&rest, parsed.bool_flag("force")),
         "daemon" => commands::cmd_daemon(&ctx, &rest, expose_lan, expose_ts),
         "mcp" => commands::cmd_mcp(&ctx, &rest),
         "tailscale" => commands::cmd_tailscale(&ctx, &rest),
