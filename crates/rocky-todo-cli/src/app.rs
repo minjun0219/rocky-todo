@@ -267,8 +267,12 @@ fn open_bundle(bundle: &Path) -> Result<(), String> {
     }
 }
 
-/// `app [open|install] [--force]`. 인자 없음은 `open` — 없으면 받아서 연다.
+/// `app [open|install|status] [--force]`. 인자 없음은 `open` — 없으면 받아서 연다.
 pub fn cmd_app(rest: &[String], force: bool) -> Result<(), String> {
+    const USAGE: &str = "usage: rocky-todo app [open|install|status] [--force]";
+    if rest.len() > 1 {
+        return Err(USAGE.into());
+    }
     // status 도 막는다 — 다른 플랫폼에서 "미설치" 는 틀린 답이다
     check_platform()?;
     let plan = AppInstall::from_env()?;
@@ -306,7 +310,7 @@ pub fn cmd_app(rest: &[String], force: bool) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Err("usage: rocky-todo app [open|install|status] [--force]".into()),
+        _ => Err(USAGE.into()),
     }
 }
 
