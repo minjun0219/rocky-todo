@@ -4,5 +4,5 @@
   "initialVersions": {
     "@minjun0219/rocky-todo": "0.14.0"
   },
-  "changesets": ["cutover-hooks", "rust-rewrite"]
+  "changesets": ["app-install", "cutover-hooks", "rust-rewrite"]
 }
