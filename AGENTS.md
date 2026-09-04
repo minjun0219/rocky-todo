@@ -36,6 +36,8 @@ rocky 마켓플레이스가 이 레포를 github source 로 서빙한다 — 자
 > 이다. `hooks/hooks.json` 은 `bin/rocky-todo`(셸 부트스트랩)를 부르고, 그 스크립트가
 > `.claude-plugin/plugin.json` 버전에 맞는 릴리스 tarball 을 `~/.local/share/rocky-todo/v<v>/`
 > 에 받아 `rocky-todo hook <name>` 을 exec 한다. 개발 중엔 `ROCKY_TODO_BIN=target/debug/rocky-todo`.
+> 데스크톱 앱(`app/`)은 `rocky-todo app`(`crates/rocky-todo-cli/src/app.rs`)이 같은 버전의
+> `.app.zip` 을 받아 `~/Applications` 에 설치한다 — 브라우저 다운로드는 격리 속성 때문에 Gatekeeper 에 막힌다.
 > 아래 Layout 의 `src/*.ts`(웹 UI 제외)와 `hooks/*.ts` 는 **참조 구현**으로 남아 있고
 > `scripts/cli-parity.ts` 가 Rust CLI 와의 출력 동일성을 지키고 있다 — TS 표면 제거와 이
 > 문서의 전면 개정은 다음 단계 몫이다. 경위는 `docs/rewrite/decisions.md`.

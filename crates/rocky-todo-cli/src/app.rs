@@ -224,11 +224,20 @@ pub fn install(plan: &AppInstall, log: &mut dyn Write) -> Result<PathBuf, String
             .map_err(|error| format!("{} 를 비키지 못했다: {error}", bundle.display()))?;
     }
     if let Err(error) = fs::rename(&fresh, &bundle) {
-        // 되돌린다 — 실패해도 stage 가 지워지며 옛 번들까지 사라지는 것보단 낫다
+        let message = format!("{} 에 설치하지 못했다: {error}", bundle.display());
+        // 되돌린다. 그것마저 실패하면 stage 를 지우지 않는다 — 드롭이 old.app 까지
+        // 치워 기존 설치가 사라지는 것보다 사용자가 손으로 옮기는 게 낫다.
         if old.exists() {
-            let _ = fs::rename(&old, &bundle);
+            if let Err(rollback) = fs::rename(&old, &bundle) {
+                let kept = stage.keep();
+                return Err(format!(
+                    "{message}
+옛 번들을 되돌리지 못했다({rollback}) — {} 에 남겨 뒀다",
+                    kept.join("old.app").display()
+                ));
+            }
         }
-        return Err(format!("{} 에 설치하지 못했다: {error}", bundle.display()));
+        return Err(message);
     }
     // old 는 stage 와 함께 지워진다
     let _ = writeln!(log, "✓ {} (v{})", bundle.display(), plan.version);
@@ -260,6 +269,8 @@ fn open_bundle(bundle: &Path) -> Result<(), String> {
 
 /// `app [open|install] [--force]`. 인자 없음은 `open` — 없으면 받아서 연다.
 pub fn cmd_app(rest: &[String], force: bool) -> Result<(), String> {
+    // status 도 막는다 — 다른 플랫폼에서 "미설치" 는 틀린 답이다
+    check_platform()?;
     let plan = AppInstall::from_env()?;
     let mut log = std::io::stderr();
     match rest.first().map(String::as_str) {

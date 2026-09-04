@@ -121,3 +121,10 @@ fn note_does_not_swallow_the_following_ref() {
     assert!(parsed.bool_flag("note"));
     assert!(parsed.positionals.iter().any(|p| p == "rocky#12"));
 }
+
+#[test]
+fn app_install_force_is_a_boolean_flag() {
+    let parsed = parse_flags(&argv(&["app", "install", "--force"])).unwrap();
+    assert!(parsed.bool_flag("force"));
+    assert_eq!(parsed.positionals, vec!["app", "install"]);
+}

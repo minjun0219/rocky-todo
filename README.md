@@ -29,6 +29,7 @@
 | SSE | `/api/events` | 웹 UI 실시간 갱신 |
 | MCP | `/mcp` | Claude Code / opencode / Codex — streamable HTTP, 5도구 |
 | CLI | `rocky-todo` | 사람 / 스크립트 / 폴백 |
+| 데스크톱 앱 | `rocky-todo app` | macOS 창 — CLI 가 같은 버전을 `~/Applications` 에 받아 연다 |
 
 MCP 도구 5개: `todo_list` / `todo_write` / `todo_status` / `note_list` / `note_write`.
 
