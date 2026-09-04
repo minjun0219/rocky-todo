@@ -1,5 +1,11 @@
 # @minjun0219/rocky-todo
 
+## 0.15.0-next.2
+
+### Minor Changes
+
+- [#77](https://github.com/minjun0219/rocky-todo/pull/77) [`f411332`](https://github.com/minjun0219/rocky-todo/commit/f411332c21175e958c709faffdf4024b78574a43) Thanks [@minjun0219](https://github.com/minjun0219)! - `rocky-todo app [open|install|status]` — 데스크톱 앱을 CLI 가 같은 버전으로 `~/Applications` 에 받아 연다. 브라우저 다운로드와 달리 격리 속성이 안 붙어 Gatekeeper 프롬프트 없이 열린다(서명 불필요).
+
 ## 0.15.0-next.1
 
 ### Minor Changes

@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "rocky-todo-app"
-version = "0.15.0-next.1"
+version = "0.15.0-next.2"
 dependencies = [
  "rocky-todo-core",
  "rocky-todod",
@@ -2907,7 +2907,7 @@ dependencies = [
 
 [[package]]
 name = "rocky-todo-cli"
-version = "0.15.0-next.1"
+version = "0.15.0-next.2"
 dependencies = [
  "chrono",
  "libc",
@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "rocky-todo-core"
-version = "0.15.0-next.1"
+version = "0.15.0-next.2"
 dependencies = [
  "chrono",
  "rand 0.9.5",
@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "rocky-todod"
-version = "0.15.0-next.1"
+version = "0.15.0-next.2"
 dependencies = [
  "axum",
  "chrono",
