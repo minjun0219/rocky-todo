@@ -107,7 +107,7 @@ rocky-todo app install    # 설치만 (--force 로 같은 버전도 다시 받�
 붙어 Gatekeeper 가 "손상됨/확인 불가" 로 막는다. 격리는 내려받은 프로그램이 붙이는 것이지
 파일의 성질이 아니라, CLI 가 직접 받아 `ditto` 로 풀면 속성 없이 설치되어 그냥 열린다.
 (`SHA256SUMS` 검증, 옛 번들은 새 것이 자리 잡은 뒤 제거, 미러는 `ROCKY_TODO_RELEASE_BASE`.)
-그래도 브라우저로 받았다면 `xattr -dr com.apple.quarantine /Applications/rocky-todo.app`.
+그래도 브라우저로 받았다면 풀어 둔 번들에 `xattr -dr com.apple.quarantine <경로>/rocky-todo.app`.
 
 CLI 는 따로 받을 필요가 없다 — 플러그인이 받아둔 `~/.local/share/rocky-todo/v<version>/rocky-todo`
 를 PATH 에 두거나 심볼릭 링크하면 된다. 셋(`rocky-todo`/`rocky-todod`/`dist/`)은 **한
