@@ -1,5 +1,10 @@
 # rocky-todo
 
+> **이 저장소는 아카이브됐다 (2026-09-28).** rocky-todo 는 2026-09-22 에
+> [minjun0219/rocky](https://github.com/minjun0219/rocky) 로 흡수됐다(hail-mary D-046, rocky v0.23.0).
+> 데몬·CLI·웹 UI·TUI 는 전부 그쪽에서 이어진다 — 여기는 히스토리 보존용이고 이슈·PR 은 받지 않는다.
+> Rust 재작성 이력은 `rust-rewrite` 브랜치, 옛 TypeScript 데몬과 웹 UI 는 `main` 에 있다.
+
 **rocky 의 동반 플러그인** — 로키(에이전트)와 호출자가 하나의 작업 보드를 공유하는 로컬 상주 데몬.
 시스템에 단 하나만 떠서 Claude Code / opencode / Codex 의 모든 세션·모든 프로젝트가 같은 보드를 본다.
 에이전트는 MCP/CLI 로 쓰고, 호출자는 웹 UI(`http://127.0.0.1:8636`)에서 실시간(SSE)으로 보고 편집한다.
